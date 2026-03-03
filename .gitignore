@@ -1,0 +1,16 @@
+# Build outputs
+bin/
+obj/
+publish/
+deploy.zip
+
+# IDE
+*.user
+.vs/
+
+# Azure Functions local settings (contains secrets)
+local.settings.json
+
+# OS
+.DS_Store
+Thumbs.db

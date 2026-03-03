@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "TEAMS_INTEGRATION_DISABLED": "true",
+    "DEBUG_MODE": "true",
+    "BotAppId": "<bot-app-registration-id>",
+    "TenantId": "<entra-id-tenant-id>",
+    "Connections__ServiceConnection__Settings__AuthType": "ClientSecret",
+    "Connections__ServiceConnection__Settings__ClientSecret": "not-needed-offline"
+  }
+}

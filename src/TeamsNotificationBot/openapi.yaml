@@ -1,0 +1,363 @@
+openapi: 3.0.3
+info:
+  title: Teams Notification Bot API
+  description: REST API for sending notifications to Microsoft Teams channels via Azure Bot Service.
+  version: 1.1.0
+  contact:
+    name: Platform Team
+
+servers:
+  - url: /api
+    description: Azure Functions API prefix
+
+paths:
+  /v1/notify/{alias}:
+    post:
+      operationId: notify
+      summary: Send a notification to a Teams channel
+      description: |
+        Enqueues a text or Adaptive Card message for delivery to the Teams channel
+        identified by the alias. Returns 202 immediately; delivery is asynchronous.
+      parameters:
+        - $ref: '#/components/parameters/alias'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Optional idempotency key. Duplicate requests with the same key return the cached response.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+      responses:
+        '202':
+          description: Message accepted and queued for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        - bearerAuth: []
+
+  /v1/alert/{alias}:
+    post:
+      operationId: alert
+      summary: Receive an Azure Monitor alert
+      description: |
+        Accepts a Common Alert Schema payload from Azure Monitor Action Groups,
+        transforms it into an Adaptive Card, and enqueues it for delivery.
+      parameters:
+        - $ref: '#/components/parameters/alias'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommonAlertPayload'
+      responses:
+        '202':
+          description: Alert accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        - bearerAuth: []
+
+  /v1/checkin/{alias}:
+    post:
+      operationId: checkin
+      summary: Send a check-in message to a channel
+      description: |
+        Posts a check-in message (version, timestamp, source) to the specified channel.
+        Serves as a connectivity and end-to-end test for the alias.
+      parameters:
+        - $ref: '#/components/parameters/alias'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source:
+                  type: string
+                  description: Identifier for the check-in source
+                  example: smoke-test
+      responses:
+        '202':
+          description: Check-in message queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckInResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        - bearerAuth: []
+
+  /v1/aliases:
+    get:
+      operationId: getAliases
+      summary: List configured channel aliases
+      description: Returns all configured channel aliases. Requires DEBUG_MODE=true.
+      responses:
+        '200':
+          description: List of aliases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aliases:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alias:
+                          type: string
+                        description:
+                          type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        - bearerAuth: []
+
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      description: Liveness probe. No authentication required.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 1.1.0
+                  timestamp:
+                    type: string
+                    format: date-time
+      security: []
+
+  /v1/openapi.yaml:
+    get:
+      operationId: openapi
+      summary: OpenAPI specification
+      description: Returns this OpenAPI specification. No authentication required.
+      responses:
+        '200':
+          description: OpenAPI 3.0 YAML specification
+          content:
+            application/yaml:
+              schema:
+                type: string
+      security: []
+
+components:
+  parameters:
+    alias:
+      name: alias
+      in: path
+      required: true
+      description: Channel alias identifier
+      schema:
+        type: string
+        example: my-channel
+
+  schemas:
+    NotificationRequest:
+      type: object
+      required:
+        - message
+        - format
+      properties:
+        message:
+          description: Message content — plain text string or Adaptive Card JSON object
+          oneOf:
+            - type: string
+            - type: object
+          example: Hello from the API!
+        format:
+          type: string
+          enum: [text, adaptive-card]
+          example: text
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional key-value metadata
+
+    CommonAlertPayload:
+      type: object
+      required:
+        - schemaId
+        - data
+      properties:
+        schemaId:
+          type: string
+          enum: [azureMonitorCommonAlertSchema]
+        data:
+          type: object
+          properties:
+            essentials:
+              type: object
+              properties:
+                alertRule:
+                  type: string
+                severity:
+                  type: string
+                monitorCondition:
+                  type: string
+                signalType:
+                  type: string
+            alertContext:
+              type: object
+            customProperties:
+              type: object
+              additionalProperties:
+                type: string
+
+    AcceptedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: queued
+        messageId:
+          type: string
+          example: msg-abc123def456
+        correlationId:
+          type: string
+          example: a1b2c3d4e5f6
+        timestamp:
+          type: string
+          format: date-time
+
+    CheckInResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: queued
+        messageId:
+          type: string
+        correlationId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 1.1.0
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          example: https://httpstatuses.io/400
+        title:
+          type: string
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Invalid JSON payload.
+        instance:
+          type: string
+          example: /api/v1/notify/test
+        correlationId:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request — invalid JSON, missing fields, or validation failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Forbidden:
+      description: Access denied (e.g., debug mode disabled)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    NotFound:
+      description: Unknown channel alias
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    PayloadTooLarge:
+      description: Request body exceeds 28 KB limit
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    UnsupportedMediaType:
+      description: Content-Type must be application/json
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    TooManyRequests:
+      description: Rate limit exceeded. Retry after the number of seconds specified in the Retry-After header.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Entra ID access token (EasyAuth)
