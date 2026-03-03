@@ -14,7 +14,7 @@ cd teams-notification-bot
 Install the prerequisites listed in [Local Development - Prerequisites](local-development.md#1-prerequisites), then run:
 
 ```bash
-cd app
+cd src/TeamsNotificationBot
 ./setup-local.sh offline
 ```
 
@@ -25,13 +25,11 @@ This generates `local.settings.json` with mock values so you can build and test 
 ## 2. Building
 
 ```bash
-cd app
-
-# Build
+# Build (from repo root — dotnet finds the .slnx solution file)
 dotnet build
 
 # Publish a release build
-dotnet publish -c Release -o ./publish
+dotnet publish src/TeamsNotificationBot -c Release -o ./publish
 ```
 
 The publish output in `./publish` is what gets deployed to the Azure Function App.
@@ -44,10 +42,10 @@ The project has 142 tests covering all functions, services, middleware, and mode
 
 ```bash
 # Run all tests
-dotnet test app.tests/
+dotnet test tests/TeamsNotificationBot.Tests/
 
 # Run a specific test class
-dotnet test app.tests/ --filter "FullyQualifiedName~NotifyFunctionTests"
+dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~NotifyFunctionTests"
 ```
 
 All tests must pass before submitting a pull request. Integration tests require Azurite to be running.
@@ -56,7 +54,7 @@ All tests must pass before submitting a pull request. Integration tests require 
 
 ## 4. Contract Generation
 
-The function app and Terraform module share an interface contract defined in `app/app-contract.json`. This contract specifies queues, tables, routes, environment variables, and other infrastructure dependencies.
+The function app and Terraform module share an interface contract defined in `src/TeamsNotificationBot/app-contract.json`. This contract specifies queues, tables, routes, environment variables, and other infrastructure dependencies.
 
 When you change queue names, table names, HTTP routes, function bindings, or required environment variables, regenerate and validate the contract:
 
@@ -87,7 +85,7 @@ Always commit the updated `app-contract.json` alongside your code changes.
 ### Before Submitting
 
 1. **Branch from main** with a descriptive branch name.
-2. **All tests pass**: `dotnet test app.tests/` exits with code 0.
+2. **All tests pass**: `dotnet test tests/TeamsNotificationBot.Tests/` exits with code 0.
 3. **Contract is up to date**: Run `scripts/validate-contract.sh` if you changed infrastructure dependencies.
 4. **No leaked secrets or identifiers**: Run `scripts/check-sanitization.sh` before publishing.
 5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).

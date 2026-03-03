@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       echo "Usage: $(basename "$0") [--seed <path>] [--output <path>]"
       echo "  --seed    Path to contract-seed.json (default: ./contract-seed.json)"
-      echo "  --output  Path to output contract (default: ../app/app-contract.json)"
+      echo "  --output  Path to output contract (default: ../src/TeamsNotificationBot/app-contract.json)"
       exit 0
       ;;
     *)

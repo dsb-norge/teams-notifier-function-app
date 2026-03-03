@@ -199,7 +199,7 @@ tests/TeamsNotificationBot.Tests/
 | Message queued but not delivered (offline) | Expected behavior | `TEAMS_INTEGRATION_DISABLED=true` skips bot delivery. Use online mode for real Teams delivery. |
 | `QueueNotFound` error on notify | Queue not created in Azurite | Re-run `./setup-local.sh` (both modes create the required queues). Alternatively, ensure Azurite was running before `func host start`. |
 | Port 7071 already in use | Another instance of `func host start` running | Kill the existing process: `lsof -ti:7071 \| xargs kill` or use `func host start --port 7072`. |
-| `dotnet test` fails with build errors | Stale build artifacts after framework change | Delete `obj/` and `bin/` directories in both `app/` and `tests/TeamsNotificationBot.Tests/`, then rebuild. |
+| `dotnet test` fails with build errors | Stale build artifacts after framework change | Delete `obj/` and `bin/` directories in both `src/TeamsNotificationBot/` and `tests/TeamsNotificationBot.Tests/`, then rebuild. |
 | Online mode: messages delivered but alias not found | Alias not seeded into Azurite | Re-run `./setup-local.sh online` to re-copy aliases from Azure. Or use the `set-alias` bot command in Teams first. |
 
 ---
