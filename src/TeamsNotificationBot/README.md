@@ -21,7 +21,7 @@ Messages are enqueued by the HTTP trigger and processed asynchronously by the qu
 
 ## Local Development
 
-See **[local-development.md](local-development.md)** for detailed setup instructions covering:
+See **[local-development.md](../../docs/local-development.md)** for detailed setup instructions covering:
 - Offline mode (mock values, no Azure access)
 - Online mode (real Teams delivery from localhost)
 - Running tests

@@ -1,5 +1,5 @@
 {
-  "azureFunctions.deploySubpath": ".",
+  "azureFunctions.deploySubpath": "src/TeamsNotificationBot",
   "azureFunctions.projectLanguage": "C#",
   "azureFunctions.projectRuntime": "~4",
   "azureFunctions.projectLanguageModel": "4"

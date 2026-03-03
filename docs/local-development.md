@@ -151,13 +151,16 @@ dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~Integ
 
 ## 6. VS Code Debugging
 
-The `src/TeamsNotificationBot/.vscode/` directory is pre-configured. Press **F5** to build, start `func host start` with the debugger attached, and set breakpoints in any `.cs` file. Recommended extensions (prompted on first open): Azure Functions, C# Dev Kit, and Azurite.
+The `.vscode/` directory at the repository root is pre-configured. Press **F5** to build, start `func host start` with the debugger attached, and set breakpoints in any `.cs` file. Recommended extensions (prompted on first open): Azure Functions, C# Dev Kit, and Azurite.
 
 ---
 
 ## 7. Project Structure
 
 ```
+.vscode/                 # VS Code config (launch, tasks, extensions)
+global.json              # .NET SDK version pin
+
 src/TeamsNotificationBot/
   Functions/           # Azure Function triggers (HTTP + Queue + Timer)
   Helpers/             # Shared utilities (API responses, app info)
@@ -165,7 +168,6 @@ src/TeamsNotificationBot/
   Models/              # Request/response models, validation, entities
   Services/            # Bot service, alias service, queue management,
                        #   card builders, idempotency service
-  .vscode/             # VS Code config (launch, tasks, extensions)
   Program.cs           # DI setup, storage config
   host.json            # Functions host configuration
   appsettings.json     # M365 Agents SDK auth config
