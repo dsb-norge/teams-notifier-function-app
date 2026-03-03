@@ -24,7 +24,7 @@ serve both. The result is a layered design where each identity has a narrow, wel
 |----------|--------|---------|
 | Bot App Registration | Bot Framework + Entra ID | Inbound JWT validation from Bot Framework; outbound MSAL token acquisition for replies |
 | API App Registration | Entra ID | EasyAuth on the Function App — validates Bearer tokens on REST API endpoints |
-| Bot UAMI | Azure RBAC | Runtime access to Storage, Key Vault, and federated credential exchange for Bot Framework tokens |
+| Bot UAMI | Azure RBAC | Runtime access to Storage and federated credential exchange for Bot Framework tokens |
 | Deploy UAMI (optional) | GitHub OIDC | CI/CD deployment via GitHub Actions without stored secrets |
 
 Why this matters: if you are calling the notification API, you only interact with the **API App
@@ -46,13 +46,12 @@ flowchart TD
     subgraph entra["Entra ID Tenant"]
         botapp["Bot App Registration\n(SingleTenant, signInAudience=AzureADMultipleOrgs)\nUsed for: Bot Framework auth"]
         apiapp["API App Registration\n(SingleTenant, signInAudience=AzureADMyOrg)\nUsed for: EasyAuth on Function App\nDefines: Notifications.Send app role"]
-        botuami["Bot UAMI\n(User-Assigned Managed Identity)\nUsed for: Storage, Key Vault, FIC exchange"]
+        botuami["Bot UAMI\n(User-Assigned Managed Identity)\nUsed for: Storage, FIC exchange"]
         deployuami["Deploy UAMI (optional)\nUsed for: GitHub Actions OIDC"]
     end
 
     subgraph azure["Azure Resources"]
         storage["Storage Account\n(Blob, Queue, Table)"]
-        kv["Key Vault\n(Secrets)"]
         funcapp["Function App\n(EasyAuth + CloudAdapter)"]
     end
 
@@ -65,7 +64,6 @@ flowchart TD
     botuami -."FIC trust".-> botapp
     deployuami -."OIDC trust".-> github
     botuami -- "RBAC: Blob Owner,\nQueue/Table Contributor" --> storage
-    botuami -- "RBAC: Secrets User" --> kv
     botapp -- "MSAL token exchange" --> botframework
     apiapp -- "EasyAuth validation" --> funcapp
     botframework <-->|Messages| teams
@@ -79,7 +77,7 @@ flowchart TD
 - **EasyAuth:** The API App Registration is configured as the identity provider for the Function
   App's built-in authentication. All API endpoints (except `/api/messages`) require a valid Bearer
   token issued for this app's audience.
-- **RBAC:** The Bot UAMI is the only identity with data-plane access to Storage and Key Vault.
+- **RBAC:** The Bot UAMI is the only identity with data-plane access to Storage.
   Neither app registration has Azure resource permissions.
 
 ---
@@ -229,7 +227,7 @@ Auth-related environment variables on the Function App, set by Terraform at depl
 | `AzureWebJobsStorage__blobServiceUri` | Blob endpoint for the storage account. Used by the Functions host for internal state (leases, deployment). |
 | `AzureWebJobsStorage__queueServiceUri` | Queue endpoint. Used by queue triggers and the Functions host. |
 | `AzureWebJobsStorage__tableServiceUri` | Table endpoint. Used by the Functions host and application code for conversation references, aliases, and throttling counters. |
-| `Connections__ServiceConnection__Settings__ClientSecret` | Key Vault reference to the bot client secret. Only used for local Dev Tunnels testing — in production, the FIC (federated identity credential) eliminates the need for secrets. |
+| `Connections__ServiceConnection__Settings__ClientSecret` | Bot client secret. Only used for local Dev Tunnels testing — in production, the FIC (federated identity credential) eliminates the need for secrets. Not set in the deployed Function App. |
 
 **Note:** The M365 Agents SDK also reads from `appsettings.json` (baked into the published app) for
 `TokenValidation` and `Connections` configuration. These values (`<bot-app-id>`, `<tenant-id>`,

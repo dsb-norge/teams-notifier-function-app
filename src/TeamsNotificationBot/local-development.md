@@ -74,7 +74,7 @@ Sends real messages to Teams from a locally running function app. Uses Azurite f
    ```bash
    export BOT_APP_ID="<your-bot-app-registration-client-id>"
    export TENANT_ID="<your-azure-ad-tenant-id>"
-   export KEY_VAULT="<your-key-vault-name>"
+   export BOT_CLIENT_SECRET="<your-bot-client-secret>"
    export STORAGE_ACCOUNT="<your-storage-account-name>"
    ```
 
@@ -106,10 +106,9 @@ Sends real messages to Teams from a locally running function app. Uses Azurite f
 
 This will:
 1. Verify prerequisites (az CLI, jq, Azurite connectivity, env vars)
-2. Fetch `bot-client-secret` from Key Vault
-3. Create the `conversationreferences` table and `notifications` queue in Azurite
-4. Copy all conversation references from Azure Table Storage into Azurite
-5. Generate `local.settings.json` with real secrets and real channel aliases
+2. Create the `conversationreferences` table and `notifications` queue in Azurite
+3. Copy all conversation references from Azure Table Storage into Azurite
+4. Generate `local.settings.json` with real config and channel aliases
 
 #### Test end-to-end delivery
 
@@ -207,7 +206,7 @@ tests/TeamsNotificationBot.Tests/
 |---------|-------|-----|
 | `func host start` fails with storage error | Azurite not running | Start Azurite: `azurite --silent --location /tmp/azurite --skipApiVersionCheck` |
 | `API version not supported by Azurite` | Missing `--skipApiVersionCheck` flag | Restart Azurite with the flag |
-| `setup-local.sh online` fails with env var error | Missing environment variables | Export `BOT_APP_ID`, `TENANT_ID`, `KEY_VAULT`, `STORAGE_ACCOUNT` |
+| `setup-local.sh online` fails with env var error | Missing environment variables | Export `BOT_APP_ID`, `TENANT_ID`, `BOT_CLIENT_SECRET`, `STORAGE_ACCOUNT` |
 | `setup-local.sh online` fails with permissions error | Missing RBAC role or wrong subscription | Check `az account show` and assign `Storage Table Data Reader` |
 | `setup-local.sh online` hangs at "Checking prerequisites" | Azurite not running (curl timeout) | Start Azurite first, then run the script |
 | HTTP 401 on curl request | Missing EasyAuth headers | Include `X-MS-CLIENT-PRINCIPAL-ID` and `X-MS-CLIENT-PRINCIPAL` headers (see test examples above) |

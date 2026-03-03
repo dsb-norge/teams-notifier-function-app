@@ -32,7 +32,7 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 |---------|-------|-----|
 | `404 Not Found` on `/api/v1/notify/{alias}` | The alias does not exist | Create the alias first by using the `set-alias` bot command in a Teams channel where the bot is installed. Use `GET /api/v1/aliases` to list existing aliases. |
 | Message returns `202 Accepted` but never appears in Teams | Conversation reference is stale (team restructured, bot reinstalled) | Uninstall and reinstall the bot in the target team. This triggers a `conversationUpdate` event that refreshes the stored conversation reference. |
-| Messages appearing in the poison queue | Repeated delivery failures after 5 attempts | Use the `queue-status` bot command to view poison queue depth. Use `queue-peek` to inspect individual failed messages and their error details. Common causes: stale conversation references, bot app credential rotation without updating Key Vault. |
+| Messages appearing in the poison queue | Repeated delivery failures after 5 attempts | Use the `queue-status` bot command to view poison queue depth. Use `queue-peek` to inspect individual failed messages and their error details. Common causes: stale conversation references, expired bot credentials. |
 | Duplicate messages delivered to a channel | Idempotency key not provided, or retry after transient failure | Include an `Idempotency-Key` header in the request. The system deduplicates within a 24-hour window. |
 
 ### Function App Issues
@@ -40,7 +40,6 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Storage access denied (403) at runtime | UAMI missing required RBAC roles | Assign `Storage Blob Data Owner`, `Storage Queue Data Contributor`, and `Storage Table Data Contributor` to the function app's user-assigned managed identity on the storage account. |
-| Key Vault references show as `@Microsoft.KeyVault(...)` literal text | `keyVaultReferenceIdentity` not configured, or UAMI missing Key Vault role | Set `keyVaultReferenceIdentity` to the UAMI resource ID in the function app properties. Assign `Key Vault Secrets User` to the UAMI on the Key Vault. |
 | Function app returning 503 | `AzureWebJobsStorage` misconfigured | Verify that identity-based storage settings are used (`__credential`, `__clientId`, `__blobServiceUri`, `__queueServiceUri`, `__tableServiceUri`). Do not use a connection string. |
 | Deployment fails from local machine | SCM endpoint requires an allowed IP | Add your IP address to the `management_ip_rules` in the Terraform module variables. Ensure you are connected to the correct network or VPN. |
 | `func azure functionapp publish` does not list all functions | Normal behavior for custom-route functions | Functions with custom route prefixes (e.g., `/api/messages`) may not appear in the CLI output. Verify with `az functionapp function list --name <function-app-name> --resource-group <resource-group>`. |

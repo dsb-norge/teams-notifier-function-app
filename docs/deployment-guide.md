@@ -12,7 +12,7 @@ installation, and end-to-end verification.
 The deployment consists of three components:
 
 1. **Infrastructure** -- Terraform module provisions all Azure resources (Function
-   App, Storage, Key Vault, Bot Service, VNet, monitoring).
+   App, Storage, Bot Service, VNet, monitoring).
 2. **Application code** -- .NET 10 Function App published via Azure Functions Core
    Tools.
 3. **Teams app** -- Manifest package generated from Terraform outputs and uploaded
@@ -58,17 +58,16 @@ terraform init && terraform plan -out=tfplan && terraform apply tfplan
 ```
 
 The module creates approximately 30 resources (VNet, private endpoints, Flex
-Consumption Function App, Storage, Key Vault, Bot Service, Log Analytics,
-Application Insights). After a successful apply, note the key outputs:
+Consumption Function App, Storage, Bot Service, Log Analytics, Application
+Insights). After a successful apply, note the key outputs:
 
 The infrastructure team should provide these values from the Terraform outputs:
 
 | Output | Used in |
 |--------|---------|
-| `function_app_name` | Code deployment (Step 4) |
-| `function_app_hostname` | API base URL (Step 9) |
+| `function_app_name` | Code deployment (Step 3) |
+| `function_app_hostname` | API base URL (Step 8) |
 | `uami_principal_id` | FIC setup (Step 2) |
-| `key_vault_name` | Key Vault secret (Step 3) |
 
 ---
 
@@ -106,24 +105,7 @@ az ad app federated-credential list --id "<bot-app-id>" --query '[].name'
 
 ---
 
-## Step 3: Configure Key Vault
-
-Store the bot client secret in Key Vault. This secret is only used for local
-Dev Tunnels testing -- production uses the FIC from Step 2.
-
-```bash
-az keyvault secret set \
-  --vault-name "<key-vault-name>" \
-  --name bot-client-secret \
-  --value "$BOT_CLIENT_SECRET"
-```
-
-The Terraform module configures the Function App with a Key Vault reference for
-this secret. No additional application configuration is needed.
-
----
-
-## Step 4: Deploy Function App
+## Step 3: Deploy Function App
 
 Build and publish:
 
@@ -147,39 +129,37 @@ If this times out, ensure your IP is in `management_ip_rules`.
 
 ---
 
-## Step 5: Package Teams App
+## Step 4: Package Teams App
 
 The `teams-app-package/` directory contains the manifest template and icons.
 Use the packaging script to generate a ZIP suitable for upload:
 
 ```bash
 cd teams-app-package
-
-# The script reads Terraform outputs to populate the manifest
-./create-teams-app-package.sh
+./create-teams-app-package.sh --bot-app-id <bot-app-id>
 ```
 
 This produces a `.zip` file containing:
 
-- `manifest.json` -- populated with the bot's app ID, hostname, and display name
+- `manifest.json` -- populated with the bot's app ID and display name
 - `color.png` -- 192x192 color icon
 - `outline.png` -- 32x32 outline icon
 
 ---
 
-## Step 6: Install in Teams
+## Step 5: Install in Teams
 
-### 6.1 Upload to Org Catalog
+### 5.1 Upload to Org Catalog
 
 1. Open the [Teams Admin Center](https://admin.teams.microsoft.com/policies/manage-apps).
 2. Navigate to **Teams apps** > **Manage apps**.
-3. Click **Upload new app** and select the ZIP from Step 5.
+3. Click **Upload new app** and select the ZIP from Step 4.
 4. Verify the app appears in the list with status **Allowed**.
 
 > **If the app shows as Blocked:** Check the org-wide app permission policy
 > under **Permission policies**. Custom apps may be blocked by default.
 
-### 6.2 Install in a Team
+### 5.2 Install in a Team
 
 1. Open Microsoft Teams.
 2. Navigate to the target team and channel.
@@ -192,7 +172,7 @@ notifications.
 
 ---
 
-## Step 7: Create Aliases
+## Step 6: Create Aliases
 
 Aliases map friendly names to Teams channels. They are used in API URLs for
 routing notifications.
@@ -229,7 +209,7 @@ channels.
 
 ---
 
-## Step 8: Configure Alert Webhook (Optional)
+## Step 7: Configure Alert Webhook (Optional)
 
 To route Azure Monitor alerts to a Teams channel, set `alert_target_alias` in
 the module call (e.g., `alert_target_alias = "ops-alerts"`) and re-apply
@@ -239,7 +219,7 @@ alert rules.
 
 ---
 
-## Step 9: End-to-End Verification
+## Step 8: End-to-End Verification
 
 Run through each endpoint to confirm the full deployment is working. First,
 set up variables used by all subsequent commands:
@@ -329,7 +309,6 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexisten
 | `function_app_hostname` | The default hostname of the Function App. |
 | `bot_service_name` | The name of the Bot Service resource. |
 | `storage_account_name` | The name of the Storage Account. |
-| `key_vault_name` | The name of the Key Vault. |
 | `uami_client_id` | Client ID of the bot's User-Assigned Managed Identity. |
 | `uami_principal_id` | Principal ID of the bot's UAMI (needed for FIC setup). |
 | `deploy_uami_client_id` | Client ID of the deploy UAMI. Null when `deploy_github_actions_from` is empty. |

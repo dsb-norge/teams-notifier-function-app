@@ -26,7 +26,6 @@ following permissions on the target Azure subscription or resource group:
 | Role | Scope | Reason |
 |------|-------|--------|
 | **Contributor** | Resource group | Create and manage all Azure resources |
-| **Key Vault Administrator** or **Key Vault Secrets Officer** | Resource group | Store and read secrets in Key Vault |
 | **User Access Administrator** | Resource group | Terraform assigns RBAC roles (managed identity, monitor, etc.) |
 
 If deploying into a pre-existing resource group, ensure the resource group

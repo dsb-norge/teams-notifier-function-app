@@ -49,13 +49,12 @@ This document specifies the exact access permissions and roles required in Azure
 | Create Function App | `Microsoft.Web/sites/write` | Deploy Function App |
 | Create App Service Plan | `Microsoft.Web/serverfarms/write` | Flex Consumption plan for Function App |
 | Create Storage Account | `Microsoft.Storage/storageAccounts/write` | Queue and Table storage |
-| Create Key Vault | `Microsoft.KeyVault/vaults/write` | Secrets storage |
 | Create Application Insights | `Microsoft.Insights/components/write` | Monitoring |
 | Create Log Analytics | `Microsoft.OperationalInsights/workspaces/write` | App Insights backend |
 | Create Azure Bot Service | `Microsoft.BotService/botServices/write` | Teams bot connector |
 | Create User-assigned Identity | `Microsoft.ManagedIdentity/userAssignedIdentities/write` | Create user-assigned Managed Identity |
 | Assign Identity to Function App | `Microsoft.ManagedIdentity/userAssignedIdentities/assign/action` | Associate identity with Function App |
-| Assign RBAC Roles (if using Owner) | `Microsoft.Authorization/roleAssignments/write` | Grant user-assigned identity access to Storage/Key Vault |
+| Assign RBAC Roles (if using Owner) | `Microsoft.Authorization/roleAssignments/write` | Grant user-assigned identity access to Storage |
 
 **RBAC Assignment Notes:**
 - If using **Owner** role: Terraform can assign RBAC roles directly (recommended for automation)
@@ -63,8 +62,6 @@ This document specifies the exact access permissions and roles required in Azure
   - User-assigned Managed Identity → `Storage Blob Data Owner` on Storage Account
   - User-assigned Managed Identity → `Storage Queue Data Contributor` on Storage Account
   - User-assigned Managed Identity → `Storage Table Data Contributor` on Storage Account
-  - User-assigned Managed Identity → `Key Vault Secrets User` on Key Vault
-  - Deployment principal → `Key Vault Secrets Officer` on Key Vault (for storing secrets)
 
 **How to Assign Contributor Role:**
 
@@ -84,47 +81,9 @@ az role assignment create \
 
 ---
 
-### 1.2 Managing Secrets in Key Vault
+### 1.2 Runtime Access (User-assigned Managed Identity)
 
-**When:** Storing secrets in Key Vault after Terraform deployment
-
-**Required Role:** One of the following:
-- **Key Vault Secrets Officer** (recommended for automation scripts)
-- **Key Vault Administrator** (if broader access is acceptable)
-- **Owner** (on Key Vault resource)
-
-**Scope:** Key Vault resource level
-
-**Permissions Required:**
-
-| Operation | Required Permission | Reason |
-|-----------|-------------------|--------|
-| Set secrets | `Microsoft.KeyVault/vaults/secrets/setSecret/action` | Store `bot-client-secret` for local Dev Tunnels testing. |
-| Read secret metadata | `Microsoft.KeyVault/vaults/secrets/readMetadata/action` | List secrets (optional, for verification) |
-
-**Note:** The `api-key` secret was removed in v1.4 § 1 — all callers now authenticate via Entra ID Bearer tokens. Only `bot-client-secret` remains (for local Dev Tunnels testing where UAMI is unavailable).
-
-**How to Assign Key Vault Secrets Officer:**
-
-```bash
-# Assign to user
-az role assignment create \
-  --assignee <user-email@example.com> \
-  --role "Key Vault Secrets Officer" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
-
-# Assign to service principal
-az role assignment create \
-  --assignee <service-principal-app-id> \
-  --role "Key Vault Secrets Officer" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
-```
-
----
-
-### 1.3 Runtime Access (User-assigned Managed Identity)
-
-**When:** Function App accesses Azure Storage and Key Vault during runtime
+**When:** Function App accesses Azure Storage during runtime
 
 **Identity Type:** User-assigned Managed Identity (created separately, associated with Function App)
 
@@ -135,7 +94,6 @@ az role assignment create \
 | Storage Account | **Storage Blob Data Owner** | Storage Account | Manage deployment blobs and AzureWebJobsStorage host data |
 | Storage Account | **Storage Queue Data Contributor** | Storage Account | Read/write messages to `notifications` queue |
 | Storage Account | **Storage Table Data Contributor** | Storage Account | Read/write conversation references in `conversationreferences` table |
-| Key Vault | **Key Vault Secrets User** | Key Vault | Read secrets (Key Vault references in app settings) |
 
 **How to Assign (if not done by Terraform):**
 
@@ -147,7 +105,6 @@ PRINCIPAL_ID=$(az identity show \
   --query principalId -o tsv)
 
 STORAGE_SCOPE="/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/<storage-account>"
-KV_SCOPE="/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
 
 # Assign Storage Blob Data Owner
 az role assignment create --assignee $PRINCIPAL_ID --role "Storage Blob Data Owner" --scope "$STORAGE_SCOPE"
@@ -157,14 +114,11 @@ az role assignment create --assignee $PRINCIPAL_ID --role "Storage Queue Data Co
 
 # Assign Storage Table Data Contributor
 az role assignment create --assignee $PRINCIPAL_ID --role "Storage Table Data Contributor" --scope "$STORAGE_SCOPE"
-
-# Assign Key Vault Secrets User
-az role assignment create --assignee $PRINCIPAL_ID --role "Key Vault Secrets User" --scope "$KV_SCOPE"
 ```
 
 ---
 
-### 1.4 Monitoring & Diagnostics
+### 1.3 Monitoring & Diagnostics
 
 **When:** Viewing Application Insights telemetry, logs, and metrics
 
@@ -449,7 +403,6 @@ These permissions are automatically granted when using Graph Explorer with user 
 1. **Azure Service Principal** with:
    - **Contributor** role on subscription or resource group
    - **User Access Administrator** (if Terraform assigns RBAC roles)
-   - **Key Vault Secrets Officer** on Key Vault (for storing secrets)
 
 2. **Entra ID Setup:**
    - Service Principal **cannot** create App Registrations (requires user account)
@@ -493,15 +446,13 @@ az ad sp create-for-rbac \
 |----------------|---------------|-------------|
 | Infrastructure Deployment | Azure Contributor | DevOps / Cloud Team |
 | Entra ID App Registration | Application Administrator | Identity Team |
-| Key Vault Secret Storage | Key Vault Secrets Officer | Security Team or DevOps |
 | Teams App Upload | Teams Administrator | Microsoft 365 Admin Team |
 | Teams App Installation | Team Owner | End User / Team Owner |
 | Monitoring | Monitoring Reader | Operations Team |
 
 **Coordination Required:**
 - Identity Team creates API App Registration (for EasyAuth) → provides `API_APP_ID` to DevOps
-- DevOps deploys infrastructure (Terraform creates UAMI and Bot Service with `UserAssignedMSI`) → provides Key Vault name to Security Team
-- Security Team stores `bot-client-secret` in Key Vault (only needed for local Dev Tunnels testing)
+- DevOps deploys infrastructure (Terraform creates UAMI and Bot Service with `UserAssignedMSI`)
 - DevOps generates Teams App manifest using `scripts/generate-contract.sh` → builds ZIP package
 - Microsoft 365 Admin uploads Teams App package
 - Team Owners install app in their teams and provide Team/Channel IDs to DevOps
@@ -531,21 +482,15 @@ az ad sp create-for-rbac \
 - **Who:** Security Team or Platform Team
 - **Role:** User Access Administrator (Azure) or Owner
 - **Duration:** One-time after infrastructure deployment
-- **Scope:** Storage Account, Key Vault resources
+- **Scope:** Storage Account resource
 
-**Phase 4: Secret Storage**
-- **Who:** Security Team or Identity Administrator
-- **Role:** Key Vault Secrets Officer
-- **Duration:** One-time + secret rotation events
-- **Scope:** Key Vault `<key-vault>`
-
-**Phase 5: Teams App Deployment**
+**Phase 4: Teams App Deployment**
 - **Who:** Microsoft 365 Administrator
 - **Role:** Teams Administrator
 - **Duration:** One-time upload + app updates
 - **Scope:** Tenant-wide Teams app catalog
 
-**Phase 6: App Installation**
+**Phase 5: App Installation**
 - **Who:** Team Owners (end users)
 - **Role:** Team Owner (per-team)
 - **Duration:** One-time per team
@@ -553,9 +498,9 @@ az ad sp create-for-rbac \
 
 **Runtime:**
 - **Who:** User-assigned Managed Identity (associated with Function App)
-- **Role:** Storage Queue Data Contributor, Storage Table Data Contributor, Key Vault Secrets User
+- **Role:** Storage Queue Data Contributor, Storage Table Data Contributor
 - **Duration:** Continuous
-- **Scope:** Storage Account, Key Vault
+- **Scope:** Storage Account
 
 ---
 
@@ -593,34 +538,7 @@ az role assignment list \
 
 ---
 
-### 5.3 "Access denied" (Key Vault)
-
-**Symptom:** Cannot set secrets in Key Vault
-
-**Cause:** Missing Key Vault Secrets Officer role
-
-**Resolution:**
-```bash
-# Check Key Vault access policies and RBAC
-az keyvault show \
-  --name <key-vault> \
-  --query properties.enableRbacAuthorization
-
-# If RBAC is enabled (true), check role assignments
-az role assignment list \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>" \
-  --assignee <user-or-sp-id>
-
-# Assign Key Vault Secrets Officer if missing
-az role assignment create \
-  --assignee <user-or-sp-id> \
-  --role "Key Vault Secrets Officer" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
-```
-
----
-
-### 5.4 "Forbidden" (Storage Access)
+### 5.3 "Forbidden" (Storage Access)
 
 **Symptom:** Function App cannot access queues or tables
 
@@ -639,12 +557,12 @@ az role assignment list \
   --assignee $PRINCIPAL_ID \
   --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/<storage-account>"
 
-# Assign missing roles (see Section 1.3)
+# Assign missing roles (see Section 1.2)
 ```
 
 ---
 
-### 5.5 "App installation failed" (Teams)
+### 5.4 "App installation failed" (Teams)
 
 **Symptom:** Cannot install Teams App in team
 
@@ -675,12 +593,6 @@ az role assignment create \
   --role "User Access Administrator" \
   --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>"
 
-# Key Vault Secrets Officer (for secret management)
-az role assignment create \
-  --assignee <email-or-sp-id> \
-  --role "Key Vault Secrets Officer" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
-
 # Monitoring Reader (for viewing logs/metrics)
 az role assignment create \
   --assignee <email-or-sp-id> \
@@ -698,7 +610,6 @@ PRINCIPAL_ID=$(az identity show \
   --query principalId -o tsv)
 
 STORAGE_SCOPE="/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.Storage/storageAccounts/<storage-account>"
-KV_SCOPE="/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>"
 
 # Storage Blob Data Owner
 az role assignment create --assignee $PRINCIPAL_ID --role "Storage Blob Data Owner" --scope "$STORAGE_SCOPE"
@@ -708,9 +619,6 @@ az role assignment create --assignee $PRINCIPAL_ID --role "Storage Queue Data Co
 
 # Storage Table Data Contributor
 az role assignment create --assignee $PRINCIPAL_ID --role "Storage Table Data Contributor" --scope "$STORAGE_SCOPE"
-
-# Key Vault Secrets User
-az role assignment create --assignee $PRINCIPAL_ID --role "Key Vault Secrets User" --scope "$KV_SCOPE"
 ```
 
 ### Entra ID Roles
@@ -746,20 +654,6 @@ All role assignments and permission changes should be logged for compliance:
 - Retention: 30 days (free tier), 90 days (P1/P2)
 - Access: Azure Portal → Entra ID → Audit logs
 
-**Key Vault Audit Logs:**
-- Enable diagnostic settings to log all secret access
-- Stream to Log Analytics Workspace for analysis
-- Track who accessed which secrets when
-
-**How to Enable Key Vault Logging:**
-```bash
-az monitor diagnostic-settings create \
-  --resource "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.KeyVault/vaults/<key-vault>" \
-  --name "KeyVaultAuditLogs" \
-  --logs '[{"category": "AuditEvent", "enabled": true}]' \
-  --workspace "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<resource-group>/providers/Microsoft.OperationalInsights/workspaces/<log-analytics>"
-```
-
 ---
 
 ### 7.2 Periodic Access Review
@@ -770,7 +664,6 @@ az monitor diagnostic-settings create \
 |-------------|-----------|---------|
 | Azure role assignments | Quarterly | Remove inactive users, review service principals |
 | Entra ID App Registrations | Quarterly | Verify app still in use, rotate secrets |
-| Key Vault access | Monthly | Review who accessed secrets |
 | Teams App installations | Quarterly | Verify bot still needed in each team |
 
 **Query Examples:**
@@ -783,10 +676,6 @@ az role assignment list \
 
 # List App Registrations (filter by name)
 az ad app list --display-name "<your-bot-name>" --output table
-
-# Check Key Vault secret expiration
-az keyvault secret list --vault-name <key-vault> \
-  --query "[].{name:name, expires:attributes.expires}" --output table
 ```
 
 ---
@@ -798,7 +687,6 @@ az keyvault secret list --vault-name <key-vault> \
 | Deploy Azure infrastructure | Contributor | Azure Subscription/RG |
 | Assign RBAC roles | User Access Administrator or Owner | Azure Subscription/RG |
 | Create Entra ID App Registration (EasyAuth API) | Application Administrator | Entra ID Tenant |
-| Store secrets in Key Vault | Key Vault Secrets Officer | Key Vault |
 | Upload Teams App to org catalog | Teams Administrator | Microsoft 365 Tenant |
 | Install Teams App in a team | Team Owner | Specific Team |
 | View logs and metrics | Monitoring Reader | Azure RG or App Insights |

@@ -174,10 +174,6 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 | `botoperations` | Internal bot operations (channel enumeration, team rename) |
 | `botoperations-poison` | Failed bot operations |
 
-### Key Vault
-
-Stores the bot app registration client secret (used for local dev tunnel scenarios). Function app accesses Key Vault references via the User-Assigned Managed Identity. Private endpoint access only.
-
 ### Bot Service
 
 Azure Bot Service (F0 free tier, SingleTenant app type) with the Teams channel enabled. The messaging endpoint points to `https://<function-app-name>.azurewebsites.net/api/messages`. The bot app registration requires `signInAudience = AzureADMultipleOrgs` because the Bot Framework Connector authenticates from Microsoft's `botframework.com` tenant.
@@ -280,12 +276,10 @@ flowchart TD
                 PE_Blob["PE: blob"]
                 PE_Queue["PE: queue"]
                 PE_Table["PE: table"]
-                PE_Vault["PE: vault"]
             end
         end
 
         Storage["Storage Account<br/>&lt;storage-account-name&gt;<br/>Tables + Queues<br/>Keys disabled, RBAC only"]
-        KV["Key Vault<br/>&lt;key-vault-name&gt;"]
         UAMI["User-Assigned<br/>Managed Identity<br/>&lt;uami-client-id&gt;"]
         BotSvc["Bot Service (F0)<br/>SingleTenant<br/>Teams channel"]
         AppInsights["Application Insights"]
@@ -295,7 +289,6 @@ flowchart TD
             DNS_Blob["privatelink.blob.core.windows.net"]
             DNS_Queue["privatelink.queue.core.windows.net"]
             DNS_Table["privatelink.table.core.windows.net"]
-            DNS_Vault["privatelink.vaultcore.azure.net"]
         end
     end
 
@@ -308,15 +301,12 @@ flowchart TD
     PE_Blob --> Storage
     PE_Queue --> Storage
     PE_Table --> Storage
-    PE_Vault --> KV
 
     FuncApp -.->|"private endpoint"| PE_Blob
     FuncApp -.->|"private endpoint"| PE_Queue
     FuncApp -.->|"private endpoint"| PE_Table
-    FuncApp -.->|"private endpoint"| PE_Vault
 
     UAMI -.->|"RBAC"| Storage
-    UAMI -.->|"RBAC"| KV
     FuncApp -.->|"identity"| UAMI
 
     FuncApp -->|"outbound"| BotSvc
@@ -325,7 +315,6 @@ flowchart TD
     DNS_Blob -.-> PE_Blob
     DNS_Queue -.-> PE_Queue
     DNS_Table -.-> PE_Table
-    DNS_Vault -.-> PE_Vault
 ```
 
 **IP restrictions on the Function App:**
