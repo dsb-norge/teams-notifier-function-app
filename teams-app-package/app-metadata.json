@@ -1,0 +1,12 @@
+{
+  "short_name": "Notifications",
+  "full_name": "Teams Notification Bot",
+  "description_short": "Receives and posts notifications to Teams channels",
+  "description_full": "Notification service for posting automated messages to Teams channels. Supports text, Adaptive Cards, and Azure Monitor alerts.",
+  "developer_name": "Your Organization",
+  "developer_website": "https://example.com",
+  "privacy_url": "https://example.com/privacy",
+  "terms_url": "https://example.com/terms",
+  "accent_color": "#FFFFFF",
+  "output_zip": "teams-notification-bot.zip"
+}
