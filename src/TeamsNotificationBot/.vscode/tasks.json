@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "clean",
+      "command": "dotnet",
+      "args": ["clean", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "type": "process",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build",
+      "command": "dotnet",
+      "args": ["build", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "type": "process",
+      "dependsOn": "clean",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "clean release",
+      "command": "dotnet",
+      "args": ["clean", "--configuration", "Release", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "type": "process",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish",
+      "command": "dotnet",
+      "args": ["publish", "--configuration", "Release", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "type": "process",
+      "dependsOn": "clean release",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "host start",
+      "command": "func",
+      "args": ["host", "start", "--dotnet-isolated-debug"],
+      "type": "shell",
+      "dependsOn": "build",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^.*$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*Azure Functions Core Tools.*$",
+          "endsPattern": "^.*Host lock lease acquired.*$|^.*Worker process started and initialized.*$"
+        }
+      },
+      "options": {
+        "env": {
+          "languageWorkers__dotnet_isolated__arguments": "--debugport 9229"
+        }
+      }
+    }
+  ]
+}

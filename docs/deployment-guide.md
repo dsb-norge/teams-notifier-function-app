@@ -1,0 +1,339 @@
+# Deployment Guide
+
+End-to-end instructions for deploying the Teams Notification Bot. This guide
+covers infrastructure provisioning, application deployment, Teams app
+installation, and end-to-end verification.
+
+> **Before you begin:** Complete all items in the [Prerequisites](prerequisites.md)
+> checklist.
+
+## Overview
+
+The deployment consists of three components:
+
+1. **Infrastructure** -- Terraform module provisions all Azure resources (Function
+   App, Storage, Key Vault, Bot Service, VNet, monitoring).
+2. **Application code** -- .NET 10 Function App published via Azure Functions Core
+   Tools.
+3. **Teams app** -- Manifest package generated from Terraform outputs and uploaded
+   to the Teams Admin Center.
+
+Each step depends on the previous one. Follow the steps in order.
+
+---
+
+## Step 1: Deploy Infrastructure
+
+Create a Terraform root module that calls the Teams Notification Bot module:
+
+```hcl
+module "teams_notification_bot" {
+  source = "path/to/terraform-module"
+
+  name                = "my-notification-bot"
+  resource_group_name = "<resource-group>"
+  bot_app_id          = "<bot-app-id>"
+  api_app_id          = "<api-app-id>"
+  api_app_object_id   = "<api-app-object-id>"
+
+  alert_target_alias = "ops-alerts"  # optional, empty string disables
+
+  management_ip_rules = [
+    {
+      name        = "office"
+      description = "Office network"
+      cidr        = "203.0.113.0/24"
+    }
+  ]
+}
+```
+
+See the [Module Reference](#module-reference) section below for all inputs and
+outputs.
+
+Initialize and apply:
+
+```bash
+terraform init && terraform plan -out=tfplan && terraform apply tfplan
+```
+
+The module creates approximately 30 resources (VNet, private endpoints, Flex
+Consumption Function App, Storage, Key Vault, Bot Service, Log Analytics,
+Application Insights). After a successful apply, note the key outputs:
+
+The infrastructure team should provide these values from the Terraform outputs:
+
+| Output | Used in |
+|--------|---------|
+| `function_app_name` | Code deployment (Step 4) |
+| `function_app_hostname` | API base URL (Step 9) |
+| `uami_principal_id` | FIC setup (Step 2) |
+| `key_vault_name` | Key Vault secret (Step 3) |
+
+---
+
+## Step 2: Create Federated Identity Credential
+
+After Terraform creates the UAMI, establish the FIC trust between the UAMI and
+the Bot App Registration. This enables passwordless Bot Framework
+authentication.
+
+```bash
+UAMI_PRINCIPAL_ID="<uami-principal-id>"  # From Terraform output
+TENANT_ID="$(az account show --query tenantId -o tsv)"
+
+az ad app federated-credential create \
+  --id "<bot-app-id>" \
+  --parameters '{
+    "name": "uami-fic",
+    "issuer": "https://login.microsoftonline.com/'"$TENANT_ID"'/v2.0",
+    "subject": "'"$UAMI_PRINCIPAL_ID"'",
+    "audiences": ["api://AzureADTokenExchange"],
+    "description": "UAMI federated credential for Bot Framework auth"
+  }'
+```
+
+Verify the credential was created:
+
+```bash
+az ad app federated-credential list --id "<bot-app-id>" --query '[].name'
+```
+
+> **Why FIC?** The FIC allows the Function App's managed identity to
+> authenticate as the Bot App Registration without a client secret. This
+> eliminates secret rotation overhead in production. A client secret is only
+> needed for local Dev Tunnels testing.
+
+---
+
+## Step 3: Configure Key Vault
+
+Store the bot client secret in Key Vault. This secret is only used for local
+Dev Tunnels testing -- production uses the FIC from Step 2.
+
+```bash
+az keyvault secret set \
+  --vault-name "<key-vault-name>" \
+  --name bot-client-secret \
+  --value "$BOT_CLIENT_SECRET"
+```
+
+The Terraform module configures the Function App with a Key Vault reference for
+this secret. No additional application configuration is needed.
+
+---
+
+## Step 4: Deploy Function App
+
+Build and publish:
+
+```bash
+cd src/TeamsNotificationBot
+dotnet publish -c Release -o ./publish
+func azure functionapp publish "<function-app-name>" --dotnet-isolated
+```
+
+> **Note:** The `func` CLI output may not list all functions (e.g., functions
+> with custom routes). Use `az functionapp function list` to verify.
+
+Verify the deployment with a health check (no auth required):
+
+```bash
+curl -s "https://<function-app-hostname>/api/health" | jq .
+# Expected: { "status": "healthy" }
+```
+
+If this times out, ensure your IP is in `management_ip_rules`.
+
+---
+
+## Step 5: Package Teams App
+
+The `teams-app-package/` directory contains the manifest template and icons.
+Use the packaging script to generate a ZIP suitable for upload:
+
+```bash
+cd teams-app-package
+
+# The script reads Terraform outputs to populate the manifest
+./create-teams-app-package.sh
+```
+
+This produces a `.zip` file containing:
+
+- `manifest.json` -- populated with the bot's app ID, hostname, and display name
+- `color.png` -- 192x192 color icon
+- `outline.png` -- 32x32 outline icon
+
+---
+
+## Step 6: Install in Teams
+
+### 6.1 Upload to Org Catalog
+
+1. Open the [Teams Admin Center](https://admin.teams.microsoft.com/policies/manage-apps).
+2. Navigate to **Teams apps** > **Manage apps**.
+3. Click **Upload new app** and select the ZIP from Step 5.
+4. Verify the app appears in the list with status **Allowed**.
+
+> **If the app shows as Blocked:** Check the org-wide app permission policy
+> under **Permission policies**. Custom apps may be blocked by default.
+
+### 6.2 Install in a Team
+
+1. Open Microsoft Teams.
+2. Navigate to the target team and channel.
+3. Click **+** (Add a tab) or go to **Apps** > search for the bot name.
+4. Click **Add to a team** and select the target channel.
+
+When the bot is installed, it sends a greeting message to the channel and
+automatically stores the conversation reference for future proactive
+notifications.
+
+---
+
+## Step 7: Create Aliases
+
+Aliases map friendly names to Teams channels. They are used in API URLs for
+routing notifications.
+
+### Via Chat Command
+
+In the channel where the bot is installed, send:
+
+```
+set-alias ops-alerts Operational alerts channel
+```
+
+This creates the alias `ops-alerts` pointing to the current channel.
+
+### Via Interactive Form
+
+Send the command:
+
+```
+create-alias
+```
+
+The bot responds with an Adaptive Card form where you can fill in the alias
+name and description interactively.
+
+### Verify Aliases
+
+```
+list-aliases
+```
+
+The bot responds with a card listing all registered aliases and their target
+channels.
+
+---
+
+## Step 8: Configure Alert Webhook (Optional)
+
+To route Azure Monitor alerts to a Teams channel, set `alert_target_alias` in
+the module call (e.g., `alert_target_alias = "ops-alerts"`) and re-apply
+Terraform. This creates an Action Group with an AAD-authenticated webhook
+pointing to `/api/v1/alert/ops-alerts`. Reference this Action Group in your
+alert rules.
+
+---
+
+## Step 9: End-to-End Verification
+
+Run through each endpoint to confirm the full deployment is working. First,
+set up variables used by all subsequent commands:
+
+```bash
+HOST="https://<function-app-hostname>"
+TOKEN=$(az account get-access-token \
+  --resource "api://<api-app-id>" \
+  --query accessToken -o tsv)
+```
+
+**Health check** and **OpenAPI spec** (no auth required):
+
+```bash
+curl -s "$HOST/api/health" | jq .
+curl -s "$HOST/api/v1/openapi.yaml" | head -20
+```
+
+**Check-in** and **send notification** (with auth):
+
+```bash
+curl -s -X POST "$HOST/api/v1/checkin/ops-alerts" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+
+curl -s -X POST "$HOST/api/v1/notify/ops-alerts" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: text/plain" \
+  -d "Deployment complete. All systems operational." | jq .
+```
+
+**Idempotency** -- send the same request twice with the same key:
+
+```bash
+IDEM_KEY=$(uuidgen)
+for i in 1 2; do
+  curl -s -X POST "$HOST/api/v1/notify/ops-alerts" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: text/plain" \
+    -H "Idempotency-Key: $IDEM_KEY" \
+    -d "Idempotency test" | jq .
+done
+```
+
+The second request should return the cached response from the first.
+
+**Error cases:**
+
+```bash
+# Auth rejection (expect 401)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/ops-alerts" \
+  -H "Content-Type: text/plain" -d "No token"
+
+# Unknown alias (expect 404)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexistent" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/plain" -d "Bad alias"
+```
+
+---
+
+## Module Reference
+
+### Inputs
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `name` | `string` | yes | -- | Base name for all resources. Max 22 characters excluding hyphens. |
+| `resource_group_name` | `string` | yes | -- | Name of the pre-existing resource group. |
+| `bot_app_id` | `string` | yes | -- | Client ID of the Bot App Registration (SingleTenant, `AzureADMultipleOrgs`). |
+| `api_app_id` | `string` | yes | -- | Client ID of the API App Registration (EasyAuth). |
+| `api_app_object_id` | `string` | yes | -- | Object ID of the API App Registration. Used by Action Group AAD auth. |
+| `alert_target_alias` | `string` | no | `""` | Channel alias for alert webhook delivery. Empty string disables alert resources. |
+| `app_namespace` | `string` | no | `"TeamsNotificationBot"` | Root .NET namespace. Used in Log Analytics KQL queries for logger filtering. |
+| `location` | `string` | no | `"norwayeast"` | Azure region for all resources. |
+| `management_ip_rules` | `list(object)` | no | `[]` | IP addresses/CIDRs allowed for management access (deploy, test). Each object has `name`, `description`, `cidr`. |
+| `vnet_address_space` | `list(string)` | no | `["10.0.0.0/16"]` | Address space for the virtual network. |
+| `subnet_function_app_prefix` | `string` | no | `"10.0.0.0/24"` | CIDR for the Function App VNet integration subnet. Must be at least /24. |
+| `subnet_private_endpoints_prefix` | `string` | no | `"10.0.1.0/24"` | CIDR for the private endpoints subnet. |
+| `tags` | `map(string)` | no | `{}` | Additional tags merged with module-managed tags. Module tags take precedence on conflict. |
+| `deploy_github_actions_from` | `map(object)` | no | `{}` | GitHub repos for CI/CD OIDC. Creates a deploy UAMI with FICs when non-empty. |
+| `github_org` | `string` | no | `""` | GitHub organization name for OIDC subject claims in deploy UAMI FICs. |
+
+### Outputs
+
+| Name | Description |
+|------|-------------|
+| `function_app_name` | The name of the Function App resource. |
+| `function_app_hostname` | The default hostname of the Function App. |
+| `bot_service_name` | The name of the Bot Service resource. |
+| `storage_account_name` | The name of the Storage Account. |
+| `key_vault_name` | The name of the Key Vault. |
+| `uami_client_id` | Client ID of the bot's User-Assigned Managed Identity. |
+| `uami_principal_id` | Principal ID of the bot's UAMI (needed for FIC setup). |
+| `deploy_uami_client_id` | Client ID of the deploy UAMI. Null when `deploy_github_actions_from` is empty. |
+| `resource_group_name` | The resource group name (passthrough from input). |
+| `log_analytics_workspace_id` | The resource ID of the Log Analytics workspace. |
+| `application_insights_connection_string` | App Insights connection string (sensitive). |
+| `application_insights_instrumentation_key` | App Insights instrumentation key (sensitive). |
