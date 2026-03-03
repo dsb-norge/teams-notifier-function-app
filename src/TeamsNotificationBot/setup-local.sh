@@ -7,13 +7,13 @@ set -euo pipefail
 # Usage: ./setup-local.sh [offline|online]
 #
 #   offline (default) — Mock values, no Azure access needed
-#   online            — Real secrets from Key Vault, seeds Azurite from Azure
+#   online            — Real config, seeds Azurite from Azure
 #
 # Online mode requires these environment variables:
-#   BOT_APP_ID       — Entra ID app registration client ID for Bot Framework auth
-#   TENANT_ID        — Azure AD tenant ID
-#   KEY_VAULT        — Key Vault name containing the bot-client-secret
-#   STORAGE_ACCOUNT  — Storage account name to seed conversation references from
+#   BOT_APP_ID         — Entra ID app registration client ID for Bot Framework auth
+#   TENANT_ID          — Azure AD tenant ID
+#   BOT_CLIENT_SECRET  — Bot app registration client secret (create via: az ad app credential reset)
+#   STORAGE_ACCOUNT    — Storage account name to seed conversation references from
 ###############################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +22,7 @@ SETTINGS_FILE="${SCRIPT_DIR}/local.settings.json"
 # Azure resource constants — override via environment variables for your deployment
 BOT_APP_ID="${BOT_APP_ID:-00000000-0000-0000-0000-000000000000}"
 TENANT_ID="${TENANT_ID:-00000000-0000-0000-0000-000000000000}"
-KEY_VAULT="${KEY_VAULT:-your-key-vault-name}"
+BOT_CLIENT_SECRET="${BOT_CLIENT_SECRET:-}"
 STORAGE_ACCOUNT="${STORAGE_ACCOUNT:-your-storage-account}"
 TABLE_NAME="conversationreferences"
 IDEMPOTENCY_TABLE_NAME="idempotencykeys"
@@ -38,10 +38,10 @@ usage() {
     echo "Usage: $0 [offline|online]"
     echo ""
     echo "  offline  Generate local.settings.json with mock values (default)"
-    echo "  online   Fetch secrets from Key Vault, seed Azurite, generate real config"
+    echo "  online   Seed Azurite from Azure, generate real config"
     echo ""
     echo "Prerequisites for online mode:"
-    echo "  - Environment variables set: BOT_APP_ID, TENANT_ID, KEY_VAULT, STORAGE_ACCOUNT"
+    echo "  - Environment variables set: BOT_APP_ID, TENANT_ID, BOT_CLIENT_SECRET, STORAGE_ACCOUNT"
     echo "  - az CLI logged in (az login), correct subscription selected"
     echo "  - Azurite running on default ports: azurite --silent --location /tmp/azurite --skipApiVersionCheck"
     echo "  - jq installed"
@@ -105,8 +105,9 @@ check_prerequisites() {
         echo "ERROR: TENANT_ID not set. Export it before running online mode."
         exit 1
     fi
-    if [[ "${KEY_VAULT}" == "your-key-vault-name" ]]; then
-        echo "ERROR: KEY_VAULT not set. Export it before running online mode."
+    if [[ -z "${BOT_CLIENT_SECRET}" ]]; then
+        echo "ERROR: BOT_CLIENT_SECRET not set. Export it before running online mode."
+        echo "  Create one with: az ad app credential reset --id <bot-app-id> --display-name local-dev"
         exit 1
     fi
     if [[ "${STORAGE_ACCOUNT}" == "your-storage-account" ]]; then
@@ -130,14 +131,6 @@ check_prerequisites() {
     fi
     echo "  Azurite: OK"
     echo ""
-}
-
-fetch_secret() {
-    local secret_name="$1"
-    az keyvault secret show \
-        --vault-name "${KEY_VAULT}" \
-        --name "${secret_name}" \
-        --query "value" -o tsv
 }
 
 seed_azurite() {
@@ -233,15 +226,9 @@ setup_online() {
 
     check_prerequisites
 
-    echo "Fetching secrets from Key Vault '${KEY_VAULT}'..."
-    local bot_secret
-    bot_secret=$(fetch_secret "bot-client-secret")
-    echo "  Fetched bot-client-secret"
-    echo ""
-
     seed_azurite
 
-    write_settings "false" "${bot_secret}"
+    write_settings "false" "${BOT_CLIENT_SECRET}"
     echo ""
     echo "Ready! Ensure Azurite is running (with --skipApiVersionCheck), then: func host start"
     echo ""

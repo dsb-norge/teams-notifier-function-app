@@ -106,10 +106,9 @@ Sends real messages to Teams from a locally running function app. Uses Azurite f
 
 This will:
 1. Verify prerequisites (az CLI, jq, Azurite connectivity)
-2. Fetch `bot-client-secret` from Key Vault (`<key-vault-name>`)
-3. Create the `conversationreferences` table and `notifications` queue in Azurite
-4. Copy all conversation references from Azure Table Storage into Azurite
-5. Generate `local.settings.json` with real secrets and real channel aliases
+2. Create the `conversationreferences` table and `notifications` queue in Azurite
+3. Copy all conversation references from Azure Table Storage into Azurite
+4. Generate `local.settings.json` with real config and channel aliases
 
 Start the function app with `func host start`, then send a test message using the same curl pattern shown in the Offline Mode section, replacing the alias with a real one. Expected: HTTP 202, message appears in the Teams channel within seconds.
 
