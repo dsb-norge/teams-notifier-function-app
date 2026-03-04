@@ -172,7 +172,7 @@ src/TeamsNotificationBot/
   host.json            # Functions host configuration
   appsettings.json     # M365 Agents SDK auth config
   openapi.yaml         # OpenAPI specification
-  app-contract.json    # Shared contract with Terraform module
+  app-requirements.json # App requirements for Terraform module and Teams manifest
   setup-local.sh       # Local dev setup script (offline/online)
 
 tests/TeamsNotificationBot.Tests/
