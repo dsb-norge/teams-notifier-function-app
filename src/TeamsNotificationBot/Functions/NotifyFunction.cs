@@ -115,7 +115,7 @@ public class NotifyFunction
 
         // Check idempotency
         var idempotencyKey = req.Headers["Idempotency-Key"].FirstOrDefault();
-        if (idempotencyKey != null)
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
             var cached = await _idempotencyService.GetAsync("notify", idempotencyKey);
             if (cached != null)
@@ -159,7 +159,7 @@ public class NotifyFunction
         };
 
         // Store idempotency record
-        if (idempotencyKey != null)
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
             await _idempotencyService.SetAsync("notify", idempotencyKey,
                 StatusCodes.Status202Accepted, JsonSerializer.Serialize(responseBody));

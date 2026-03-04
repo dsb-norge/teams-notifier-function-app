@@ -26,7 +26,7 @@ public class AzuriteFixture : IAsyncLifetime
     private const int TablePort = 10002;
     private const int QueuePort = 10001;
     private const int BlobPort = 10000;
-    private const string AzuriteDataDir = "/tmp/azurite-integration-tests";
+    private static readonly string AzuriteDataDir = Path.Combine(Path.GetTempPath(), "azurite-integration-tests");
 
     private Process? _azuriteProcess;
     private bool _weStartedAzurite;
@@ -39,7 +39,7 @@ public class AzuriteFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        if (IsPortOpen(TablePort))
+        if (IsPortOpen(TablePort) && IsPortOpen(QueuePort))
         {
             // Azurite already running (e.g. via setup-local.sh) — reuse it
             return;
