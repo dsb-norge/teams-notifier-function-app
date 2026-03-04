@@ -10,6 +10,14 @@
 
 ## 1. Overview
 
+> **Why are there multiple identities?** The bot spans two separate trust domains
+> that cannot share a single credential. Entra ID handles API callers and Azure
+> resource access, while Bot Framework authenticates Teams message traffic through
+> Microsoft's `botframework.com` tenant. Because these issuers, audiences, and trust
+> models are completely separate, one identity cannot serve both. If you are only
+> calling the REST API, you interact with the **API App Registration** alone — the
+> other identities are internal plumbing between the bot and Teams.
+
 The Teams Notification Bot uses **four distinct identities** to operate across two authentication
 domains that do not share a trust boundary:
 
