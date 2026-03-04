@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Teams Notification Bot API
   description: REST API for sending notifications to Microsoft Teams channels via Azure Bot Service.
-  version: 1.1.0
+  version: 1.0.0
   contact:
     name: Platform Team
 
@@ -121,6 +121,40 @@ paths:
       security:
         - bearerAuth: []
 
+  /v1/send:
+    post:
+      operationId: send
+      summary: Send a notification to a specific target
+      description: |
+        Enqueues a message for delivery to a specific Teams channel, personal chat,
+        or group chat identified by target type and IDs. Returns 202 immediately;
+        delivery is asynchronous.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendRequest'
+      responses:
+        '202':
+          description: Message accepted and queued for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+        - bearerAuth: []
+
   /v1/aliases:
     get:
       operationId: getAliases
@@ -168,7 +202,7 @@ paths:
                     example: ok
                   version:
                     type: string
-                    example: 1.1.0
+                    example: 1.0.0
                   timestamp:
                     type: string
                     format: date-time
@@ -204,7 +238,6 @@ components:
       type: object
       required:
         - message
-        - format
       properties:
         message:
           description: Message content — plain text string or Adaptive Card JSON object
@@ -215,7 +248,48 @@ components:
         format:
           type: string
           enum: [text, adaptive-card]
+          default: text
           example: text
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional key-value metadata
+
+    SendRequest:
+      type: object
+      required:
+        - target
+        - message
+      properties:
+        target:
+          type: object
+          required:
+            - type
+          properties:
+            type:
+              type: string
+              enum: [channel, personal, groupChat]
+              description: Target type
+            teamId:
+              type: string
+              description: Required for channel type
+            channelId:
+              type: string
+              description: Required for channel type
+            userId:
+              type: string
+              description: Required for personal type
+            chatId:
+              type: string
+              description: Required for groupChat type
+        message:
+          type: string
+          description: Message content — plain text or Adaptive Card JSON string
+        format:
+          type: string
+          enum: [text, adaptive-card]
+          default: text
         metadata:
           type: object
           additionalProperties:

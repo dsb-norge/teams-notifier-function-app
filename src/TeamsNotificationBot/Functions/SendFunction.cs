@@ -73,15 +73,31 @@ public class SendFunction
                 "Message is required.", instance, correlationId);
         }
 
+        // Validate format
+        if (!string.IsNullOrWhiteSpace(request.Format) &&
+            request.Format != "text" && request.Format != "adaptive-card")
+        {
+            return ApiResponse.Problem(400, "Bad Request",
+                "Invalid format. Expected 'text' or 'adaptive-card'.", instance, correlationId);
+        }
+
         // Validate adaptive card if applicable
         if (request.Format == "adaptive-card")
         {
-            var (isValid, cardError) = AdaptiveCardValidator.Validate(
-                JsonDocument.Parse(request.Message).RootElement);
-            if (!isValid)
+            try
+            {
+                var (isValid, cardError) = AdaptiveCardValidator.Validate(
+                    JsonDocument.Parse(request.Message).RootElement);
+                if (!isValid)
+                {
+                    return ApiResponse.Problem(400, "Bad Request",
+                        cardError ?? "Invalid adaptive card.", instance, correlationId);
+                }
+            }
+            catch (JsonException)
             {
                 return ApiResponse.Problem(400, "Bad Request",
-                    cardError ?? "Invalid adaptive card.", instance, correlationId);
+                    "Adaptive card payload must be valid JSON.", instance, correlationId);
             }
         }
 

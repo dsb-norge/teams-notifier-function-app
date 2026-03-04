@@ -6,10 +6,13 @@
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| POST | `/api/notify/{alias}` | Bearer (Entra ID) | Queue a notification for a channel alias |
+| POST | `/api/v1/notify/{alias}` | Bearer (Entra ID) | Queue a notification for a channel alias |
+| POST | `/api/v1/alert/{alias}` | Bearer (Entra ID) | Receive an Azure Monitor Common Alert Schema webhook |
+| POST | `/api/v1/send` | Bearer (Entra ID) | Send a notification to a specific target |
+| POST | `/api/v1/checkin/{alias}` | Bearer (Entra ID) | Health check with optional diagnostic message |
+| GET | `/api/v1/aliases` | Bearer (Entra ID) | List configured channel aliases |
+| GET | `/api/health` | None | Liveness probe |
 | POST | `/api/messages` | Bot Framework JWT | Teams webhook (conversationUpdate events) |
-| POST | `/api/checkin` | Bearer (Entra ID) | Health check with optional diagnostic message |
-| GET | `/api/aliases` | Bearer (Entra ID) | List configured channel aliases |
 
 ## Architecture
 

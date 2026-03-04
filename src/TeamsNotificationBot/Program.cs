@@ -43,6 +43,9 @@ var host = new HostBuilder()
             counterStore = new AzureTableCounterStore(tableServiceClient, "ThrottlingTrollCounters");
         }
 
+        var rateLimitPermit = int.TryParse(Environment.GetEnvironmentVariable("RateLimit__PermitLimit"), out var p) ? p : 60;
+        var rateLimitInterval = int.TryParse(Environment.GetEnvironmentVariable("RateLimit__IntervalInSeconds"), out var i) ? i : 60;
+
         worker.UseThrottlingTroll(options =>
         {
             options.CounterStore = counterStore;
@@ -54,8 +57,8 @@ var host = new HostBuilder()
                     {
                         LimitMethod = new FixedWindowRateLimitMethod
                         {
-                            PermitLimit = 60,
-                            IntervalInSeconds = 60
+                            PermitLimit = rateLimitPermit,
+                            IntervalInSeconds = rateLimitInterval
                         },
                         IdentityIdExtractor = request =>
                         {
@@ -182,6 +185,7 @@ var host = new HostBuilder()
             var convRefClient = new TableClient(connectionString, "conversationreferences");
             var aliasClient = new TableClient(connectionString, "aliases");
             var teamLookupClient = new TableClient(connectionString, "teamlookup");
+            convRefClient.CreateIfNotExists();
             aliasClient.CreateIfNotExists();
             teamLookupClient.CreateIfNotExists();
             services.AddSingleton(convRefClient);
@@ -198,8 +202,9 @@ var host = new HostBuilder()
             services.AddKeyedSingleton("botoperations-poison",
                 new QueueClient(connectionString, "botoperations-poison",
                     new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 }));
-            services.AddSingleton<IIdempotencyService>(
-                new IdempotencyService(new TableClient(connectionString, "idempotencykeys")));
+            var idempotencyClient = new TableClient(connectionString, "idempotencykeys");
+            idempotencyClient.CreateIfNotExists();
+            services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
         }
         else
         {
@@ -218,6 +223,7 @@ var host = new HostBuilder()
             var convRefClient = new TableClient(tableUri, "conversationreferences", credential);
             var aliasClient = new TableClient(tableUri, "aliases", credential);
             var teamLookupClient = new TableClient(tableUri, "teamlookup", credential);
+            convRefClient.CreateIfNotExists();
             aliasClient.CreateIfNotExists();
             teamLookupClient.CreateIfNotExists();
             services.AddSingleton(convRefClient);
@@ -244,8 +250,9 @@ var host = new HostBuilder()
                     credential,
                     new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 }));
 
-            services.AddSingleton<IIdempotencyService>(
-                new IdempotencyService(new TableClient(tableUri, "idempotencykeys", credential)));
+            var idempotencyClient = new TableClient(tableUri, "idempotencykeys", credential);
+            idempotencyClient.CreateIfNotExists();
+            services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
         }
 
         // Queue management service (for queue commands + poison queue monitoring)

@@ -19,7 +19,7 @@ flowchart LR
 - **Azure Monitor integration** — receive Common Alert Schema webhooks with severity-colored cards
 - **Interactive bot commands** — manage aliases, inspect queues, and run diagnostics from Teams
 - **Rate limiting** — per-caller throttling (60 req/60s) with `Retry-After` headers
-- **Idempotency** — optional `Idempotency-Key` header prevents duplicate deliveries (24hr TTL)
+- **Idempotency** — optional `Idempotency-Key` header prevents duplicate deliveries
 - **Private networking** — VNet integration with private endpoints for storage
 - **Identity-based auth** — managed identity for Azure resources, federated credential for Bot Framework (no stored secrets)
 

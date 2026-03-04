@@ -64,6 +64,9 @@ public class QueueManagementService : IQueueManagementService
 
     public async Task<List<PeekedMessage>> PeekMessagesAsync(string queueName, int count)
     {
+        if (count < 1)
+            return [];
+
         var client = GetPoisonClient(queueName);
         var response = await client.PeekMessagesAsync(Math.Min(count, 32));
         return [.. response.Value];

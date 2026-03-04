@@ -39,10 +39,10 @@ Functions available at:
 | Alert | `POST /api/v1/alert/{alias}` |
 | Send | `POST /api/v1/send` |
 | GetAliases | `GET /api/v1/aliases` |
-| Health | `GET /api/v1/health` |
-| CheckIn | `POST /api/checkin` |
+| Health | `GET /api/health` |
+| CheckIn | `POST /api/v1/checkin/{alias}` |
 | BotMessages | `POST /api/messages` |
-| OpenApi | `GET /api/openapi` |
+| OpenApi | `GET /api/v1/openapi.yaml` |
 | QueueProcessor | Queue trigger (automatic) |
 | PoisonQueueMonitor | Timer trigger (automatic) |
 
