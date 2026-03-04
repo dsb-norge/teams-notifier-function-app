@@ -129,6 +129,17 @@ sequenceDiagram
 - The token endpoint is:
   `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token`
 
+### Alert Webhook Authentication
+
+Azure Monitor Action Groups use the same API app registration for AAD-authenticated
+webhook calls. The Action Group acquires a token from Entra ID with audience
+`api://<api_app_id>` and includes it as a Bearer token in webhook requests. EasyAuth
+on the Function App validates this token the same way it validates direct API calls.
+
+**Deployment constraint:** Creating an Action Group with AAD webhook auth requires
+the deploying identity to own the target app registration. See
+[prerequisites section 3.2](prerequisites.md#32-api-app-registration).
+
 ---
 
 ## 4. Bot Framework Authentication

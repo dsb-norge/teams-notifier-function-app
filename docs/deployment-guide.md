@@ -213,6 +213,10 @@ channels.
 
 ## Step 7: Configure Alert Webhook (Optional)
 
+> **Prerequisite:** The identity running Terraform must be an owner of the API app
+> registration (section 3.2 in [prerequisites](prerequisites.md)). If not, Action Group
+> creation fails with `AadWebhookResourceNotOwnedByCaller`.
+
 To route Azure Monitor alerts to a Teams channel, set `alert_target_alias` in
 the module call (e.g., `alert_target_alias = "ops-alerts"`) and re-apply
 Terraform. This creates an Action Group with an AAD-authenticated webhook

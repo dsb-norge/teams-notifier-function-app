@@ -25,6 +25,7 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 | `403 Forbidden` on `/api/v1/notify/{alias}` | Caller missing `Notifications.Send` app role | Assign the `Notifications.Send` app role to the calling service principal in the API's Entra ID app registration. See [access-and-roles.md](access-and-roles.md). |
 | `403 Forbidden` despite having the role | Wrong audience (`aud`) claim in the token | The token must target `api://<api-app-id>`. If using a different resource URI, the EasyAuth middleware rejects the request. |
 | `429 Too Many Requests` | Rate limit exceeded (60 requests per 60 seconds per principal) | Back off and retry after the `Retry-After` header value. Rate limits are per-principal, not per-IP. |
+| `terraform apply` fails with `AadWebhookResourceNotOwnedByCaller` when `alert_target_alias` is set | The deploying identity is not an owner of the API app registration | Add the deploying identity as an owner: `az ad app owner add --id <api-app-id> --owner-object-id <deployer-oid>`. See [prerequisites section 3.2](prerequisites.md#32-api-app-registration). |
 
 ### Delivery Issues
 

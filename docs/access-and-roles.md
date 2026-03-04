@@ -502,6 +502,11 @@ az ad sp create-for-rbac \
 - **Duration:** Continuous
 - **Scope:** Storage Account
 
+**Alert webhook deployment:** If `alert_target_alias` is set, the deploying identity
+must additionally be an **owner** of the API app registration. This is an Azure platform
+requirement for Action Groups with AAD-authenticated webhooks — it cannot be satisfied
+by RBAC roles alone. See [prerequisites section 3.2](prerequisites.md#32-api-app-registration).
+
 ---
 
 ## 5. Troubleshooting Permission Issues
