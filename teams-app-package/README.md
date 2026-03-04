@@ -4,7 +4,7 @@ This directory contains the manifest generation tooling for the Teams Notificati
 
 ## Files
 
-- `create-teams-app-package.sh` - Generates `manifest.json` and ZIP package from the app contract and branding metadata
+- `create-teams-app-package.sh` - Generates `manifest.json` and ZIP package from app requirements and branding metadata
 - `Upload-TeamsAppPackage.ps1` - Uploads/updates the ZIP package to the org app catalog via Microsoft Graph SDK
 - `app-metadata.json` - App names, descriptions, developer info (customize per deployment)
 - `color.png` - 192x192 color icon (generic placeholder)
@@ -15,7 +15,7 @@ This directory contains the manifest generation tooling for the Teams Notificati
 
 The script reads from two sources plus a required argument:
 
-1. **App contract** (`src/TeamsNotificationBot/app-contract.json`) -- commands, scopes, version (generated from code)
+1. **App requirements** (`src/TeamsNotificationBot/app-requirements.json`) -- commands, scopes, version (generated from code)
 2. **Branding metadata** (`app-metadata.json`) -- app names, descriptions, developer info
 3. **Bot App ID** (argument) -- the Entra ID app registration client ID for the bot
 
@@ -37,7 +37,7 @@ cd teams-app-package
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--bot-app-id <GUID>` | Yes | -- | Entra ID app registration client ID |
-| `--contract <path>` | No | `../src/TeamsNotificationBot/app-contract.json` | Path to app contract |
+| `--requirements <path>` | No | `../src/TeamsNotificationBot/app-requirements.json` | Path to app requirements |
 | `--metadata <path>` | No | `./app-metadata.json` | Path to branding metadata |
 | `--icons-dir <dir>` | No | Script directory | Directory containing `color.png` and `outline.png` |
 | `--output-dir <dir>` | No | Script directory | Output directory for manifest and ZIP |
@@ -162,4 +162,4 @@ Or: In Teams client > Apps > Manage your apps > Upload an app to your org's app 
 
 - The manifest uses `isNotificationOnly: false` with `scopes: ["team", "personal", "groupChat"]`
 - RSC permission `ChannelMessage.Send.Group` enables proactive messaging to channels
-- The `commandLists` field is included only when present in the contract (supports both notification-only and interactive bots)
+- The `commandLists` field is included only when present in the requirements (supports both notification-only and interactive bots)

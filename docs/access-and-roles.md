@@ -453,7 +453,7 @@ az ad sp create-for-rbac \
 **Coordination Required:**
 - Identity Team creates API App Registration (for EasyAuth) → provides `API_APP_ID` to DevOps
 - DevOps deploys infrastructure (Terraform creates UAMI and Bot Service with `UserAssignedMSI`)
-- DevOps generates Teams App manifest using `scripts/generate-contract.sh` → builds ZIP package
+- DevOps generates Teams App manifest using `scripts/generate-requirements.sh` + `teams-app-package/create-teams-app-package.sh` → builds ZIP package
 - Microsoft 365 Admin uploads Teams App package
 - Team Owners install app in their teams and provide Team/Channel IDs to DevOps
 - DevOps updates Terraform with Team/Channel IDs

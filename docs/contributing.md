@@ -52,19 +52,19 @@ All tests must pass before submitting a pull request. Integration tests require 
 
 ---
 
-## 4. Contract Generation
+## 4. App Requirements
 
-The function app and Terraform module share an interface contract defined in `src/TeamsNotificationBot/app-contract.json`. This contract specifies queues, tables, routes, environment variables, and other infrastructure dependencies.
+The file `src/TeamsNotificationBot/app-requirements.json` declares the app's infrastructure and manifest dependencies. It is consumed by the Terraform module (queues, routes, auth settings, runtime version) and the manifest script (version, Teams app configuration, command lists).
 
-When you change queue names, table names, HTTP routes, function bindings, or required environment variables, regenerate and validate the contract:
+When you change queue names, HTTP routes, function bindings, required app settings, or auth configuration, regenerate and validate the requirements:
 
 ```bash
 cd scripts
-./generate-contract.sh
-./validate-contract.sh
+./generate-requirements.sh
+./validate-requirements.sh
 ```
 
-Always commit the updated `app-contract.json` alongside your code changes.
+Always commit the updated `app-requirements.json` alongside your code changes.
 
 ---
 
@@ -86,7 +86,7 @@ Always commit the updated `app-contract.json` alongside your code changes.
 
 1. **Branch from main** with a descriptive branch name.
 2. **All tests pass**: `dotnet test tests/TeamsNotificationBot.Tests/` exits with code 0.
-3. **Contract is up to date**: Run `scripts/validate-contract.sh` if you changed infrastructure dependencies.
+3. **Requirements are up to date**: Run `scripts/validate-requirements.sh` if you changed infrastructure dependencies.
 4. **No leaked secrets or identifiers**: Run `scripts/check-sanitization.sh` before publishing.
 5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 
@@ -99,9 +99,9 @@ Include:
 
 ### Review Checklist
 
-- Does the change maintain backward compatibility with the API contract?
+- Does the change maintain backward compatibility with the API?
 - Are new endpoints documented in `openapi.yaml`?
-- Are new app settings added to both `app-contract.json` and `local.settings.json.example`?
+- Are new app settings added to both `app-requirements.json` (via the seed file) and `local.settings.json.example`?
 - Do new services have corresponding unit tests?
 
 ---
