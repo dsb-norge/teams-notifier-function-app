@@ -134,6 +134,13 @@ az rest --method POST \
 See [access-and-roles.md](access-and-roles.md) for a complete reference on
 identity architecture, role assignments, and least-privilege guidance.
 
+> **Note:** If you plan to use Azure Monitor alert webhooks (`alert_target_alias` in the
+> Terraform module), the identity running `terraform apply` must be an **owner** of this
+> app registration. Azure Monitor Action Groups with AAD-authenticated webhooks require
+> the caller to own the target app registration — otherwise creation fails with
+> `AadWebhookResourceNotOwnedByCaller`. This does not apply if alerts are disabled
+> (the default).
+
 ### 3.3 Federated Identity Credential (FIC)
 
 The FIC links the bot's User-Assigned Managed Identity (UAMI) to the Bot App
