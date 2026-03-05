@@ -44,7 +44,7 @@ Functions available at:
 | BotMessages | `POST /api/messages` |
 | OpenApi | `GET /api/v1/openapi.yaml` |
 | QueueProcessor | Queue trigger (automatic) |
-| PoisonQueueMonitor | Timer trigger (automatic) |
+| PoisonQueueMonitor | Queue trigger (automatic) |
 
 All HTTP endpoints are served at `http://localhost:7071`.
 
@@ -121,7 +121,7 @@ Start the function app with `func host start`, then send a test message using th
 
 ## 5. Running Tests
 
-The test project uses xUnit and Moq with 142 tests covering all functions, services, middleware, and models.
+The test project uses xUnit and Moq covering all functions, services, middleware, and models.
 
 ```bash
 # Run all tests

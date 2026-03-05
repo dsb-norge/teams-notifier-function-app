@@ -122,7 +122,7 @@ Verify the deployment with a health check (no auth required):
 
 ```bash
 curl -s "https://<function-app-hostname>/api/health" | jq .
-# Expected: { "status": "healthy" }
+# Expected: { "status": "ok", "version": "...", "timestamp": "..." }
 ```
 
 If this times out, ensure your IP is in `management_ip_rules`.
@@ -252,8 +252,8 @@ curl -s -X POST "$HOST/api/v1/checkin/ops-alerts" \
 
 curl -s -X POST "$HOST/api/v1/notify/ops-alerts" \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: text/plain" \
-  -d "Deployment complete. All systems operational." | jq .
+  -H "Content-Type: application/json" \
+  -d '{"message": "Deployment complete. All systems operational.", "format": "text"}' | jq .
 ```
 
 **Idempotency** -- send the same request twice with the same key:
@@ -263,9 +263,9 @@ IDEM_KEY=$(uuidgen)
 for i in 1 2; do
   curl -s -X POST "$HOST/api/v1/notify/ops-alerts" \
     -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: text/plain" \
+    -H "Content-Type: application/json" \
     -H "Idempotency-Key: $IDEM_KEY" \
-    -d "Idempotency test" | jq .
+    -d '{"message": "Idempotency test", "format": "text"}' | jq .
 done
 ```
 
@@ -276,11 +276,12 @@ The second request should return the cached response from the first.
 ```bash
 # Auth rejection (expect 401)
 curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/ops-alerts" \
-  -H "Content-Type: text/plain" -d "No token"
+  -H "Content-Type: application/json" -d '{"message": "No token", "format": "text"}'
 
 # Unknown alias (expect 404)
 curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexistent" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/plain" -d "Bad alias"
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"message": "Bad alias", "format": "text"}'
 ```
 
 ---

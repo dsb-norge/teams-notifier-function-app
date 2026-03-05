@@ -12,6 +12,7 @@
 | POST | `/api/v1/checkin/{alias}` | Bearer (Entra ID) | Health check with optional diagnostic message |
 | GET | `/api/v1/aliases` | Bearer (Entra ID) | List configured channel aliases |
 | GET | `/api/health` | None | Liveness probe |
+| GET | `/api/v1/openapi.yaml` | None | OpenAPI specification |
 | POST | `/api/messages` | Bot Framework JWT | Teams webhook (conversationUpdate events) |
 
 ## Architecture

@@ -162,8 +162,8 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 | `aliases` | Maps alias names to conversation targets (channel, personal, groupChat) |
 | `conversationreferences` | Stores Bot Framework conversation references (auto-populated on bot install) |
 | `teamlookup` | Caches team metadata (team names) |
-| `idempotencykeys` | Deduplication records with 24-hour TTL |
-| `ThrottlingTrollCounters` | Rate limiter sliding window counters |
+| `idempotencykeys` | Deduplication records (no automatic expiry) |
+| `ThrottlingTrollCounters` | Rate limiter fixed window counters |
 
 **Queues** (4):
 
@@ -229,7 +229,7 @@ erDiagram
         string RowKey "idempotency key"
         string ResponseBody "cached JSON response"
         int StatusCode ""
-        datetime CreatedAt "expires after 24h"
+        datetime CreatedAt ""
     }
 
     ThrottlingTrollCounters {
