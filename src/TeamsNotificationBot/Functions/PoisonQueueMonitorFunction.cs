@@ -64,14 +64,15 @@ public class PoisonQueueMonitorFunction
             DateTimeOffset? enqueuedTime = null;
             try
             {
-                var doc = JsonDocument.Parse(messageJson);
+                using var doc = JsonDocument.Parse(messageJson);
                 if (doc.RootElement.TryGetProperty("enqueuedAt", out var ts))
                     enqueuedTime = ts.GetDateTimeOffset();
             }
             catch { /* best-effort parse */ }
 
             var cardJson = PoisonAlertCardBuilder.Build(queueName, messageJson, enqueuedTime);
-            var card = JsonDocument.Parse(cardJson).RootElement;
+            using var cardDoc = JsonDocument.Parse(cardJson);
+            var card = cardDoc.RootElement.Clone();
 
             var (pk, rk) = ResolveAliasTarget(alias);
             await _botService.SendAdaptiveCardAsync(pk, rk, card);

@@ -100,7 +100,8 @@ public class QueueProcessorFunction
         {
             if (queueMessage.Format == "adaptive-card")
             {
-                var card = JsonDocument.Parse(queueMessage.Message).RootElement;
+                using var cardDoc = JsonDocument.Parse(queueMessage.Message);
+                var card = cardDoc.RootElement.Clone();
                 await _botService.SendAdaptiveCardAsync(partitionKey, rowKey, card);
             }
             else

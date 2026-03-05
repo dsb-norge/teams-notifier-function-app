@@ -65,11 +65,11 @@ public class AzuriteFixture : IAsyncLifetime
         _azuriteProcess.Start();
         _weStartedAzurite = true;
 
-        // Wait for table service to become ready
+        // Wait for table and queue services to become ready
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < TimeSpan.FromSeconds(15))
         {
-            if (IsPortOpen(TablePort))
+            if (IsPortOpen(TablePort) && IsPortOpen(QueuePort))
                 return;
             await Task.Delay(200);
         }

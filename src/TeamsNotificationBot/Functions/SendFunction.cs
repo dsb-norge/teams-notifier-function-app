@@ -86,8 +86,8 @@ public class SendFunction
         {
             try
             {
-                var (isValid, cardError) = AdaptiveCardValidator.Validate(
-                    JsonDocument.Parse(request.Message).RootElement);
+                using var cardDoc = JsonDocument.Parse(request.Message);
+                var (isValid, cardError) = AdaptiveCardValidator.Validate(cardDoc.RootElement);
                 if (!isValid)
                 {
                     return ApiResponse.Problem(400, "Bad Request",

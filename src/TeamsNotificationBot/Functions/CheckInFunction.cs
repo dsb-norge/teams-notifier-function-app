@@ -51,7 +51,7 @@ public class CheckInFunction
             var body = await reader.ReadToEndAsync();
             if (!string.IsNullOrEmpty(body))
             {
-                var doc = JsonDocument.Parse(body);
+                using var doc = JsonDocument.Parse(body);
                 if (doc.RootElement.TryGetProperty("source", out var sourceElement))
                     source = sourceElement.GetString() ?? "unknown";
             }
