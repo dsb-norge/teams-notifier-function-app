@@ -220,7 +220,7 @@ across callers.
 
 | Parameter | Value |
 |-----------|-------|
-| Window | 60 seconds (sliding) |
+| Window | 60 seconds (fixed) |
 | Limit | 60 requests per window |
 | Key | `X-MS-CLIENT-PRINCIPAL-ID` header (per-caller, set by EasyAuth) |
 | Counter storage | `ThrottlingTrollCounters` Azure Table |

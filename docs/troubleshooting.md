@@ -34,7 +34,7 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 | `404 Not Found` on `/api/v1/notify/{alias}` | The alias does not exist | Create the alias first by using the `set-alias` bot command in a Teams channel where the bot is installed. Use `GET /api/v1/aliases` to list existing aliases. |
 | Message returns `202 Accepted` but never appears in Teams | Conversation reference is stale (team restructured, bot reinstalled) | Uninstall and reinstall the bot in the target team. This triggers a `conversationUpdate` event that refreshes the stored conversation reference. |
 | Messages appearing in the poison queue | Repeated delivery failures after 5 attempts | Use the `queue-status` bot command to view poison queue depth. Use `queue-peek` to inspect individual failed messages and their error details. Common causes: stale conversation references, expired bot credentials. |
-| Duplicate messages delivered to a channel | Idempotency key not provided, or retry after transient failure | Include an `Idempotency-Key` header in the request. The system deduplicates within a 24-hour window. |
+| Duplicate messages delivered to a channel | Idempotency key not provided, or retry after transient failure | Include an `Idempotency-Key` header in the request. The system deduplicates requests with the same key and operation type. |
 
 ### Function App Issues
 

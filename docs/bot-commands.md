@@ -65,7 +65,7 @@ Performs a health check and confirms the bot is reachable.
 **Example response:**
 
 ```
-Bot is online | Version: 1.1.0 | Time: 2026-01-15 14:30:00Z
+Bot is online | Version: 1.0.0 | Time: 2026-01-15 14:30:00Z
 ```
 
 ---
@@ -362,11 +362,11 @@ with color-coded severity indicators:
 
 | Severity | Color | Use case |
 |----------|-------|----------|
-| Sev0 | Red | Critical — immediate action required |
-| Sev1 | Red | Error — urgent attention needed |
-| Sev2 | Yellow | Warning — investigate soon |
-| Sev3 | Blue | Informational |
-| Sev4 | Blue | Verbose |
+| Sev0 | Red (Attention) | Critical — immediate action required |
+| Sev1 | Red (Attention) | Error — urgent attention needed |
+| Sev2 | Yellow (Warning) | Warning — investigate soon |
+| Sev3 | Blue (Accent) | Informational |
+| Sev4 | Green (Good) | Verbose |
 
 The card displays the alert rule name, severity, signal type, fired time, and affected resources
 extracted from the Common Alert Schema payload.

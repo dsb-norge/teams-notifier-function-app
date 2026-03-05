@@ -87,7 +87,7 @@ The API enforces per-principal rate limits to prevent abuse:
 
 | Parameter | Value |
 |-----------|-------|
-| Window | 60 seconds (sliding) |
+| Window | 60 seconds (fixed) |
 | Max requests | 60 per authenticated principal |
 | Scope | All endpoints combined |
 
@@ -179,7 +179,7 @@ Send a notification message to the Teams conversation identified by `{alias}`.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `message` | string or object | Yes | Message content. String for `text` format; object for `adaptive-card` format. |
-| `format` | string | Yes | Either `"text"` or `"adaptive-card"` |
+| `format` | string | No | `"text"` (default) or `"adaptive-card"` |
 | `metadata` | object | No | Key-value pairs (string values only) attached to the message for tracing |
 
 For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
@@ -274,9 +274,10 @@ The bot renders alerts as color-coded Adaptive Cards based on severity:
 
 | Severity | Color |
 |----------|-------|
-| Sev0, Sev1 | Red |
-| Sev2 | Yellow |
-| Sev3, Sev4 | Blue |
+| Sev0, Sev1 | Red (Attention) |
+| Sev2 | Yellow (Warning) |
+| Sev3 | Blue (Accent) |
+| Sev4 and others | Green (Good) |
 
 **Response — 202 Accepted**
 
@@ -324,7 +325,7 @@ If the request body is omitted or empty, the check-in proceeds with no source la
   "messageId": "msg-b2c3d4e5-f6a7-8901-bcde-f12345678901",
   "correlationId": "corr-23456789-bcde-f012-3456-789012345678",
   "timestamp": "2026-01-15T14:35:00.000Z",
-  "version": "1.1.0"
+  "version": "1.0.0"
 }
 ```
 
@@ -334,14 +335,18 @@ If the request body is omitted or empty, the check-in proceeds with no source la
 
 ### POST /v1/send
 
-Send a message directly using a conversation reference, bypassing alias resolution. This endpoint
-is for advanced integrations that maintain their own conversation references.
+Send a message directly to a specific Teams channel, personal chat, or group chat by providing
+the target type and IDs. This endpoint bypasses alias resolution.
 
 **Request body**
 
 ```json
 {
-  "conversationReference": { ... },
+  "target": {
+    "type": "channel",
+    "teamId": "<team-guid>",
+    "channelId": "19:<channel-thread-id>@thread.tacv2"
+  },
   "message": "Direct message content.",
   "format": "text"
 }
@@ -349,9 +354,15 @@ is for advanced integrations that maintain their own conversation references.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `conversationReference` | object | Yes | A Bot Framework conversation reference object |
-| `message` | string or object | Yes | Message content |
-| `format` | string | Yes | `"text"` or `"adaptive-card"` |
+| `target` | object | Yes | Target specification (see below) |
+| `target.type` | string | Yes | `"channel"`, `"personal"`, or `"groupChat"` |
+| `target.teamId` | string | Conditional | Required for `channel` type |
+| `target.channelId` | string | Conditional | Required for `channel` type |
+| `target.userId` | string | Conditional | Required for `personal` type |
+| `target.chatId` | string | Conditional | Required for `groupChat` type |
+| `message` | string | Yes | Message content (plain text or Adaptive Card JSON string) |
+| `format` | string | No | `"text"` (default) or `"adaptive-card"` |
+| `metadata` | object | No | Key-value pairs (string values only) attached to the message for tracing |
 
 **Response — 202 Accepted**
 
@@ -404,7 +415,7 @@ Liveness probe for monitoring and load balancers. No authentication required.
 ```json
 {
   "status": "ok",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "timestamp": "2026-01-15T14:40:00.000Z"
 }
 ```
@@ -423,7 +434,7 @@ Returns the OpenAPI 3.0 specification for the API in YAML format. No authenticat
 openapi: "3.0.3"
 info:
   title: "Teams Notification Bot API"
-  version: "1.1.0"
+  version: "1.0.0"
 paths:
   ...
 ```
@@ -446,13 +457,13 @@ curl -s -X POST \
 
 **Behavior:**
 
-- If the same `Idempotency-Key` is sent again within **24 hours**, the API returns the cached
-  response from the original request (same `messageId`, `correlationId`, and status code).
-- The key is scoped per operation type and alias: the combination of endpoint
-  (`notify`/`alert`/`checkin`) and alias forms the deduplication namespace.
-- After 24 hours, the key expires and a new request with the same key is treated as a fresh
-  request.
+- If the same `Idempotency-Key` is sent again, the API returns the cached response from the
+  original request (same `messageId`, `correlationId`, and status code).
+- The key is scoped per operation type (e.g., `notify`). The same key used across different
+  aliases within the same operation type will match.
 - If no `Idempotency-Key` header is provided, every request is processed independently.
+- Idempotency records are stored in Azure Table Storage. There is currently no automatic
+  expiry — keys persist until manually cleaned up.
 
 **Recommended key formats:**
 
