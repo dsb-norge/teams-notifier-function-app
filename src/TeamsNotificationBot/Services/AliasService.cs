@@ -48,8 +48,8 @@ public class AliasService : IAliasService
     {
         var rowKey = name.ToLowerInvariant();
 
-        // Check existence first — DeleteEntityAsync with default ETag (ETag.All) is
-        // an unconditional delete that succeeds silently even if the entity doesn't exist.
+        // Check existence first to return false for missing aliases, rather than
+        // catching the 404 RequestFailedException from DeleteEntityAsync.
         var existing = await GetAliasAsync(rowKey);
         if (existing == null)
             return false;

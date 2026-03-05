@@ -12,7 +12,8 @@ namespace TeamsNotificationBot.Tests.Integration.Fixtures;
 /// If Azurite is already running (e.g. started by setup-local.sh for local debugging),
 /// the fixture reuses it. Otherwise, it starts a dedicated instance.
 ///
-/// Each test class gets isolated tables/queues via a random suffix to avoid cross-class interference.
+/// Tables and queues are isolated via a random suffix (shared per collection fixture instance).
+/// Different test classes achieve isolation by using distinct base names for their resources.
 /// </summary>
 public class AzuriteFixture : IAsyncLifetime
 {

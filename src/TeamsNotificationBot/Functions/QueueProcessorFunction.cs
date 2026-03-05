@@ -138,9 +138,10 @@ public class QueueProcessorFunction
     {
         return alias.TargetType switch
         {
-            "channel" => (alias.TeamId!, alias.ChannelId!),
-            "personal" => ("user", alias.UserId!),
-            "groupChat" => ("chat", alias.ChatId!),
+            "channel" => (alias.TeamId ?? throw new InvalidOperationException("TeamId required for channel alias"),
+                          alias.ChannelId ?? throw new InvalidOperationException("ChannelId required for channel alias")),
+            "personal" => ("user", alias.UserId ?? throw new InvalidOperationException("UserId required for personal alias")),
+            "groupChat" => ("chat", alias.ChatId ?? throw new InvalidOperationException("ChatId required for groupChat alias")),
             _ => throw new InvalidOperationException($"Unknown alias target type: {alias.TargetType}")
         };
     }
