@@ -38,7 +38,7 @@ The publish output in `./publish` is what gets deployed to the Azure Function Ap
 
 ## 3. Testing
 
-The project has 142 tests covering all functions, services, middleware, and models.
+The project has a comprehensive test suite covering all functions, services, middleware, and models.
 
 ```bash
 # Run all tests
