@@ -11,6 +11,8 @@ namespace TeamsNotificationBot.Services;
 
 public class BotService : IBotService
 {
+    private static readonly JsonSerializerOptions CaseInsensitiveOptions = new() { PropertyNameCaseInsensitive = true };
+
     private readonly CloudAdapter _adapter;
     private readonly TableClient _tableClient;
     private readonly string _botAppId;
@@ -225,7 +227,7 @@ public class BotService : IBotService
             var entity = response.Value;
             return JsonSerializer.Deserialize<ConversationReference>(
                 entity.ConversationReference,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                CaseInsensitiveOptions);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
@@ -244,7 +246,7 @@ public class BotService : IBotService
 
         var reference = JsonSerializer.Deserialize<ConversationReference>(
             serializedReference,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            CaseInsensitiveOptions);
 
         if (reference == null)
         {
