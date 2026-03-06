@@ -51,11 +51,17 @@ terraform init && terraform plan && terraform apply
 
 ### 3. Deploy function app
 
+Download the latest release artifacts and deploy the pre-built ZIP:
+
 ```bash
-cd src/TeamsNotificationBot
-dotnet publish -c Release -o ./publish
-func azure functionapp publish "<function-app-name>" --dotnet-isolated
+gh release download --repo <org>/teams-notifier-function-app -D ./release
+mkdir -p publish && unzip release/teams-notifier-function-app-v*.zip -d publish/
+cd publish && func azure functionapp publish "<function-app-name>" --no-build --dotnet-isolated
 ```
+
+See [Deployment Guide — Step 3](docs/deployment-guide.md#step-3-deploy-function-app)
+for detailed instructions including the stub `.csproj` workaround and
+building from source.
 
 ### 4. Install Teams app
 
@@ -89,7 +95,7 @@ curl -X POST "https://<function-app-name>.azurewebsites.net/api/v1/notify/my-ali
 | [Access & Roles](docs/access-and-roles.md) | Azure, Entra ID, and M365 permissions reference |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues, KQL diagnostic queries, monitoring |
 | [Local Development](docs/local-development.md) | Offline/online modes, running tests, project structure |
-| [Contributing](docs/contributing.md) | Build, test, code style, pull request guidelines |
+| [Contributing](docs/contributing.md) | Build, test, code style, PR guidelines, CI/CD pipeline, versioning, releases, dependency management |
 
 ## Infrastructure
 
