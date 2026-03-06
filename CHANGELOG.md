@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.0...teams-notifier-function-app-v1.1.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* **deps:** bump actions/cache from 4 to 5 ([1ccc7a9](https://github.com/dsb-norge/teams-notifier-function-app/commit/1ccc7a9eecdab48057e9196d42ca5d1df164f53e))
+* **deps:** bump actions/checkout from 4 to 6 ([a3069de](https://github.com/dsb-norge/teams-notifier-function-app/commit/a3069de2ed466ddcacad0d92c1cc4c79849a7b7b))
+* **deps:** bump actions/setup-dotnet from 4 to 5 ([9538300](https://github.com/dsb-norge/teams-notifier-function-app/commit/95383008fff62cb02963f72019ba106533e522a5))
+* **deps:** bump aquasecurity/setup-trivy from 0.2.1 to 0.2.5 ([d4e0ee7](https://github.com/dsb-norge/teams-notifier-function-app/commit/d4e0ee76848dea3ff206458ffcb6b8e541fe0497))
+* **deps:** bump Azure.Identity from 1.17.1 to 1.18.0 ([8187c4e](https://github.com/dsb-norge/teams-notifier-function-app/commit/8187c4ef66fd3f6a07f940c5861d728be7888473))
+* **deps:** bump Microsoft.ApplicationInsights.WorkerService from 2.23.0 to 3.0.0 ([df731ba](https://github.com/dsb-norge/teams-notifier-function-app/commit/df731bad7d685730dab7609527a1491070aa9a0d))
+
 ## [1.1.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.0.0...teams-notifier-function-app-v1.1.0) (2026-03-06)
 
 
