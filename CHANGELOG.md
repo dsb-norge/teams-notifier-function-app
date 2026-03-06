@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.1...teams-notifier-function-app-v1.1.2) (2026-03-06)
+
+
+### Bug Fixes
+
+* **deps:** revert Microsoft.ApplicationInsights.WorkerService to 2.23.0 ([ea1116f](https://github.com/dsb-norge/teams-notifier-function-app/commit/ea1116fd2cacd55ab0039b46643bd6675c0b7ba2))
+
 ## [1.1.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.0...teams-notifier-function-app-v1.1.1) (2026-03-06)
 
 
