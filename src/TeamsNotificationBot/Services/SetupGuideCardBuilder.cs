@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TeamsNotificationBot.Services;
 
@@ -213,18 +214,16 @@ public static class SetupGuideCardBuilder
         return JsonSerializer.Serialize(card);
     }
 
-    private static object TextBlock(string text, string? weight = null, string? size = null)
+    private static AdaptiveTextBlock TextBlock(string text, string? weight = null, string? size = null)
     {
-        // Build as dictionary to avoid serializing null properties
-        var block = new Dictionary<string, object>
+        return new AdaptiveTextBlock
         {
-            ["type"] = "TextBlock",
-            ["text"] = text,
-            ["wrap"] = true
+            Type = "TextBlock",
+            Text = text,
+            Wrap = true,
+            Weight = weight,
+            Size = size
         };
-        if (weight != null) block["weight"] = weight;
-        if (size != null) block["size"] = size;
-        return block;
     }
 
     private static object Separator()
@@ -232,9 +231,30 @@ public static class SetupGuideCardBuilder
         return new
         {
             type = "TextBlock",
-            text = " ",
+            text = string.Empty,
             spacing = "Medium",
-            separator = true
+            separator = true,
+            isVisible = false
         };
+    }
+
+    private sealed class AdaptiveTextBlock
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "TextBlock";
+
+        [JsonPropertyName("text")]
+        public string Text { get; set; } = "";
+
+        [JsonPropertyName("wrap")]
+        public bool Wrap { get; set; } = true;
+
+        [JsonPropertyName("weight")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Weight { get; set; }
+
+        [JsonPropertyName("size")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Size { get; set; }
     }
 }
