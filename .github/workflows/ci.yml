@@ -1,11 +1,189 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  security-events: write
+  pull-requests: write
+
 jobs:
-  placeholder:
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
-      - run: echo "CI placeholder"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Get npm global directory
+        id: npm-global
+        run: echo "dir=$(npm prefix -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Azurite global install
+        id: cache-azurite
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.npm-global.outputs.dir }}/lib/node_modules/azurite
+            ${{ steps.npm-global.outputs.dir }}/bin/azurite*
+          key: azurite-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install Azurite
+        if: steps.cache-azurite.outputs.cache-hit != 'true'
+        run: npm install -g azurite
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release -warnAsMessage:xUnit1051
+
+      - name: Test
+        run: dotnet test --no-build -c Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: "**/test-results.trx"
+          comment_title: "Test Results"
+          check_name: "Test Results"
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+
+      - name: Build
+        run: dotnet build -c Release -warnAsMessage:xUnit1051
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+
+  trivy:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Build (generates .deps.json for Trivy)
+        run: dotnet build -c Release --nologo -v quiet -warnAsMessage:xUnit1051
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.1
+        with:
+          cache: true
+
+      - name: Download Trivy DB
+        run: trivy filesystem --download-db-only --cache-dir .cache/trivy
+
+      - name: Run Trivy scan (table)
+        id: trivy-table
+        continue-on-error: true
+        run: |
+          trivy filesystem . \
+            --format table \
+            --output trivy-results.txt \
+            --severity CRITICAL,HIGH \
+            --exit-code 1 \
+            --cache-dir .cache/trivy \
+            --skip-db-update
+
+      - name: Run Trivy scan (SARIF)
+        run: |
+          trivy filesystem . \
+            --format sarif \
+            --output trivy-results.sarif \
+            --cache-dir .cache/trivy \
+            --skip-db-update
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Prepare Trivy PR comment
+        if: always()
+        run: |
+          {
+            echo '### Trivy Vulnerability Scan'
+            echo ''
+            # Check if trivy found actual vulnerability tables (not just the empty summary)
+            if grep -q "Total:" trivy-results.txt 2>/dev/null; then
+              echo '<details>'
+              echo '<summary>Found CRITICAL/HIGH vulnerabilities (click to expand)</summary>'
+              echo ''
+              echo '```'
+              cat trivy-results.txt
+              echo '```'
+              echo '</details>'
+            else
+              echo 'No CRITICAL or HIGH vulnerabilities found.'
+            fi
+          } > trivy-comment.md
+
+      - name: Post Trivy results to PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request' && always()
+        with:
+          header: trivy
+          path: trivy-comment.md
+
+      - name: Fail if vulnerabilities found
+        if: steps.trivy-table.outcome == 'failure'
+        run: exit 1
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          license-check: false
+
+  validate:
+    name: Validate Requirements
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate app-requirements.json
+        run: bash scripts/validate-requirements.sh
