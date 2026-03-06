@@ -29,7 +29,7 @@
     <PackageReference Include="Microsoft.Agents.Extensions.Teams" Version="1.4.83" />
     <PackageReference Include="Azure.Data.Tables" Version="12.11.0" />
     <PackageReference Include="Azure.Storage.Queues" Version="12.25.0" />
-    <PackageReference Include="Azure.Identity" Version="1.17.1" />
+    <PackageReference Include="Azure.Identity" Version="1.18.0" />
     <PackageReference Include="ThrottlingTroll.AzureFunctions" Version="9.2.0" />
     <PackageReference Include="ThrottlingTroll.CounterStores.AzureTable" Version="9.2.0" />
   </ItemGroup>
