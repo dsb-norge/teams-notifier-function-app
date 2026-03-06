@@ -98,8 +98,8 @@ jobs:
           cache: true
           cache-dependency-path: "**/*.csproj"
 
-      - name: Restore NuGet packages
-        run: dotnet restore
+      - name: Build (generates .deps.json for Trivy)
+        run: dotnet build -c Release
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@v0.2.1
