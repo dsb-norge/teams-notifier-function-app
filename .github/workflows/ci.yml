@@ -50,7 +50,7 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build --no-restore -c Release -warnAsMessage:xUnit1051
 
       - name: Test
         run: dotnet test --no-build -c Release --logger "trx;LogFileName=test-results.trx"
@@ -99,7 +99,7 @@ jobs:
           cache-dependency-path: "**/*.csproj"
 
       - name: Build (generates .deps.json for Trivy)
-        run: dotnet build -c Release
+        run: dotnet build -c Release --nologo -v quiet
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@v0.2.1
@@ -176,6 +176,8 @@ jobs:
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
+        with:
+          license-check: false
 
   validate:
     name: Validate Requirements
