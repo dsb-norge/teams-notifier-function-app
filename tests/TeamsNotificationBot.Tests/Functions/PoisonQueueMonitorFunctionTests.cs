@@ -9,6 +9,8 @@ using Xunit;
 
 namespace TeamsNotificationBot.Tests.Functions;
 
+// Tests mutate Environment.SetEnvironmentVariable — must not run in parallel
+[Collection("PoisonQueueMonitor")]
 public class PoisonQueueMonitorFunctionTests : IDisposable
 {
     private readonly Mock<IBotService> _botService = new();

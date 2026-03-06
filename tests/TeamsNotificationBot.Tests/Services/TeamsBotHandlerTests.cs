@@ -34,6 +34,9 @@ public class TestableTeamsBotHandler : TeamsBotHandler
         => OnAdaptiveCardInvokeAsync(turnContext, invokeValue, cancellationToken);
 }
 
+// Tests mutate Environment.SetEnvironmentVariable("PoisonAlertAlias") — must not run
+// in parallel with PoisonQueueMonitorFunctionTests which depends on the same env var.
+[Collection("PoisonQueueMonitor")]
 public class TeamsBotHandlerTests
 {
     private readonly Mock<IBotService> _botService = new();
