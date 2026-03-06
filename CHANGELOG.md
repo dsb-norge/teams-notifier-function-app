@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.2.0...teams-notifier-function-app-v1.3.0) (2026-03-06)
+
+
+### Features
+
+* document CI/CD pipeline, release process, and artifact deployment ([2cbf07d](https://github.com/dsb-norge/teams-notifier-function-app/commit/2cbf07d50ef8ca52626d45a04be790dda9627234))
+
+
+### Bug Fixes
+
+* address Copilot review on setup-guide card builder ([142dab3](https://github.com/dsb-norge/teams-notifier-function-app/commit/142dab3fb9fd29b3cba04c343cf138f0f21a9aa0))
+
 ## [1.2.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.2...teams-notifier-function-app-v1.2.0) (2026-03-06)
 
 
