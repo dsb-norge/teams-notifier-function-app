@@ -189,8 +189,8 @@ The `version` field should match the release you deployed. If this times out,
 ensure your IP is in `management_ip_rules`.
 
 > **Note:** The `func` CLI output may not list all functions (e.g., functions
-> with custom routes). Use `az functionapp function list` to verify all 12
-> functions are loaded.
+> with custom routes). Use `az functionapp function list` to verify that all
+> expected functions are loaded.
 
 ---
 

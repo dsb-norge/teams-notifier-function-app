@@ -143,6 +143,7 @@ release-please determines the version bump from your commit message prefix:
 |---------------|-------------|---------|
 | `fix:` | Patch (1.2.3 → 1.2.4) | `fix: handle null alias in queue processor` |
 | `feat:` | Minor (1.2.3 → 1.3.0) | `feat: add bulk notification endpoint` |
+| `perf:` | Patch (1.2.3 → 1.2.4) | `perf: reduce queue processor memory allocation` |
 | `feat!:` or `BREAKING CHANGE:` footer | Major (1.2.3 → 2.0.0) | `feat!: remove v1 API endpoints` |
 | `docs:`, `chore:`, `refactor:`, `test:` | No release | `docs: update API reference` |
 

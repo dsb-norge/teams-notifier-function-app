@@ -56,12 +56,19 @@ Download the latest release artifacts and deploy the pre-built ZIP:
 ```bash
 gh release download --repo <org>/teams-notifier-function-app -D ./release
 mkdir -p publish && unzip release/teams-notifier-function-app-v*.zip -d publish/
+
+# The func CLI needs a .csproj to detect the target framework
+cat > publish/stub.csproj << 'CSPROJ'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+</Project>
+CSPROJ
+
 cd publish && func azure functionapp publish "<function-app-name>" --no-build --dotnet-isolated
 ```
 
 See [Deployment Guide — Step 3](docs/deployment-guide.md#step-3-deploy-function-app)
-for detailed instructions including the stub `.csproj` workaround and
-building from source.
+for detailed instructions and building from source.
 
 ### 4. Install Teams app
 
