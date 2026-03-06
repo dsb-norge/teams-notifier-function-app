@@ -107,7 +107,68 @@ az ad app federated-credential list --id "<bot-app-id>" --query '[].name'
 
 ## Step 3: Deploy Function App
 
-Build and publish:
+There are two ways to deploy the function app: from a published release
+(recommended) or from source. Choose one.
+
+### Option A: Deploy from release artifacts (recommended)
+
+Each GitHub Release includes a pre-built ZIP ready for deployment. This is the
+intended deployment method for production and CI/CD pipelines.
+
+**1. Download the release artifacts:**
+
+```bash
+# Download all artifacts from a specific release
+gh release download teams-notifier-function-app-v1.2.0 \
+  --repo <org>/teams-notifier-function-app \
+  -D ./release
+
+# Or download the latest release
+gh release download --repo <org>/teams-notifier-function-app -D ./release
+```
+
+This downloads three files:
+
+| File | Purpose |
+|------|---------|
+| `teams-notifier-function-app-v{VERSION}.zip` | Pre-built function app (R2R compiled for linux-x64) |
+| `app-requirements.json` | Infrastructure requirements — feed this to the Terraform module as `var.app_requirements` |
+| `teams-app-package-v{VERSION}.tar.gz` | Teams manifest template and icons for Step 4 |
+
+> **Tip:** If you haven't already, copy `app-requirements.json` to your
+> Terraform configuration directory and reference it in your module call:
+> `app_requirements = jsondecode(file("app-requirements.json"))`. Then run
+> `terraform apply` to ensure infrastructure matches the app's requirements.
+
+**2. Extract and deploy the ZIP:**
+
+```bash
+# Extract the function app ZIP
+mkdir -p publish
+unzip release/teams-notifier-function-app-v*.zip -d publish/
+
+# Create a stub .csproj — the func CLI needs this to detect the .NET version
+cat > publish/stub.csproj << 'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+EOF
+
+# Deploy to Azure (no build needed — the ZIP is pre-compiled)
+cd publish
+func azure functionapp publish "<function-app-name>" --no-build --dotnet-isolated
+```
+
+> **Why the stub `.csproj`?** The Azure Functions Core Tools CLI inspects
+> `.csproj` files to determine the target framework. Since the release ZIP
+> contains only compiled output (no project files), the CLI refuses to publish
+> without it. The stub only needs the `<TargetFramework>` element.
+
+### Option B: Deploy from source
+
+If you need to build from source (e.g., for development or custom modifications):
 
 ```bash
 cd src/TeamsNotificationBot
@@ -115,17 +176,21 @@ dotnet publish -c Release -o ./publish
 func azure functionapp publish "<function-app-name>" --dotnet-isolated
 ```
 
-> **Note:** The `func` CLI output may not list all functions (e.g., functions
-> with custom routes). Use `az functionapp function list` to verify.
+### Verify the deployment
 
-Verify the deployment with a health check (no auth required):
+After deploying with either option, check the health endpoint (no auth required):
 
 ```bash
 curl -s "https://<function-app-hostname>/api/health" | jq .
-# Expected: { "status": "ok", "version": "...", "timestamp": "..." }
+# Expected: { "status": "ok", "version": "1.2.0", "timestamp": "..." }
 ```
 
-If this times out, ensure your IP is in `management_ip_rules`.
+The `version` field should match the release you deployed. If this times out,
+ensure your IP is in `management_ip_rules`.
+
+> **Note:** The `func` CLI output may not list all functions (e.g., functions
+> with custom routes). Use `az functionapp function list` to verify that all
+> expected functions are loaded.
 
 ---
 
