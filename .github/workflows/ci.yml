@@ -22,13 +22,21 @@ jobs:
           cache: true
           cache-dependency-path: "**/*.csproj"
 
-      - name: Cache npm packages
+      - name: Get npm global directory
+        id: npm-global
+        run: echo "dir=$(npm prefix -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Azurite global install
+        id: cache-azurite
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: npm-azurite-${{ runner.os }}
+          path: |
+            ${{ steps.npm-global.outputs.dir }}/lib/node_modules/azurite
+            ${{ steps.npm-global.outputs.dir }}/bin/azurite*
+          key: azurite-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
       - name: Install Azurite
+        if: steps.cache-azurite.outputs.cache-hit != 'true'
         run: npm install -g azurite
 
       - name: Restore
@@ -57,6 +65,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
