@@ -90,15 +90,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.1
         with:
-          scan-type: fs
-          scan-ref: .
-          format: table
-          output: trivy-results.txt
-          severity: CRITICAL,HIGH
-          exit-code: 1
+          cache: true
+
+      - name: Download Trivy DB
+        run: trivy filesystem --download-db-only --cache-dir .cache/trivy
+
+      - name: Run Trivy scan (table)
+        id: trivy-table
+        continue-on-error: true
+        run: |
+          trivy filesystem . \
+            --format table \
+            --output trivy-results.txt \
+            --severity CRITICAL,HIGH \
+            --exit-code 1 \
+            --cache-dir .cache/trivy \
+            --skip-db-update
+
+      - name: Run Trivy scan (SARIF)
+        run: |
+          trivy filesystem . \
+            --format sarif \
+            --output trivy-results.sarif \
+            --cache-dir .cache/trivy \
+            --skip-db-update
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
 
       - name: Prepare Trivy PR comment
         if: always()
@@ -122,21 +147,9 @@ jobs:
           header: trivy
           path: trivy-comment.md
 
-      - name: Run Trivy scan (SARIF)
-        uses: aquasecurity/trivy-action@0.28.0
-        if: always()
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-results.sarif
-
-      - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy
+      - name: Fail if vulnerabilities found
+        if: steps.trivy-table.outcome == 'failure'
+        run: exit 1
 
   dependency-review:
     name: Dependency Review
