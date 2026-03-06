@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.2...teams-notifier-function-app-v1.2.0) (2026-03-06)
+
+
+### Features
+
+* rewrite setup-guide card for clarity and approachability ([b1bcca9](https://github.com/dsb-norge/teams-notifier-function-app/commit/b1bcca998382ac3a92f45d7566bd2d6517e9f883))
+
 ## [1.1.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.1.1...teams-notifier-function-app-v1.1.2) (2026-03-06)
 
 
