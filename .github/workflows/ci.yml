@@ -102,7 +102,7 @@ jobs:
         run: dotnet build -c Release --nologo -v quiet -warnAsMessage:xUnit1051
 
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.1
+        uses: aquasecurity/setup-trivy@v0.2.5
         with:
           cache: true
 
