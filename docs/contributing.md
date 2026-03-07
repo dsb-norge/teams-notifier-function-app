@@ -86,7 +86,7 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 
 1. **Branch from main** with a descriptive branch name.
 2. **All tests pass**: `dotnet test tests/TeamsNotificationBot.Tests/` exits with code 0.
-3. **Requirements are up to date**: Run `scripts/validate-requirements.sh` if you changed infrastructure dependencies.
+3. **Requirements are up to date**: Run `scripts/generate-requirements.sh` if you changed infrastructure dependencies. CI will catch staleness automatically.
 4. **No leaked secrets or identifiers**: Run `scripts/check-sanitization.sh` before publishing.
 5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 
@@ -108,17 +108,23 @@ Include:
 
 ## 7. CI/CD Pipeline
 
-Every pull request targeting `main` runs five CI jobs. All must pass before merging.
+Every pull request targeting `main` runs four CI jobs (in `ci.yml`). All must pass before merging.
 
 | Job | What it checks |
 |-----|---------------|
 | **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test results are posted as a PR check and comment. |
 | **Security (CodeQL)** | Static analysis for common vulnerability patterns in C# code. Results appear in the repository's **Security** tab. |
-| **Trivy Vulnerability Scan** | Scans NuGet dependencies for known CVEs (CRITICAL and HIGH severity). Posts a summary comment on the PR and uploads SARIF results to the Security tab. |
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
-| **Validate Requirements** | Runs `scripts/validate-requirements.sh` to ensure `app-requirements.json` is well-formed and consistent. |
+| **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
 
-On push to `main`, the same Build/Test, Security, and Trivy jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
+A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
+
+| Job | When | What it checks |
+|-----|------|---------------|
+| **Source & Dependency Scan** | PR + push to main | Runs Trivy via MSDO to scan NuGet dependencies for known CVEs. Uploads SARIF to the Security tab and Defender for Cloud. |
+| **Binary Scan (BinSkim)** | Push to main only | Runs BinSkim on compiled binaries to check binary-level security properties (DEP, ASLR, stack protection). |
+
+On push to `main`, the Build/Test, Security, and MSDO jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
 
 CI uses concurrency groups — pushing a new commit to a PR cancels any in-progress CI run for that PR.
 
@@ -133,7 +139,7 @@ This project uses [release-please](https://github.com/googleapis/release-please)
 1. **You merge a PR to `main`** with a conventional commit message.
 2. **release-please** analyzes the commit and creates (or updates) a release PR that bumps the version, updates `CHANGELOG.md`, and patches version strings in `AppInfo.cs` and `app-requirements.json`.
 3. **When the release PR is merged**, release-please creates a GitHub Release with a git tag.
-4. **The release workflow** builds the function app and uploads three artifacts to the release.
+4. **The release workflow** builds the function app, creates signed [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for the ZIP and `app-requirements.json`, and uploads three artifacts to the release.
 
 ### Commit messages and version bumps
 
@@ -189,7 +195,7 @@ Related packages are grouped so they update together in a single PR:
 ### Handling Dependabot PRs
 
 1. **Review the PR** — check the package changelog for breaking changes.
-2. **Wait for CI** — all five CI jobs must pass (build, test, security scans).
+2. **Wait for CI** — all CI jobs must pass (build, test, security scans).
 3. **Squash merge with `fix(deps):` prefix** — this triggers a patch version bump. Example: `fix(deps): bump Azure.Identity from 1.17.0 to 1.18.0`. Use `feat(deps):` only if the update enables a new feature you're shipping.
 4. **For grouped updates**, the PR title usually works as-is after adding the `fix(deps):` prefix.
 

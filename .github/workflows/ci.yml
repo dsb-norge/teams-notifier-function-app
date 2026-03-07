@@ -86,87 +86,6 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
 
-  trivy:
-    name: Trivy Vulnerability Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/*.csproj"
-
-      - name: Build (generates .deps.json for Trivy)
-        run: dotnet build -c Release --nologo -v quiet -warnAsMessage:xUnit1051
-
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.5
-        with:
-          cache: true
-
-      - name: Download Trivy DB
-        run: trivy filesystem --download-db-only --cache-dir .cache/trivy
-
-      - name: Run Trivy scan (table)
-        id: trivy-table
-        continue-on-error: true
-        run: |
-          trivy filesystem . \
-            --format table \
-            --output trivy-results.txt \
-            --severity CRITICAL,HIGH \
-            --exit-code 1 \
-            --cache-dir .cache/trivy \
-            --skip-db-update
-
-      - name: Run Trivy scan (SARIF)
-        run: |
-          trivy filesystem . \
-            --format sarif \
-            --output trivy-results.sarif \
-            --cache-dir .cache/trivy \
-            --skip-db-update
-
-      - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy
-
-      - name: Prepare Trivy PR comment
-        if: always()
-        run: |
-          {
-            echo '### Trivy Vulnerability Scan'
-            echo ''
-            # Check if trivy found actual vulnerability tables (not just the empty summary)
-            if grep -q "Total:" trivy-results.txt 2>/dev/null; then
-              echo '<details>'
-              echo '<summary>Found CRITICAL/HIGH vulnerabilities (click to expand)</summary>'
-              echo ''
-              echo '```'
-              cat trivy-results.txt
-              echo '```'
-              echo '</details>'
-            else
-              echo 'No CRITICAL or HIGH vulnerabilities found.'
-            fi
-          } > trivy-comment.md
-
-      - name: Post Trivy results to PR
-        uses: marocchino/sticky-pull-request-comment@v2
-        if: github.event_name == 'pull_request' && always()
-        with:
-          header: trivy
-          path: trivy-comment.md
-
-      - name: Fail if vulnerabilities found
-        if: steps.trivy-table.outcome == 'failure'
-        run: exit 1
-
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
@@ -184,6 +103,63 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Regenerate app-requirements.json
+        run: bash scripts/generate-requirements.sh
+
+      - name: Check for uncommitted changes
+        id: diff-check
+        run: |
+          if ! git diff --exit-code src/TeamsNotificationBot/app-requirements.json; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            git diff src/TeamsNotificationBot/app-requirements.json > /tmp/requirements-diff.txt
+            echo "::error::app-requirements.json is stale — see PR comment for details."
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            echo "app-requirements.json is up to date."
+          fi
+
+      - name: Prepare PR comment if stale
+        if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
+        run: |
+          {
+            echo '### :x: `app-requirements.json` is out of date'
+            echo ''
+            echo 'The committed file does not match what `generate-requirements.sh` produces from the current source code. This usually means you changed a queue name, route, auth role, command, or app version but forgot to regenerate.'
+            echo ''
+            echo '**To fix:**'
+            echo '```bash'
+            echo 'cd scripts'
+            echo 'bash generate-requirements.sh'
+            echo '```'
+            echo 'Then commit the updated `src/TeamsNotificationBot/app-requirements.json`.'
+            echo ''
+            echo '<details>'
+            echo '<summary>Diff (click to expand)</summary>'
+            echo ''
+            echo '```diff'
+            cat /tmp/requirements-diff.txt
+            echo '```'
+            echo '</details>'
+          } > /tmp/requirements-comment.md
+
+      - name: Post PR comment if stale
+        if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: requirements-check
+          path: /tmp/requirements-comment.md
+
+      - name: Remove stale comment if passing
+        if: steps.diff-check.outputs.stale == 'false' && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: requirements-check
+          delete: true
+
+      - name: Fail if stale
+        if: steps.diff-check.outputs.stale == 'true'
+        run: exit 1
 
       - name: Validate app-requirements.json
         run: bash scripts/validate-requirements.sh
