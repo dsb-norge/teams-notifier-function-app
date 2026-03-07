@@ -149,7 +149,7 @@ public class NotifyFunction
         var duration = (DateTimeOffset.UtcNow - startTime).TotalMilliseconds;
         _logger.LogInformation(
             "Message queued. Alias={Alias}, MessageId={MessageId}, Format={Format}, Duration={Duration}ms, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-            Sanitize(alias), messageId, request.Format, duration, Sanitize(sourceIp), correlationId);
+            Sanitize(alias), messageId, Sanitize(request.Format), duration, Sanitize(sourceIp), correlationId);
 
         var responseBody = new
         {

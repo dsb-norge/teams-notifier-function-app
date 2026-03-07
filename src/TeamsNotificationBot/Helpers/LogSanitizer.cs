@@ -2,7 +2,7 @@ namespace TeamsNotificationBot.Helpers;
 
 /// <summary>
 /// Sanitizes user-provided values before logging to prevent log forging (CWE-117).
-/// Replaces control characters (newlines, tabs, etc.) with underscores.
+/// Replaces control characters and Unicode line/paragraph separators with underscores.
 /// </summary>
 public static class LogSanitizer
 {
@@ -15,7 +15,7 @@ public static class LogSanitizer
         var needsSanitization = false;
         foreach (var c in value)
         {
-            if (char.IsControl(c))
+            if (IsUnsafe(c))
             {
                 needsSanitization = true;
                 break;
@@ -28,7 +28,10 @@ public static class LogSanitizer
         return string.Create(value.Length, value, static (span, src) =>
         {
             for (var i = 0; i < src.Length; i++)
-                span[i] = char.IsControl(src[i]) ? '_' : src[i];
+                span[i] = IsUnsafe(src[i]) ? '_' : src[i];
         });
     }
+
+    private static bool IsUnsafe(char c) =>
+        char.IsControl(c) || c == '\u2028' || c == '\u2029';
 }

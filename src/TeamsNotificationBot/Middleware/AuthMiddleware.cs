@@ -59,7 +59,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
             {
                 _logger.LogWarning(
                     "Authorization failed: missing required role '{RequiredRole}'. Endpoint={Endpoint}, Principal={Principal}, Roles={Roles}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-                    RequiredRole, Sanitize(path), Sanitize(easyAuthPrincipal), Sanitize(roles) ?? "none", Sanitize(sourceIp), correlationId);
+                    RequiredRole, Sanitize(path), Sanitize(easyAuthPrincipal), string.IsNullOrEmpty(roles) ? "none" : Sanitize(roles), Sanitize(sourceIp), correlationId);
 
                 await ApiResponse.WriteProblemAsync(
                     httpContext.Response, 403, "Forbidden",
