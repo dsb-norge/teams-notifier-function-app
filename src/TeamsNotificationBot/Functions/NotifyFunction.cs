@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
@@ -44,7 +45,7 @@ public class NotifyFunction
 
         _logger.LogInformation(
             "Notify request received. Alias={Alias}, SourceIp={SourceIp}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-            alias, sourceIp, messageId, correlationId);
+            Sanitize(alias), Sanitize(sourceIp), messageId, correlationId);
 
         // Validate Content-Type
         var contentType = req.ContentType ?? "";
@@ -52,7 +53,7 @@ public class NotifyFunction
         {
             _logger.LogWarning(
                 "Invalid Content-Type: {ContentType}. Alias={Alias}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-                contentType, alias, messageId, correlationId);
+                Sanitize(contentType), Sanitize(alias), messageId, correlationId);
             return ApiResponse.Problem(415, "Unsupported Media Type",
                 "Content-Type must be application/json.", instance, correlationId);
         }
@@ -63,7 +64,7 @@ public class NotifyFunction
         {
             _logger.LogWarning(
                 "Unknown alias: {Alias}. MessageId={MessageId}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-                alias, messageId, sourceIp, correlationId);
+                Sanitize(alias), messageId, Sanitize(sourceIp), correlationId);
             return ApiResponse.Problem(404, "Not Found",
                 $"Unknown alias '{alias}'.", instance, correlationId);
         }
@@ -78,7 +79,7 @@ public class NotifyFunction
         {
             _logger.LogWarning(ex,
                 "Invalid JSON payload. Alias={Alias}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-                alias, messageId, correlationId);
+                Sanitize(alias), messageId, correlationId);
             return ApiResponse.Problem(400, "Bad Request",
                 "Invalid JSON payload.", instance, correlationId);
         }
@@ -94,7 +95,7 @@ public class NotifyFunction
         {
             _logger.LogWarning(
                 "Invalid request: {Error}. Alias={Alias}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-                validationError, alias, messageId, correlationId);
+                Sanitize(validationError), Sanitize(alias), messageId, correlationId);
             return ApiResponse.Problem(400, "Bad Request",
                 validationError ?? "Invalid request.", instance, correlationId);
         }
@@ -107,7 +108,7 @@ public class NotifyFunction
             {
                 _logger.LogWarning(
                     "Adaptive card validation failed: {Error}. Alias={Alias}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-                    cardError, alias, messageId, correlationId);
+                    Sanitize(cardError), Sanitize(alias), messageId, correlationId);
                 return ApiResponse.Problem(400, "Bad Request",
                     cardError ?? "Invalid adaptive card.", instance, correlationId);
             }
@@ -122,7 +123,7 @@ public class NotifyFunction
             {
                 _logger.LogInformation(
                     "Idempotent request. Key={Key}, Alias={Alias}, CorrelationId={CorrelationId}",
-                    idempotencyKey, alias, correlationId);
+                    Sanitize(idempotencyKey), Sanitize(alias), correlationId);
                 return new ObjectResult(JsonSerializer.Deserialize<object>(cached.ResponseBody))
                 { StatusCode = cached.StatusCode };
             }
@@ -148,7 +149,7 @@ public class NotifyFunction
         var duration = (DateTimeOffset.UtcNow - startTime).TotalMilliseconds;
         _logger.LogInformation(
             "Message queued. Alias={Alias}, MessageId={MessageId}, Format={Format}, Duration={Duration}ms, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-            alias, messageId, request.Format, duration, sourceIp, correlationId);
+            Sanitize(alias), messageId, Sanitize(request.Format), duration, Sanitize(sourceIp), correlationId);
 
         var responseBody = new
         {

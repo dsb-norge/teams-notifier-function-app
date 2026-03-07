@@ -4,6 +4,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Services;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
@@ -37,7 +38,7 @@ public class GetAliasesFunction
         {
             _logger.LogWarning(
                 "Aliases endpoint accessed with debug mode disabled. SourceIp={SourceIp}, ResponseCode=403, CorrelationId={CorrelationId}",
-                sourceIp, correlationId);
+                Sanitize(sourceIp), correlationId);
 
             return ApiResponse.Problem(403, "Forbidden",
                 "Debug mode is disabled.", instance, correlationId);
@@ -59,7 +60,7 @@ public class GetAliasesFunction
 
         _logger.LogInformation(
             "Aliases endpoint accessed. SourceIp={SourceIp}, AliasCount={AliasCount}, ResponseCode=200, CorrelationId={CorrelationId}",
-            sourceIp, aliases.Count, correlationId);
+            Sanitize(sourceIp), aliases.Count, correlationId);
 
         return new OkObjectResult(new { aliases = aliasList });
     }

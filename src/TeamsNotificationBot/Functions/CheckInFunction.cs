@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
@@ -41,7 +42,7 @@ public class CheckInFunction
 
         _logger.LogInformation(
             "CheckIn request received. Alias={Alias}, SourceIp={SourceIp}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-            alias, sourceIp, messageId, correlationId);
+            Sanitize(alias), Sanitize(sourceIp), messageId, correlationId);
 
         // Parse optional body for source info
         string source = "unknown";
@@ -67,7 +68,7 @@ public class CheckInFunction
         {
             _logger.LogWarning(
                 "Unknown alias for checkin: {Alias}. MessageId={MessageId}, CorrelationId={CorrelationId}",
-                alias, messageId, correlationId);
+                Sanitize(alias), messageId, correlationId);
             return ApiResponse.Problem(404, "Not Found",
                 $"Unknown alias '{alias}'.", instance, correlationId);
         }
@@ -90,7 +91,7 @@ public class CheckInFunction
 
         _logger.LogInformation(
             "CheckIn message queued. Alias={Alias}, MessageId={MessageId}, Version={Version}, Source={Source}, CorrelationId={CorrelationId}",
-            alias, messageId, AppInfo.Version, source, correlationId);
+            Sanitize(alias), messageId, AppInfo.Version, Sanitize(source), correlationId);
 
         return new ObjectResult(new
         {
