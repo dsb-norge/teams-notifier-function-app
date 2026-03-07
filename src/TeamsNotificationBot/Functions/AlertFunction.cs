@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
@@ -37,7 +38,7 @@ public class AlertFunction
 
         _logger.LogInformation(
             "Alert request received. Alias={Alias}, MessageId={MessageId}, CorrelationId={CorrelationId}",
-            alias, messageId, correlationId);
+            Sanitize(alias), messageId, correlationId);
 
         // Validate Content-Type
         var contentType = req.ContentType ?? "";
@@ -45,7 +46,7 @@ public class AlertFunction
         {
             _logger.LogWarning(
                 "Invalid Content-Type for alert: {ContentType}. Alias={Alias}, CorrelationId={CorrelationId}",
-                contentType, alias, correlationId);
+                Sanitize(contentType), Sanitize(alias), correlationId);
             return ApiResponse.Problem(415, "Unsupported Media Type",
                 "Content-Type must be application/json.", instance, correlationId);
         }
@@ -56,7 +57,7 @@ public class AlertFunction
         {
             _logger.LogWarning(
                 "Unknown alias for alert: {Alias}. CorrelationId={CorrelationId}",
-                alias, correlationId);
+                Sanitize(alias), correlationId);
             return ApiResponse.Problem(404, "Not Found",
                 $"Unknown alias '{alias}'.", instance, correlationId);
         }
@@ -71,7 +72,7 @@ public class AlertFunction
         {
             _logger.LogWarning(ex,
                 "Invalid JSON in alert payload. Alias={Alias}, CorrelationId={CorrelationId}",
-                alias, correlationId);
+                Sanitize(alias), correlationId);
             return ApiResponse.Problem(400, "Bad Request",
                 "Invalid JSON payload.", instance, correlationId);
         }
@@ -87,7 +88,7 @@ public class AlertFunction
         {
             _logger.LogWarning(
                 "Invalid schema ID: {SchemaId}. Expected azureMonitorCommonAlertSchema. Alias={Alias}, CorrelationId={CorrelationId}",
-                alertPayload.SchemaId, alias, correlationId);
+                Sanitize(alertPayload.SchemaId), Sanitize(alias), correlationId);
             return ApiResponse.Problem(400, "Bad Request",
                 $"Unsupported schema '{alertPayload.SchemaId}'. Expected 'azureMonitorCommonAlertSchema'.",
                 instance, correlationId);
@@ -111,9 +112,9 @@ public class AlertFunction
 
         _logger.LogInformation(
             "Alert queued. Alias={Alias}, MessageId={MessageId}, AlertRule={AlertRule}, Severity={Severity}, CorrelationId={CorrelationId}",
-            alias, messageId,
-            alertPayload.Data?.Essentials?.AlertRule ?? "unknown",
-            alertPayload.Data?.Essentials?.Severity ?? "unknown",
+            Sanitize(alias), messageId,
+            Sanitize(alertPayload.Data?.Essentials?.AlertRule ?? "unknown"),
+            Sanitize(alertPayload.Data?.Essentials?.Severity ?? "unknown"),
             correlationId);
 
         return new ObjectResult(new

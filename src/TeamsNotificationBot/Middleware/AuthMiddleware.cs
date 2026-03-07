@@ -5,6 +5,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Middleware;
 
@@ -58,7 +59,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
             {
                 _logger.LogWarning(
                     "Authorization failed: missing required role '{RequiredRole}'. Endpoint={Endpoint}, Principal={Principal}, Roles={Roles}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-                    RequiredRole, path, easyAuthPrincipal, roles ?? "none", sourceIp, correlationId);
+                    RequiredRole, Sanitize(path), Sanitize(easyAuthPrincipal), Sanitize(roles) ?? "none", Sanitize(sourceIp), correlationId);
 
                 await ApiResponse.WriteProblemAsync(
                     httpContext.Response, 403, "Forbidden",
@@ -69,7 +70,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
 
             _logger.LogInformation(
                 "Authentication succeeded via EasyAuth. Endpoint={Endpoint}, Principal={Principal}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-                path, easyAuthPrincipal, sourceIp, correlationId);
+                Sanitize(path), Sanitize(easyAuthPrincipal), Sanitize(sourceIp), correlationId);
             await ValidateRequestSizeAndProceed(httpContext, path, correlationId, context, next);
             return;
         }
@@ -77,7 +78,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
         // No EasyAuth credentials — reject
         _logger.LogWarning(
             "Authentication failed: no credentials provided. Endpoint={Endpoint}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-            path, sourceIp, correlationId);
+            Sanitize(path), Sanitize(sourceIp), correlationId);
 
         await ApiResponse.WriteProblemAsync(
             httpContext.Response, 401, "Unauthorized",

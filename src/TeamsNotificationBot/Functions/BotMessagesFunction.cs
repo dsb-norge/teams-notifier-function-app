@@ -4,6 +4,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Extensions.Logging;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
@@ -28,9 +29,9 @@ public class BotMessagesFunction
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "messages")] HttpRequest req)
     {
         _logger.LogInformation("BotMessages: incoming request from {ClientIp}",
-            req.Headers["X-Forwarded-For"].FirstOrDefault()
+            Sanitize(req.Headers["X-Forwarded-For"].FirstOrDefault()
                 ?? req.HttpContext.Connection.RemoteIpAddress?.ToString()
-                ?? "unknown");
+                ?? "unknown"));
 
         try
         {
