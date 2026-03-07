@@ -125,7 +125,7 @@ A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 | **Source & Dependency Scan** | PR + push to main | Runs Trivy via MSDO to scan NuGet dependencies for known CVEs. Uploads SARIF to the Security tab and Defender for Cloud. |
 | **Binary Scan (BinSkim)** | Push to main only | Runs BinSkim on compiled binaries to check binary-level security properties (DEP, ASLR, stack protection). |
 
-CodeQL and MSDO findings are intentionally non-blocking — they surface in the Security tab and Defender for Cloud but do not prevent merging.
+CodeQL and MSDO findings are intentionally non-blocking — they surface in the repository's **Security** tab but do not prevent merging. MSDO additionally feeds findings to Defender for Cloud via SARIF upload.
 
 On push to `main`, the Build/Test, MSDO, and CodeQL jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
 
@@ -198,7 +198,7 @@ Related packages are grouped so they update together in a single PR:
 ### Handling Dependabot PRs
 
 1. **Review the PR** — check the package changelog for breaking changes.
-2. **Wait for CI** — all CI jobs must pass (build, test, security scans).
+2. **Wait for CI** — CI Conclusion must pass (build, test, validate).
 3. **Squash merge with `fix(deps):` prefix** — this triggers a patch version bump. Example: `fix(deps): bump Azure.Identity from 1.17.0 to 1.18.0`. Use `feat(deps):` only if the update enables a new feature you're shipping.
 4. **For grouped updates**, the PR title usually works as-is after adding the `fix(deps):` prefix.
 
