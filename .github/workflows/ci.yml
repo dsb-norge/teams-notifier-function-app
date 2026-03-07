@@ -112,41 +112,43 @@ jobs:
         run: |
           if ! git diff --exit-code src/TeamsNotificationBot/app-requirements.json; then
             echo "stale=true" >> "$GITHUB_OUTPUT"
-            {
-              echo 'DIFF<<EOF'
-              git diff src/TeamsNotificationBot/app-requirements.json
-              echo 'EOF'
-            } >> "$GITHUB_ENV"
+            git diff src/TeamsNotificationBot/app-requirements.json > /tmp/requirements-diff.txt
             echo "::error::app-requirements.json is stale — see PR comment for details."
           else
             echo "stale=false" >> "$GITHUB_OUTPUT"
             echo "app-requirements.json is up to date."
           fi
 
+      - name: Prepare PR comment if stale
+        if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
+        run: |
+          {
+            echo '### :x: `app-requirements.json` is out of date'
+            echo ''
+            echo 'The committed file does not match what `generate-requirements.sh` produces from the current source code. This usually means you changed a queue name, route, auth role, command, or app version but forgot to regenerate.'
+            echo ''
+            echo '**To fix:**'
+            echo '```bash'
+            echo 'cd scripts'
+            echo 'bash generate-requirements.sh'
+            echo '```'
+            echo 'Then commit the updated `src/TeamsNotificationBot/app-requirements.json`.'
+            echo ''
+            echo '<details>'
+            echo '<summary>Diff (click to expand)</summary>'
+            echo ''
+            echo '```diff'
+            cat /tmp/requirements-diff.txt
+            echo '```'
+            echo '</details>'
+          } > /tmp/requirements-comment.md
+
       - name: Post PR comment if stale
         if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: requirements-check
-          message: |
-            ### :x: `app-requirements.json` is out of date
-
-            The committed file does not match what `generate-requirements.sh` produces from the current source code. This usually means you changed a queue name, route, auth role, command, or app version but forgot to regenerate.
-
-            **To fix:**
-            ```bash
-            cd scripts
-            bash generate-requirements.sh
-            ```
-            Then commit the updated `src/TeamsNotificationBot/app-requirements.json`.
-
-            <details>
-            <summary>Diff (click to expand)</summary>
-
-            ```diff
-            ${{ env.DIFF }}
-            ```
-            </details>
+          path: /tmp/requirements-comment.md
 
       - name: Remove stale comment if passing
         if: steps.diff-check.outputs.stale == 'false' && github.event_name == 'pull_request'

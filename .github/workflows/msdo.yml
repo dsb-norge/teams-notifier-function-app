@@ -29,7 +29,7 @@ jobs:
 
       - name: Run MSDO (Trivy)
         id: msdo
-        uses: microsoft/security-devops-action@latest
+        uses: microsoft/security-devops-action@v1
         with:
           tools: trivy
 
@@ -57,7 +57,7 @@ jobs:
 
       - name: Run MSDO (BinSkim)
         id: msdo
-        uses: microsoft/security-devops-action@latest
+        uses: microsoft/security-devops-action@v1
         with:
           tools: binskim
         env:
