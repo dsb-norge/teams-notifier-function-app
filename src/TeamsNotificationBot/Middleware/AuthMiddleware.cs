@@ -132,7 +132,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
         {
             _logger.LogWarning(
                 "Request too large: {ContentLength} bytes. Endpoint={Endpoint}, CorrelationId={CorrelationId}",
-                httpContext.Request.ContentLength, path, correlationId);
+                httpContext.Request.ContentLength, Sanitize(path), correlationId);
 
             await ApiResponse.WriteProblemAsync(
                 httpContext.Response, 413, "Payload Too Large",
