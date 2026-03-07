@@ -117,8 +117,7 @@ jobs:
         run: |
           MARKER="<!-- requirements-check -->"
           PR=${{ github.event.pull_request.number }}
-          BODY="${MARKER}
-          $(cat /tmp/requirements-comment.md)"
+          BODY="$(printf '%s\n%s' "$MARKER" "$(cat /tmp/requirements-comment.md)")"
           COMMENT_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
             --paginate --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
           if [ -n "$COMMENT_ID" ]; then
