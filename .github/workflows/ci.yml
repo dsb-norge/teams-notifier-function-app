@@ -69,7 +69,7 @@ jobs:
     env:
       # Tell CodeQL where to find local model/extension packs (e.g. LogSanitizer taint barrier).
       # The model-packs config key only resolves published packs; --additional-packs is needed for local packs.
-      CODEQL_ACTION_EXTRA_OPTIONS: '{"database":{"analyze":["--additional-packs=${{ github.workspace }}/.github/codeql"]}}'
+      CODEQL_ACTION_EXTRA_OPTIONS: '{"database":{"run-queries":["--additional-packs=${{ github.workspace }}/.github/codeql"]}}'
     steps:
       - uses: actions/checkout@v6
 
