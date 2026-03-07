@@ -66,6 +66,10 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
+    env:
+      # Tell CodeQL where to find local model/extension packs (e.g. LogSanitizer taint barrier).
+      # The model-packs config key only resolves published packs; --additional-packs is needed for local packs.
+      CODEQL_ACTION_EXTRA_OPTIONS: '{"database":{"init":["--additional-packs=${{ github.workspace }}/.github/codeql"],"analyze":["--additional-packs=${{ github.workspace }}/.github/codeql"]}}'
     steps:
       - uses: actions/checkout@v6
 
@@ -79,9 +83,6 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: csharp
-          config: |
-            model-packs:
-              - teams-notifier/codeql-extensions
 
       - name: Build
         run: dotnet build -c Release -warnAsMessage:xUnit1051
