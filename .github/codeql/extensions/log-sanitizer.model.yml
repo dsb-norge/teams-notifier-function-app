@@ -1,0 +1,10 @@
+extensions:
+  - addsTo:
+      pack: codeql/csharp-all
+      extensible: neutralModel
+    data:
+      # Mark LogSanitizer.Sanitize as neutral — it does NOT propagate taint.
+      # This tells CodeQL to stop tracking data flow through this method,
+      # effectively treating it as a sanitizer for log forging (CWE-117).
+      # Format: [namespace, type, name, signature, kind, provenance]
+      - ["TeamsNotificationBot.Helpers", "LogSanitizer", "Sanitize", "(System.String)", "summary", "manual"]

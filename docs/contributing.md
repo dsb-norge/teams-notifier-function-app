@@ -108,14 +108,15 @@ Include:
 
 ## 7. CI/CD Pipeline
 
-Every pull request targeting `main` runs four CI jobs (in `ci.yml`). A **CI Conclusion** job aggregates their results into a single required status check for branch protection.
+Every pull request targeting `main` runs three CI jobs (in `ci.yml`). A **CI Conclusion** job aggregates their results into a single required status check for branch protection.
 
 | Job | What it checks |
 |-----|---------------|
 | **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test results are posted as a PR check and comment. |
-| **Security (CodeQL)** | Static analysis for common vulnerability patterns in C# code. Results appear in the repository's **Security** tab. |
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
 | **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
+
+**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` teaches CodeQL that `LogSanitizer.Sanitize()` is a taint barrier. Default Setup auto-discovers extensions in this directory.
 
 A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 
@@ -124,9 +125,9 @@ A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 | **Source & Dependency Scan** | PR + push to main | Runs Trivy via MSDO to scan NuGet dependencies for known CVEs. Uploads SARIF to the Security tab and Defender for Cloud. |
 | **Binary Scan (BinSkim)** | Push to main only | Runs BinSkim on compiled binaries to check binary-level security properties (DEP, ASLR, stack protection). |
 
-MSDO findings are intentionally non-blocking — they surface in the Security tab and Defender for Cloud but do not prevent merging.
+CodeQL and MSDO findings are intentionally non-blocking — they surface in the Security tab and Defender for Cloud but do not prevent merging.
 
-On push to `main`, the Build/Test, Security, and MSDO jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
+On push to `main`, the Build/Test, MSDO, and CodeQL jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
 
 CI uses concurrency groups — pushing a new commit to a PR cancels any in-progress CI run for that PR.
 
