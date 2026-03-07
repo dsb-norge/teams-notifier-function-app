@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.2...teams-notifier-function-app-v1.3.3) (2026-03-07)
+
+
+### Bug Fixes
+
+* switch CodeQL to Default Setup with model extension auto-discovery ([86adec7](https://github.com/dsb-norge/teams-notifier-function-app/commit/86adec7d26e37849ccca7ef166e48dc1efcec411))
+
 ## [1.3.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.1...teams-notifier-function-app-v1.3.2) (2026-03-07)
 
 
