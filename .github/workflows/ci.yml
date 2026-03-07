@@ -163,3 +163,20 @@ jobs:
 
       - name: Validate app-requirements.json
         run: bash scripts/validate-requirements.sh
+
+  # Single required status check for branch protection.
+  # This replaces requiring each job individually, which breaks when jobs
+  # use 'if:' conditions (e.g. dependency-review is PR-only and would
+  # show as pending/skipped on push-to-main).
+  conclusion:
+    if: always()
+    name: CI Conclusion
+    needs: [build-and-test, security, dependency-review, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
+        if: >-
+          ${{
+               contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+          }}

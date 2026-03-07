@@ -108,7 +108,7 @@ Include:
 
 ## 7. CI/CD Pipeline
 
-Every pull request targeting `main` runs four CI jobs (in `ci.yml`). All must pass before merging.
+Every pull request targeting `main` runs four CI jobs (in `ci.yml`). A **CI Conclusion** job aggregates their results into a single required status check for branch protection.
 
 | Job | What it checks |
 |-----|---------------|
@@ -123,6 +123,8 @@ A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 |-----|------|---------------|
 | **Source & Dependency Scan** | PR + push to main | Runs Trivy via MSDO to scan NuGet dependencies for known CVEs. Uploads SARIF to the Security tab and Defender for Cloud. |
 | **Binary Scan (BinSkim)** | Push to main only | Runs BinSkim on compiled binaries to check binary-level security properties (DEP, ASLR, stack protection). |
+
+MSDO findings are intentionally non-blocking — they surface in the Security tab and Defender for Cloud but do not prevent merging.
 
 On push to `main`, the Build/Test, Security, and MSDO jobs run again, plus the [release workflow](#8-versioning-and-releases) triggers.
 
