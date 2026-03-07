@@ -69,17 +69,17 @@ jobs:
         run: |
           # BinSkim produces multiple SARIF runs (one per DLL). CodeQL upload-sarif@v4
           # rejects files with multiple runs sharing the same category. Merge all runs
-          # into a single run by concatenating their results arrays.
-          jq '{
-            "$schema": .["$schema"],
-            version: .version,
-            runs: [{
-              tool: .runs[0].tool,
-              results: [.runs[].results[]],
-              columnKind: .runs[0].columnKind,
-              properties: .runs[0].properties
-            }]
-          }' "${{ steps.msdo.outputs.sarifFile }}" > /tmp/merged-binskim.sarif
+          # into a single run by concatenating their results arrays, while preserving
+          # all other run-level metadata from the first run.
+          jq '
+            . as $root
+            | (
+                $root.runs[0]
+                | .results = [ $root.runs[].results // [] | .[] ]
+              ) as $mergedRun
+            | $root
+            | .runs = [ $mergedRun ]
+          ' "${{ steps.msdo.outputs.sarifFile }}" > /tmp/merged-binskim.sarif
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4
