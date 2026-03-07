@@ -12,7 +12,6 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
   pull-requests: write
 
 jobs:
@@ -20,9 +19,9 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5 2026-02-26
         with:
           global-json-file: global.json
           cache: true
@@ -34,7 +33,7 @@ jobs:
 
       - name: Cache Azurite global install
         id: cache-azurite
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5 2026-01-29
         with:
           path: |
             ${{ steps.npm-global.outputs.dir }}/lib/node_modules/azurite
@@ -52,25 +51,17 @@ jobs:
         run: dotnet build --no-restore -c Release -warnAsMessage:xUnit1051
 
       - name: Test
-        run: dotnet test --no-build -c Release --logger "trx;LogFileName=test-results.trx"
-
-      - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: "**/test-results.trx"
-          comment_title: "Test Results"
-          check_name: "Test Results"
+        run: dotnet test --no-build -c Release --logger GitHubActions
 
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4 2026-03-03
         with:
           license-check: false
 
@@ -78,7 +69,7 @@ jobs:
     name: Validate Requirements
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
 
       - name: Regenerate app-requirements.json
         run: bash scripts/generate-requirements.sh
@@ -121,17 +112,32 @@ jobs:
 
       - name: Post PR comment if stale
         if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: requirements-check
-          path: /tmp/requirements-comment.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKER="<!-- requirements-check -->"
+          PR=${{ github.event.pull_request.number }}
+          BODY="$(printf '%s\n%s' "$MARKER" "$(cat /tmp/requirements-comment.md)")"
+          COMMENT_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --paginate --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -X PATCH -f body="$BODY"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$BODY"
+          fi
 
       - name: Remove stale comment if passing
         if: steps.diff-check.outputs.stale == 'false' && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: requirements-check
-          delete: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKER="<!-- requirements-check -->"
+          PR=${{ github.event.pull_request.number }}
+          COMMENT_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --paginate --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -X DELETE
+          fi
 
       - name: Fail if stale
         if: steps.diff-check.outputs.stale == 'true'
