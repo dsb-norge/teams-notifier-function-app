@@ -112,7 +112,7 @@ Every pull request targeting `main` runs three CI jobs (in `ci.yml`). A **CI Con
 
 | Job | What it checks |
 |-----|---------------|
-| **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test results are posted as a PR check and comment. |
+| **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test failures appear as inline annotations and a Job Summary. |
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
 | **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
 
