@@ -79,6 +79,9 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: csharp
+          config: |
+            model-packs:
+              - teams-notifier/codeql-extensions
 
       - name: Build
         run: dotnet build -c Release -warnAsMessage:xUnit1051
