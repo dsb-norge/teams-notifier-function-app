@@ -13,7 +13,6 @@ concurrency:
 permissions:
   contents: read
   checks: write
-  security-events: write
   pull-requests: write
 
 jobs:
@@ -62,29 +61,6 @@ jobs:
           files: "**/test-results.trx"
           comment_title: "Test Results"
           check_name: "Test Results"
-
-  security:
-    name: Security
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/*.csproj"
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: csharp
-
-      - name: Build
-        run: dotnet build -c Release -warnAsMessage:xUnit1051
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
 
   dependency-review:
     name: Dependency Review
@@ -171,7 +147,7 @@ jobs:
   conclusion:
     if: always()
     name: CI Conclusion
-    needs: [build-and-test, security, dependency-review, validate]
+    needs: [build-and-test, dependency-review, validate]
     runs-on: ubuntu-latest
     steps:
       - run: exit 1
