@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.0...teams-notifier-function-app-v1.3.1) (2026-03-07)
+
+
+### Bug Fixes
+
+* add SARIF category to MSDO uploads to avoid CodeQL rejection ([adb864f](https://github.com/dsb-norge/teams-notifier-function-app/commit/adb864f47a4ad711ce4dc7e4b382230ab33a9b04))
+* merge BinSkim SARIF runs before upload to fix CodeQL rejection ([c423a3b](https://github.com/dsb-norge/teams-notifier-function-app/commit/c423a3bf171636ca942db7725ab4f7d05da8843a))
+* replace Trivy with MSDO, add artifact attestation and requirements staleness check ([377e26d](https://github.com/dsb-norge/teams-notifier-function-app/commit/377e26d51c1827c789c0b85f633b000d7d6f7490))
+
 ## [1.3.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.2.0...teams-notifier-function-app-v1.3.0) (2026-03-06)
 
 
