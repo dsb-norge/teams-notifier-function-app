@@ -1,0 +1,70 @@
+name: Microsoft Security DevOps
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  msdo-source:
+    name: Source & Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Build (generates .deps.json for Trivy)
+        run: dotnet build -c Release --nologo -v quiet -warnAsMessage:xUnit1051
+
+      - name: Run MSDO (Trivy)
+        id: msdo
+        uses: microsoft/security-devops-action@latest
+        with:
+          tools: trivy
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: ${{ steps.msdo.outputs.sarifFile }}
+
+  msdo-binaries:
+    name: Binary Scan (BinSkim)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Publish (R2R, linux-x64)
+        run: dotnet publish src/TeamsNotificationBot -c Release -r linux-x64 -o ./publish
+
+      - name: Run MSDO (BinSkim)
+        id: msdo
+        uses: microsoft/security-devops-action@latest
+        with:
+          tools: binskim
+        env:
+          BINSKIM_TARGETS: ./publish/*.dll
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: ${{ steps.msdo.outputs.sarifFile }}
