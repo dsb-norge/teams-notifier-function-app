@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.1...teams-notifier-function-app-v1.3.2) (2026-03-07)
+
+
+### Bug Fixes
+
+* add CI Conclusion job as single required status check ([a5c68a1](https://github.com/dsb-norge/teams-notifier-function-app/commit/a5c68a17248ee4fc9d19b5230c693ce18a69f753))
+* sanitize log parameters to prevent log forging (CWE-117) ([3333d5c](https://github.com/dsb-norge/teams-notifier-function-app/commit/3333d5c787cc54f8e6c3ea6f96966a4c21d3604c))
+
 ## [1.3.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.0...teams-notifier-function-app-v1.3.1) (2026-03-07)
 
 
