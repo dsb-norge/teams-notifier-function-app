@@ -38,6 +38,7 @@ jobs:
         if: always()
         with:
           sarif_file: ${{ steps.msdo.outputs.sarifFile }}
+          category: msdo-trivy
 
   msdo-binaries:
     name: Binary Scan (BinSkim)
@@ -68,3 +69,4 @@ jobs:
         if: always()
         with:
           sarif_file: ${{ steps.msdo.outputs.sarifFile }}
+          category: msdo-binskim
