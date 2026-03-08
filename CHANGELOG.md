@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.3...teams-notifier-function-app-v1.3.4) (2026-03-08)
+
+
+### Bug Fixes
+
+* add GitHubActionsTestLogger to dependabot testing group ([79a37a8](https://github.com/dsb-norge/teams-notifier-function-app/commit/79a37a83d038c44492364e4fa0785fb340fd5a4b))
+
 ## [1.3.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.2...teams-notifier-function-app-v1.3.3) (2026-03-07)
 
 
