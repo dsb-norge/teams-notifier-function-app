@@ -23,6 +23,7 @@ updates:
           - "Microsoft.NET.Test.*"
           - "coverlet.*"
           - "Moq"
+          - "GitHubActionsTestLogger"
     ignore:
       - dependency-name: "Microsoft.ApplicationInsights.WorkerService"
         versions: [">=3.0.0"]  # Incompatible with Functions.Worker.ApplicationInsights 2.x

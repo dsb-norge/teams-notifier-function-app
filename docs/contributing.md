@@ -189,7 +189,7 @@ Related packages are grouped so they update together in a single PR:
 | microsoft-agents | `Microsoft.Agents.*` |
 | azure-functions | `Microsoft.Azure.Functions.*`, `Microsoft.Azure.Core.Extensions` |
 | azure-sdk | `Azure.*` |
-| testing | `xunit*`, `Microsoft.NET.Test.*`, `coverlet.*`, `Moq` |
+| testing | `xunit*`, `Microsoft.NET.Test.*`, `coverlet.*`, `Moq`, `GitHubActionsTestLogger` |
 
 ### Known version constraints
 
