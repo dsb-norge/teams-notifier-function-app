@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.5](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.4...teams-notifier-function-app-v1.3.5) (2026-03-08)
+
+
+### Bug Fixes
+
+* **deps:** bump actions/attest-build-provenance from 2.4.0 to 4.1.0 ([d5008d9](https://github.com/dsb-norge/teams-notifier-function-app/commit/d5008d97c73c1ae23c5bf8c69af205b9442c1d7b))
+
 ## [1.3.4](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.3...teams-notifier-function-app-v1.3.4) (2026-03-08)
 
 
