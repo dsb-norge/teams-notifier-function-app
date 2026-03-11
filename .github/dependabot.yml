@@ -25,8 +25,12 @@ updates:
           - "Moq"
           - "GitHubActionsTestLogger"
     ignore:
+      # Incompatible with Functions.Worker.ApplicationInsights 2.x — see docs/contributing.md §9
       - dependency-name: "Microsoft.ApplicationInsights.WorkerService"
-        versions: [">=3.0.0"]  # Incompatible with Functions.Worker.ApplicationInsights 2.x
+        versions: [">=3.0.0"]
+      # MTP v2 conflict with xunit.v3 (MTP v1) — see docs/contributing.md §9
+      - dependency-name: "GitHubActionsTestLogger"
+        versions: [">=3.0.0"]
     open-pull-requests-limit: 10
 
   - package-ecosystem: github-actions
