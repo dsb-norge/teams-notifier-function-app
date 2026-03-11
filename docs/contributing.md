@@ -193,7 +193,15 @@ Related packages are grouped so they update together in a single PR:
 
 ### Known version constraints
 
-- **`Microsoft.ApplicationInsights.WorkerService` is pinned below 3.0.0.** Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime (`TypeLoadException`). Dependabot is configured to ignore `>=3.0.0` until the worker package supports it.
+- **`Microsoft.ApplicationInsights.WorkerService` is pinned below 3.0.0.** Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime (`TypeLoadException` on Flex Consumption). Dependabot is configured to ignore `>=3.0.0` until the worker package supports it.
+
+- **`GitHubActionsTestLogger` is pinned below 3.0.0.** Version 3.0 added Microsoft Testing Platform (MTP) support, which introduces a transitive dependency on `Microsoft.Testing.Platform` v2. This project uses `xunit.v3`, which depends on MTP v1 — causing assembly version conflicts at build time (`CS1705`). Additionally, the `PrivateAssets="all"` attribute (required for VSTest mode) breaks MTP's auto-generated registration code (`CS0400`). PRs #31 and #36 both failed CI for this reason. See [GitHubActionsTestLogger#57](https://github.com/Tyrrrz/GitHubActionsTestLogger/issues/57) for details.
+
+  **To revisit this constraint**, all of the following must be true:
+  1. `xunit.v3` ships an MTP v2–compatible variant (e.g., a future `xunit.v3.mtp-v2` package, or `xunit.v3` itself upgrades to MTP v2).
+  2. `PrivateAssets="all"` is removed from the `GitHubActionsTestLogger` package reference (MTP mode requires the assembly at compile time).
+  3. `xunit.runner.visualstudio` is evaluated for removal (MTP replaces the VSTest runner).
+  4. The `--logger GitHubActions` argument in `ci.yml` is verified to still work, or updated to use MTP-style arguments (e.g., `--report-github-summary-include-passed false`).
 
 ### Handling Dependabot PRs
 
