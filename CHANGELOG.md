@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.6](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.5...teams-notifier-function-app-v1.3.6) (2026-04-15)
+
+
+### Bug Fixes
+
+* **deps:** add Microsoft.Bcl.Memory 10.0.4 (CVE-2026-26127) ([ce84256](https://github.com/dsb-norge/teams-notifier-function-app/commit/ce842564d262c6404d745789a6707f80f5437459))
+* **deps:** block GitHubActionsTestLogger &gt;=3.0.0 in Dependabot ([c65f501](https://github.com/dsb-norge/teams-notifier-function-app/commit/c65f5019ebf5d64e8e6c6a88b18ce80c235653eb))
+* **deps:** bump actions/cache from 5.0.3 to 5.0.4 ([b63dcf6](https://github.com/dsb-norge/teams-notifier-function-app/commit/b63dcf64e55546d9fdc0af2f76d6b206c04e7be0))
+* **deps:** bump Azure.Identity from 1.18.0 to 1.21.0 ([d59f444](https://github.com/dsb-norge/teams-notifier-function-app/commit/d59f4443e6d5ba3a7b7b9cff28c710263d0a36a4))
+* **deps:** bump github/codeql-action from 4.32.6 to 4.35.1 ([61ae3fc](https://github.com/dsb-norge/teams-notifier-function-app/commit/61ae3fc5a3706d599b99bdb95cb39a366adc6abe))
+* **deps:** bump Microsoft.Bcl.Memory from 10.0.4 to 10.0.6 ([96b7e46](https://github.com/dsb-norge/teams-notifier-function-app/commit/96b7e46cb8301f429505d419cf3f5d629e2994dd))
+* **deps:** bump Microsoft.NET.Test.Sdk from 18.3.0 to 18.4.0 ([209a805](https://github.com/dsb-norge/teams-notifier-function-app/commit/209a80546ce4f6ed61ac42372ab44b384349cda1))
+* **deps:** bump Storage.Queues extension from 5.5.3 to 5.5.4 ([9e838f7](https://github.com/dsb-norge/teams-notifier-function-app/commit/9e838f727b908a8fb7d1aae005bdddf5f8c476f0))
+
 ## [1.3.5](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.4...teams-notifier-function-app-v1.3.5) (2026-03-08)
 
 
