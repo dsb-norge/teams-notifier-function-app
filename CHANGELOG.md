@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.6...teams-notifier-function-app-v1.4.0) (2026-04-15)
+
+
+### Features
+
+* **deps:** bump ThrottlingTroll from 9.2.0 to 10.0.1 ([388c331](https://github.com/dsb-norge/teams-notifier-function-app/commit/388c331b91f66ff5ba8690e6e2f07bc3ad10ceb7))
+
 ## [1.3.6](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.5...teams-notifier-function-app-v1.3.6) (2026-04-15)
 
 
