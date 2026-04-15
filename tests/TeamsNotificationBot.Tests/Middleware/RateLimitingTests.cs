@@ -32,7 +32,7 @@ public class RateLimitingTests
 
         for (int i = 1; i <= 10; i++)
         {
-            var count = await store.IncrementAndGetAsync(key, 1, ttl, 1, null);
+            var count = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(ttl, 1), null);
             Assert.Equal(i, count);
         }
     }
@@ -47,10 +47,10 @@ public class RateLimitingTests
 
         // Increment caller A five times
         for (int i = 0; i < 5; i++)
-            await store.IncrementAndGetAsync(keyA, 1, ttl, 1, null);
+            await store.IncrementAndGetAsync(keyA, 1, new CounterAbsoluteTtl(ttl, 1), null);
 
         // Caller B should start at 1 (independent counter)
-        var bCount = await store.IncrementAndGetAsync(keyB, 1, ttl, 1, null);
+        var bCount = await store.IncrementAndGetAsync(keyB, 1, new CounterAbsoluteTtl(ttl, 1), null);
         Assert.Equal(1, bCount);
     }
 
@@ -62,16 +62,16 @@ public class RateLimitingTests
         var shortTtl = DateTimeOffset.UtcNow.AddSeconds(1);
 
         // Increment to 3
-        await store.IncrementAndGetAsync(key, 1, shortTtl, 1, null);
-        await store.IncrementAndGetAsync(key, 1, shortTtl, 1, null);
-        var count = await store.IncrementAndGetAsync(key, 1, shortTtl, 1, null);
+        await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(shortTtl, 1), null);
+        await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(shortTtl, 1), null);
+        var count = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(shortTtl, 1), null);
         Assert.Equal(3, count);
 
         // Wait for TTL to expire
         await Task.Delay(1500);
 
         // Counter should reset — next increment starts fresh at 1
-        var resetCount = await store.IncrementAndGetAsync(key, 1, DateTimeOffset.UtcNow.AddSeconds(60), 1, null);
+        var resetCount = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(DateTimeOffset.UtcNow.AddSeconds(60), 1), null);
         Assert.Equal(1, resetCount);
     }
 
@@ -98,7 +98,7 @@ public class RateLimitingTests
             new ParallelOptions { MaxDegreeOfParallelism = 20 },
             async (_, _) =>
             {
-                var count = await store.IncrementAndGetAsync(key, 1, ttl, 1, null);
+                var count = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(ttl, 1), null);
                 results.Add(count);
             });
 
@@ -134,7 +134,7 @@ public class RateLimitingTests
                 var id = callerId;
                 tasks.Add(Task.Run(async () =>
                 {
-                    var count = await store.IncrementAndGetAsync(id, 1, ttl, 1, null);
+                    var count = await store.IncrementAndGetAsync(id, 1, new CounterAbsoluteTtl(ttl, 1), null);
                     results[id].Add(count);
                 }));
             }
@@ -167,7 +167,7 @@ public class RateLimitingTests
             new ParallelOptions { MaxDegreeOfParallelism = 50 },
             async (_, _) =>
             {
-                var count = await store.IncrementAndGetAsync(key, 1, ttl, 1, null);
+                var count = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(ttl, 1), null);
                 results.Add(count);
             });
 
