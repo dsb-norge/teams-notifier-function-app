@@ -14,8 +14,31 @@ permissions:
   id-token: write
 
 jobs:
+  # Skip scans for docs- or CI-only changes. dorny/paths-filter returns
+  # all filters as `true` for schedule/workflow_dispatch events, so the
+  # weekly Monday cron run still scans everything regardless of file paths.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      scannable: ${{ steps.filter.outputs.scannable }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1 2026-03-17
+        id: filter
+        with:
+          filters: |
+            scannable:
+              - 'src/**'
+              - 'tests/**'
+              - '**/*.csproj'
+              - 'global.json'
+              - '.github/workflows/msdo.yml'
+
   msdo-source:
     name: Source & Dependency Scan
+    needs: changes
+    if: needs.changes.outputs.scannable == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
@@ -44,7 +67,8 @@ jobs:
 
   msdo-binaries:
     name: Binary Scan (BinSkim)
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    needs: changes
+    if: (github.event_name == 'push' || github.event_name == 'schedule') && needs.changes.outputs.scannable == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
