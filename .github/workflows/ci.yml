@@ -37,6 +37,7 @@ jobs:
             code:
               - 'src/**'
               - 'tests/**'
+              - '**/*.csproj'
               - 'global.json'
               - 'TeamsNotificationBot.slnx'
               - '.github/workflows/ci.yml'

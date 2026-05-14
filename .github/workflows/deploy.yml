@@ -106,6 +106,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "::notice title=Deploy target::tag=$TAG version=$VERSION"
 
+      - name: Sparse-checkout project file at release tag
+        # Pulls only the real .csproj at the tag we're deploying, so the stub
+        # below mirrors that release's target framework rather than a value
+        # hard-coded in the workflow. Done before the ZIP download because
+        # actions/checkout wipes the workspace by default — running it after
+        # the download would delete `release/`.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          sparse-checkout: src/TeamsNotificationBot/TeamsNotificationBot.csproj
+          sparse-checkout-cone-mode: false
+
       - name: Wait for release ZIP to be uploaded
         # release-please publishes the release before the release workflow's
         # build-artifacts job uploads the ZIP. Poll until present, up to ~5 min.
@@ -144,16 +156,6 @@ jobs:
         run: |
           gh attestation verify "release/${{ steps.tag.outputs.zip }}" \
             --repo "$GITHUB_REPOSITORY"
-
-      - name: Sparse-checkout project file at release tag
-        # Pulls only the real .csproj at the tag we're deploying, so the stub
-        # below mirrors that release's target framework rather than a value
-        # hard-coded in the workflow.
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
-        with:
-          ref: ${{ steps.tag.outputs.tag }}
-          sparse-checkout: src/TeamsNotificationBot/TeamsNotificationBot.csproj
-          sparse-checkout-cone-mode: false
 
       - name: Prepare deployment package
         run: |

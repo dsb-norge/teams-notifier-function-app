@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   # Skip scans for docs- or CI-only changes. dorny/paths-filter returns
-  # all filters as `true` for schedule/workflow_dispatch events, so the
-  # weekly Monday cron run still scans everything regardless of file paths.
+  # all filters as `true` for schedule events, so the weekly Monday cron
+  # run still scans everything regardless of file paths.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
