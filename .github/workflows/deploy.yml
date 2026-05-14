@@ -1,0 +1,210 @@
+name: Deploy
+
+# Deploys a published release ZIP to the configured Azure Function App via
+# OIDC. No long-lived credentials are stored — Azure trust is established via
+# a Federated Identity Credential on a deploy UAMI provisioned by the LZ
+# Terraform module, scoped to this repo + the targeted GitHub environment.
+#
+# Triggers:
+#   - release:published — fires after release-please publishes a new release.
+#                         The release workflow uploads the ZIP asynchronously,
+#                         so this workflow polls until the asset is present.
+#   - workflow_dispatch — manual rerun for an existing tag (rollback, retry).
+#
+# ---------------------------------------------------------------------------
+# Required configuration (per GitHub environment, e.g. `dev`)
+# ---------------------------------------------------------------------------
+# Configure these under: Settings → Environments → <env> → Environment secrets.
+# Use environment secrets (not repo secrets) so deployment protection rules
+# and per-environment scoping apply. Each environment that this workflow
+# targets needs its own set of values pointing at that environment's infra.
+#
+#   AZURE_CLIENT_ID
+#     Client ID (appId) of the deploy User-Assigned Managed Identity created
+#     by the LZ Terraform module via `deploy_github_actions_from`. Surfaced
+#     as the `deploy_uami_client_id` module output. Used as the OIDC subject
+#     on Azure's side; the FIC on this UAMI must trust
+#     `repo:<org>/<repo>:environment:<env>`.
+#
+#   AZURE_TENANT_ID
+#     Entra ID tenant ID hosting the deploy UAMI and the function app.
+#     Available from `az account show --query tenantId -o tsv` or from
+#     `data.azurerm_client_config.current.tenant_id` in the consumer's TF.
+#
+#   AZURE_SUBSCRIPTION_ID
+#     Subscription ID hosting the function app and the deploy UAMI.
+#     Available from `az account show --query id -o tsv` or
+#     `data.azurerm_client_config.current.subscription_id` in the consumer's TF.
+#
+#   AZURE_FUNCTION_APP_NAME
+#     The deployed function app's name (e.g. `func-<workload>-<env>-<suffix>`).
+#     Surfaced as the `function_app_name` module output. Kept as a secret so
+#     internal naming patterns do not appear in workflow logs of this public
+#     repository.
+#
+# No other GitHub secrets are required. GITHUB_TOKEN is provided automatically
+# and is used only for read access to this repo's releases + attestations.
+# ---------------------------------------------------------------------------
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (defaults to the latest release)."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # Azure OIDC token
+  attestations: read # verify ZIP build provenance
+
+concurrency:
+  # Serialise deploys per environment; do not cancel an in-flight deploy.
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: Deploy to dev
+    runs-on: ubuntu-latest
+    # Selecting an environment scopes the OIDC token's subject to
+    # `repo:<org>/<repo>:environment:dev`, which the FIC on the deploy UAMI
+    # is configured to trust. Environment-level secrets/protection rules
+    # (required reviewers, deployment branch policies, wait timer) apply here.
+    environment: dev
+
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAG="$RELEASE_TAG"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          # release-please tag format: teams-notifier-function-app-vX.Y.Z
+          VERSION="${TAG##*-v}"
+          if [ "$VERSION" = "$TAG" ] || [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from tag '$TAG' (expected suffix '-vX.Y.Z')."
+            exit 1
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "zip=teams-notifier-function-app-v${VERSION}.zip"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice title=Deploy target::tag=$TAG version=$VERSION"
+
+      - name: Sparse-checkout project file at release tag
+        # Pulls only the real .csproj at the tag we're deploying, so the stub
+        # below mirrors that release's target framework rather than a value
+        # hard-coded in the workflow. Done before the ZIP download because
+        # actions/checkout wipes the workspace by default — running it after
+        # the download would delete `release/`.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          sparse-checkout: src/TeamsNotificationBot/TeamsNotificationBot.csproj
+          sparse-checkout-cone-mode: false
+
+      - name: Wait for release ZIP to be uploaded
+        # release-please publishes the release before the release workflow's
+        # build-artifacts job uploads the ZIP. Poll until present, up to ~5 min.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ZIP: ${{ steps.tag.outputs.zip }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --json assets --jq '.assets[].name' | grep -qx "$ZIP"; then
+              echo "Found $ZIP on release $TAG."
+              exit 0
+            fi
+            echo "Asset $ZIP not yet on release $TAG; retrying in 10s ($i/30)."
+            sleep 10
+          done
+          echo "::error::Asset $ZIP did not appear on release $TAG within timeout."
+          exit 1
+
+      - name: Download release ZIP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "${{ steps.tag.outputs.zip }}" \
+            --dir release
+
+      - name: Verify ZIP build provenance
+        # Validates that the ZIP was built by this repo's release workflow on a
+        # GitHub-hosted runner, anchored to the Sigstore transparency log.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh attestation verify "release/${{ steps.tag.outputs.zip }}" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Prepare deployment package
+        run: |
+          set -euo pipefail
+          mkdir publish
+          unzip -q "release/${{ steps.tag.outputs.zip }}" -d publish/
+          # The func CLI inspects a .csproj to determine the TFM. The release
+          # ZIP contains only compiled output, so we synthesise a minimal stub
+          # using the TFM declared in the real project file at the deployed
+          # tag. See docs/deployment-guide.md Step 3 Option A.
+          TFM="$(sed -n 's:.*<TargetFramework>\([^<]*\)</TargetFramework>.*:\1:p' \
+                 src/TeamsNotificationBot/TeamsNotificationBot.csproj)"
+          if [ -z "$TFM" ]; then
+            echo "::error::Could not read <TargetFramework> from TeamsNotificationBot.csproj"
+            exit 1
+          fi
+          cat > publish/stub.csproj <<CSPROJ
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><TargetFramework>$TFM</TargetFramework></PropertyGroup>
+          </Project>
+          CSPROJ
+          echo "::notice title=Target framework::$TFM"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0 2026-03-17
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Functions Core Tools
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+      - name: Deploy function app
+        working-directory: publish
+        env:
+          FUNCTION_APP_NAME: ${{ secrets.AZURE_FUNCTION_APP_NAME }}
+        run: |
+          func azure functionapp publish "$FUNCTION_APP_NAME" --no-build --dotnet-isolated
+
+      - name: Step summary
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          {
+            echo "## Deployed"
+            echo ""
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Version:** \`$VERSION\`"
+            echo "- **Environment:** \`dev\`"
+          } >> "$GITHUB_STEP_SUMMARY"

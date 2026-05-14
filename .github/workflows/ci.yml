@@ -15,8 +15,46 @@ permissions:
   pull-requests: write
 
 jobs:
+  # Detect which buckets of files changed in the push / PR. Sibling jobs gate
+  # their `if:` on these outputs so we don't waste minutes building, scanning
+  # dependencies, or regenerating requirements for a docs- or CI-only change.
+  # The `conclusion` job below stays gated on `if: always()` and treats
+  # skipped sibling jobs as success, so the required status check is still
+  # reported regardless of which jobs ran.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      deps: ${{ steps.filter.outputs.deps }}
+      requirements: ${{ steps.filter.outputs.requirements }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1 2026-03-17
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - '**/*.csproj'
+              - 'global.json'
+              - 'TeamsNotificationBot.slnx'
+              - '.github/workflows/ci.yml'
+            deps:
+              - '**/*.csproj'
+              - 'global.json'
+              - '.github/workflows/ci.yml'
+            requirements:
+              - 'src/**'
+              - 'scripts/generate-requirements.sh'
+              - 'scripts/validate-requirements.sh'
+              - '.github/workflows/ci.yml'
+
   build-and-test:
     name: Build and Test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
@@ -55,7 +93,8 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
@@ -67,6 +106,8 @@ jobs:
 
   validate:
     name: Validate Requirements
+    needs: changes
+    if: needs.changes.outputs.requirements == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09
@@ -148,12 +189,14 @@ jobs:
 
   # Single required status check for branch protection.
   # This replaces requiring each job individually, which breaks when jobs
-  # use 'if:' conditions (e.g. dependency-review is PR-only and would
-  # show as pending/skipped on push-to-main).
+  # use 'if:' conditions (e.g. dependency-review is PR-only, and others now
+  # gate on path filters — they'd otherwise show as pending/skipped).
+  # `if: always()` ensures this job runs regardless. Skipped upstream jobs
+  # roll up as `success` here.
   conclusion:
     if: always()
     name: CI Conclusion
-    needs: [build-and-test, dependency-review, validate]
+    needs: [changes, build-and-test, dependency-review, validate]
     runs-on: ubuntu-latest
     steps:
       - run: exit 1
