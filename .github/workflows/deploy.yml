@@ -1,15 +1,50 @@
 name: Deploy
 
 # Deploys a published release ZIP to the configured Azure Function App via
-# OIDC. No secrets are stored — Azure trust is established via a Federated
-# Identity Credential on a deploy UAMI provisioned by the LZ Terraform module,
-# scoped to this repo + the targeted GitHub environment.
+# OIDC. No long-lived credentials are stored — Azure trust is established via
+# a Federated Identity Credential on a deploy UAMI provisioned by the LZ
+# Terraform module, scoped to this repo + the targeted GitHub environment.
 #
 # Triggers:
 #   - release:published — fires after release-please publishes a new release.
 #                         The release workflow uploads the ZIP asynchronously,
 #                         so this workflow polls until the asset is present.
 #   - workflow_dispatch — manual rerun for an existing tag (rollback, retry).
+#
+# ---------------------------------------------------------------------------
+# Required configuration (per GitHub environment, e.g. `dev`)
+# ---------------------------------------------------------------------------
+# Configure these under: Settings → Environments → <env> → Environment secrets.
+# Use environment secrets (not repo secrets) so deployment protection rules
+# and per-environment scoping apply. Each environment that this workflow
+# targets needs its own set of values pointing at that environment's infra.
+#
+#   AZURE_CLIENT_ID
+#     Client ID (appId) of the deploy User-Assigned Managed Identity created
+#     by the LZ Terraform module via `deploy_github_actions_from`. Surfaced
+#     as the `deploy_uami_client_id` module output. Used as the OIDC subject
+#     on Azure's side; the FIC on this UAMI must trust
+#     `repo:<org>/<repo>:environment:<env>`.
+#
+#   AZURE_TENANT_ID
+#     Entra ID tenant ID hosting the deploy UAMI and the function app.
+#     Available from `az account show --query tenantId -o tsv` or from
+#     `data.azurerm_client_config.current.tenant_id` in the consumer's TF.
+#
+#   AZURE_SUBSCRIPTION_ID
+#     Subscription ID hosting the function app and the deploy UAMI.
+#     Available from `az account show --query id -o tsv` or
+#     `data.azurerm_client_config.current.subscription_id` in the consumer's TF.
+#
+#   AZURE_FUNCTION_APP_NAME
+#     The deployed function app's name (e.g. `func-<workload>-<env>-<suffix>`).
+#     Surfaced as the `function_app_name` module output. Kept as a secret so
+#     internal naming patterns do not appear in workflow logs of this public
+#     repository.
+#
+# No other GitHub secrets are required. GITHUB_TOKEN is provided automatically
+# and is used only for read access to this repo's releases + attestations.
+# ---------------------------------------------------------------------------
 
 on:
   release:
