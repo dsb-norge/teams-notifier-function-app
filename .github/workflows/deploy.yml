@@ -1,0 +1,155 @@
+name: Deploy
+
+# Deploys a published release ZIP to the configured Azure Function App via
+# OIDC. No secrets are stored — Azure trust is established via a Federated
+# Identity Credential on a deploy UAMI provisioned by the LZ Terraform module,
+# scoped to this repo + the targeted GitHub environment.
+#
+# Triggers:
+#   - release:published — fires after release-please publishes a new release.
+#                         The release workflow uploads the ZIP asynchronously,
+#                         so this workflow polls until the asset is present.
+#   - workflow_dispatch — manual rerun for an existing tag (rollback, retry).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (defaults to the latest release)."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # Azure OIDC token
+  attestations: read # verify ZIP build provenance
+
+concurrency:
+  # Serialise deploys per environment; do not cancel an in-flight deploy.
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: Deploy to dev
+    runs-on: ubuntu-latest
+    # Selecting an environment scopes the OIDC token's subject to
+    # `repo:<org>/<repo>:environment:dev`, which the FIC on the deploy UAMI
+    # is configured to trust. Environment-level secrets/protection rules
+    # (required reviewers, deployment branch policies, wait timer) apply here.
+    environment: dev
+
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAG="$RELEASE_TAG"
+          elif [ -n "${INPUT_TAG:-}" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          # release-please tag format: teams-notifier-function-app-vX.Y.Z
+          VERSION="${TAG##*-v}"
+          if [ "$VERSION" = "$TAG" ] || [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from tag '$TAG' (expected suffix '-vX.Y.Z')."
+            exit 1
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "zip=teams-notifier-function-app-v${VERSION}.zip"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice title=Deploy target::tag=$TAG version=$VERSION"
+
+      - name: Wait for release ZIP to be uploaded
+        # release-please publishes the release before the release workflow's
+        # build-artifacts job uploads the ZIP. Poll until present, up to ~5 min.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ZIP: ${{ steps.tag.outputs.zip }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --json assets --jq '.assets[].name' | grep -qx "$ZIP"; then
+              echo "Found $ZIP on release $TAG."
+              exit 0
+            fi
+            echo "Asset $ZIP not yet on release $TAG; retrying in 10s ($i/30)."
+            sleep 10
+          done
+          echo "::error::Asset $ZIP did not appear on release $TAG within timeout."
+          exit 1
+
+      - name: Download release ZIP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "${{ steps.tag.outputs.zip }}" \
+            --dir release
+
+      - name: Verify ZIP build provenance
+        # Validates that the ZIP was built by this repo's release workflow on a
+        # GitHub-hosted runner, anchored to the Sigstore transparency log.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh attestation verify "release/${{ steps.tag.outputs.zip }}" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Prepare deployment package
+        run: |
+          set -euo pipefail
+          mkdir publish
+          unzip -q "release/${{ steps.tag.outputs.zip }}" -d publish/
+          # The func CLI inspects a .csproj to determine the TFM. The release
+          # ZIP contains only compiled output, so add a stub project to satisfy
+          # the detection. See docs/deployment-guide.md Step 3 Option A.
+          cat > publish/stub.csproj <<'CSPROJ'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+          </Project>
+          CSPROJ
+
+      - name: Azure login (OIDC)
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0 2026-03-17
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Functions Core Tools
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+      - name: Deploy function app
+        working-directory: publish
+        env:
+          FUNCTION_APP_NAME: ${{ secrets.AZURE_FUNCTION_APP_NAME }}
+        run: |
+          func azure functionapp publish "$FUNCTION_APP_NAME" --no-build --dotnet-isolated
+
+      - name: Step summary
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          {
+            echo "## Deployed"
+            echo ""
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Version:** \`$VERSION\`"
+            echo "- **Environment:** \`dev\`"
+          } >> "$GITHUB_STEP_SUMMARY"
