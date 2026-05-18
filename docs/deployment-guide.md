@@ -359,7 +359,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexisten
 |------|------|----------|---------|-------------|
 | `name` | `string` | yes | -- | Base name for all resources. Max 22 characters excluding hyphens. |
 | `resource_group_name` | `string` | yes | -- | Name of the pre-existing resource group. |
-| `bot_app_id` | `string` | yes | -- | Client ID of the Bot App Registration (SingleTenant, `AzureADMultipleOrgs`). |
+| `bot_app_id` | `string` | yes | -- | Client ID of the Bot App Registration (multi-tenant — set "Supported account types" to `AzureADMultipleOrgs`). |
 | `api_app_id` | `string` | yes | -- | Client ID of the API App Registration (EasyAuth). |
 | `api_app_object_id` | `string` | yes | -- | Object ID of the API App Registration. Used by Action Group AAD auth. |
 | `alert_target_alias` | `string` | no | `""` | Channel alias for alert webhook delivery. Empty string disables alert resources. |
