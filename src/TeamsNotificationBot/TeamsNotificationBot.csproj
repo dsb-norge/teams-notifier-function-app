@@ -18,12 +18,15 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <!-- Held <3.0.0. See CLAUDE.md "Bumping dependencies" / docs/contributing.md §9. -->
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
+    <!-- Microsoft.Azure.Functions.Worker* share a major; bump as a family. -->
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" OutputItemType="Analyzer" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" Version="5.5.4" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.50.0" />
+    <!-- Microsoft.Agents.* triplet must move in lockstep. -->
     <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
     <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
     <PackageReference Include="Microsoft.Agents.Extensions.Teams" Version="1.4.83" />

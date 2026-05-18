@@ -78,6 +78,11 @@ jobs:
             ${{ steps.npm-global.outputs.dir }}/bin/azurite*
           key: azurite-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
+      # Azurite is intentionally not version-pinned — it floats on whatever
+      # npm gives us. If a release breaks (typically: hasn't caught up to a
+      # new storage API version used by the .NET SDK), pin here AND in
+      # docs/local-development.md AND bake the version into the cache key
+      # above together. See CLAUDE.md "Bumping dependencies".
       - name: Install Azurite
         if: steps.cache-azurite.outputs.cache-hit != 'true'
         run: npm install -g azurite
