@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Azure.Data.Tables;
+using Microsoft.Agents.Authentication;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Agents.Extensions.Teams.Connector;
@@ -53,7 +54,7 @@ public class BotService : IBotService
         }
 
         await _adapter.ContinueConversationAsync(
-            _botAppId,
+            AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
@@ -84,7 +85,7 @@ public class BotService : IBotService
         }
 
         await _adapter.ContinueConversationAsync(
-            _botAppId,
+            AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
@@ -257,7 +258,7 @@ public class BotService : IBotService
         var installChannelId = reference.Conversation?.Id;
 
         await _adapter.ContinueConversationAsync(
-            _botAppId,
+            AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
