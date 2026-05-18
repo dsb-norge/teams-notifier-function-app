@@ -71,7 +71,7 @@ jobs:
 
       - name: Cache Azurite global install
         id: cache-azurite
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5 2026-01-29
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5 2026-01-29
         with:
           path: |
             ${{ steps.npm-global.outputs.dir }}/lib/node_modules/azurite
