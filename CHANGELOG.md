@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.4.0...teams-notifier-function-app-v1.4.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **deps:** bump actions/cache from 5.0.4 to 5.0.5 ([7e69132](https://github.com/dsb-norge/teams-notifier-function-app/commit/7e6913236fd8294afad53fea7b69b31fbdb71654))
+* **deps:** bump actions/dependency-review-action from 4.9.0 to 5.0.0 ([583834f](https://github.com/dsb-norge/teams-notifier-function-app/commit/583834f9c11b10d16a60494686515ca99e37c4bc))
+* **deps:** bump azure-sdk group (Storage.Blobs + Storage.Queues) ([461ab28](https://github.com/dsb-norge/teams-notifier-function-app/commit/461ab2884bf6bd0b6473b87cb011c42fd4d23066))
+* **deps:** bump github/codeql-action from 4.35.1 to 4.35.5 ([e79ffea](https://github.com/dsb-norge/teams-notifier-function-app/commit/e79ffea410dd55fca1f78be46e9aafdeaaec0c6f))
+* **deps:** bump googleapis/release-please-action from 4.4.0 to 5.0.0 ([e007837](https://github.com/dsb-norge/teams-notifier-function-app/commit/e00783748f94ddc46e549514ad9ee1bca8373166))
+* **deps:** bump microsoft-agents 1.4.83 → 1.5.184 + drop Bcl.Memory pin ([30c564e](https://github.com/dsb-norge/teams-notifier-function-app/commit/30c564eb3bf4acad638ea4cfba55d46ae12c276b))
+* **deps:** bump Microsoft.Azure.Functions.Worker from 2.51.0 to 2.52.0 ([6536b48](https://github.com/dsb-norge/teams-notifier-function-app/commit/6536b4849dc6e0173235b6178c48c6e062a59d4b))
+* **deps:** bump Microsoft.NET.Test.Sdk from 18.4.0 to 18.5.1 ([84700a6](https://github.com/dsb-norge/teams-notifier-function-app/commit/84700a6949d98e9fb041a67f6cb6b51fa47bc848))
+* migrate ContinueConversationAsync to ClaimsIdentity overload ([c893d39](https://github.com/dsb-norge/teams-notifier-function-app/commit/c893d391fb04c0a193a4923a2f208894ee536897))
+
 ## [1.4.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.3.6...teams-notifier-function-app-v1.4.0) (2026-04-15)
 
 
