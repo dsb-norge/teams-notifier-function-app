@@ -66,7 +66,7 @@ The deps surface is: NuGet packages (csproj), the .NET SDK (`global.json`), GitH
 
 ### Pin format rules
 
-- **GitHub Action `uses:` lines are SHA-pinned with a trailing version + date comment.** Example: `uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09`. Tag references (`@v4`) are not accepted. If upstream uses an annotated tag, dereference to the commit SHA: `gh api repos/<owner>/<repo>/git/tags/$(gh api repos/<owner>/<repo>/git/refs/tags/<tag> --jq .object.sha) --jq .object.sha`.
+- **GitHub Action `uses:` lines are SHA-pinned with a trailing version + date comment.** Example: `uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09`. Tag refs (`@v4`) are not accepted; resolve to a commit SHA before pinning (annotated tags need two `gh api` hops via the `.object` chain).
 - **NuGet `<PackageReference>` always carries an exact `Version="X.Y.Z"`.** Wildcards or ranges are not used.
 - **`global.json` keeps `rollForward: latestFeature`** so a newer feature-band SDK on the runner image is acceptable, but `major.minor` stays explicit.
 
@@ -94,8 +94,7 @@ Never let Dependabot's default subject through unchanged. Use `gh pr merge --squ
 
 ### Known pitfalls
 
-- **`Microsoft.ApplicationInsights.WorkerService` 3.x crashes at runtime on Flex Consumption** with `TypeLoadException` — 3.0 removed `ITelemetryInitializer` and `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x still depends on it. Dependabot ignores `≥3.0.0`. Don't lift the ignore until the worker package supports 3.x.
-- **`GitHubActionsTestLogger` 3.x conflicts with `xunit.v3`** at compile time (`CS1705`, `CS0400`) because 3.0 forces MTP v2 while `xunit.v3` still depends on MTP v1. Lifting the ignore requires all four conditions in `docs/contributing.md` §9 to be true.
+- **The `≥3.0.0` Dependabot ignores for `Microsoft.ApplicationInsights.WorkerService` and `GitHubActionsTestLogger` are load-bearing.** See "Things that bite" for the rationale; `docs/contributing.md` §9 has the full revisit checklist for each.
 - **`actions/checkout` cleans the workspace by default.** If a job downloads a release artifact (or anything else) and *then* runs checkout, the artifact is deleted. Either reorder so checkout runs first, or pass `clean: false`.
 - **`dorny/paths-filter@v4` uses `git diff` on `push` events**, self-deepening from its `initial-fetch-depth: 100` default. The default shallow `actions/checkout` is fine — no need to set `fetch-depth: 2` on the `changes` job.
-- **Azurite and `azure-functions-core-tools` are intentionally not version-pinned.** They float on npm. If a release breaks compatibility (typically: Azurite hasn't caught up to a new storage API version used by the .NET SDK), pin in `ci.yml` *and* `docs/local-development.md` *and* the workflow cache key together.
+- **Azurite is intentionally not version-pinned.** It floats on npm. If a release breaks compatibility (typically: Azurite hasn't caught up to a new storage API version used by the .NET SDK), pin in `ci.yml` *and* `docs/local-development.md` *and* the workflow cache key together.
