@@ -71,7 +71,7 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 ## 5. Code Style
 
 - Follow .NET conventions: `PascalCase` for public members, `camelCase` for private fields and local variables.
-- Use `DateTimeOffset.UtcNow` instead of `DateTime.UtcNow` for all timestamp operations.
+- Use `DateTimeOffset.UtcNow` instead of `DateTime.UtcNow` for all timestamp operations to avoid mixed `DateTimeKind` values, which round-trip incorrectly through Azurite and Azure Table Storage.
 - Use Azure Functions isolated worker patterns (not in-process).
 - Use `async`/`await` throughout. Never use `.Result` or `.Wait()` on tasks.
 - Keep functions thin: validate input, delegate to services, return responses.
@@ -116,7 +116,7 @@ Every pull request targeting `main` runs three CI jobs (in `ci.yml`). A **CI Con
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
 | **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
 
-**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` teaches CodeQL that `LogSanitizer.Sanitize()` is a taint barrier. Default Setup auto-discovers extensions in this directory.
+**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` teaches CodeQL that `LogSanitizer.Sanitize()` is a taint barrier. Default Setup auto-discovers extensions in this directory. See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
 
 A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 
