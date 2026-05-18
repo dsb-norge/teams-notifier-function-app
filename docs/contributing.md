@@ -178,7 +178,7 @@ See the [Deployment Guide](deployment-guide.md#step-3-deploy-function-app) for h
 
 ## 9. Dependency Management
 
-[Dependabot](https://docs.github.com/en/code-security/dependabot) is configured to scan for outdated NuGet packages and GitHub Actions versions weekly (Mondays).
+[Dependabot](https://docs.github.com/en/code-security/dependabot) is configured to scan for outdated NuGet packages and GitHub Actions versions weekly (Mondays). The day-to-day rules — pin formats, NuGet bump rules, squash-prefix conventions, post-bump validation, and known pitfalls — live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). This section documents the longer-lived context that doesn't belong in agent instructions.
 
 ### Dependency groups
 
@@ -191,26 +191,36 @@ Related packages are grouped so they update together in a single PR:
 | azure-sdk | `Azure.*` |
 | testing | `xunit*`, `Microsoft.NET.Test.*`, `coverlet.*`, `Moq`, `GitHubActionsTestLogger` |
 
-### Known version constraints
+### Known version constraints — revisit checklist
 
-- **`Microsoft.ApplicationInsights.WorkerService` is pinned below 3.0.0.** Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime (`TypeLoadException` on Flex Consumption). Dependabot is configured to ignore `>=3.0.0` until the worker package supports it.
+These are pinned via `ignore:` entries in `.github/dependabot.yml`. Don't lift the ignore without confirming every condition below.
 
-- **`GitHubActionsTestLogger` is pinned below 3.0.0.** Version 3.0 added Microsoft Testing Platform (MTP) support, which introduces a transitive dependency on `Microsoft.Testing.Platform` v2. This project uses `xunit.v3`, which depends on MTP v1 — causing assembly version conflicts at build time (`CS1705`). Additionally, the `PrivateAssets="all"` attribute (required for VSTest mode) breaks MTP's auto-generated registration code (`CS0400`). PRs #31 and #36 both failed CI for this reason. See [GitHubActionsTestLogger#57](https://github.com/Tyrrrz/GitHubActionsTestLogger/issues/57) for details.
+#### `Microsoft.ApplicationInsights.WorkerService` (held below 3.0.0)
 
-  **To revisit this constraint**, all of the following must be true:
-  1. `xunit.v3` ships an MTP v2–compatible variant (e.g., a future `xunit.v3.mtp-v2` package, or `xunit.v3` itself upgrades to MTP v2).
-  2. `PrivateAssets="all"` is removed from the `GitHubActionsTestLogger` package reference (MTP mode requires the assembly at compile time).
-  3. `xunit.runner.visualstudio` is evaluated for removal (MTP replaces the VSTest runner).
-  4. The `--logger GitHubActions` argument in `ci.yml` is verified to still work, or updated to use MTP-style arguments (e.g., `--report-github-summary-include-passed false`).
+Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime (`TypeLoadException` on Flex Consumption).
+
+**To revisit**: the Functions Worker ApplicationInsights package must ship a release that targets the AI 3.x API.
+
+#### `GitHubActionsTestLogger` (held below 3.0.0)
+
+Version 3.0 added Microsoft Testing Platform (MTP) support, introducing a transitive dependency on `Microsoft.Testing.Platform` v2. This project uses `xunit.v3`, which depends on MTP v1 — causing assembly version conflicts at build time (`CS1705`). The `PrivateAssets="all"` attribute (required for VSTest mode) additionally breaks MTP's auto-generated registration code (`CS0400`). PRs #31 and #36 both failed CI for this reason. See [GitHubActionsTestLogger#57](https://github.com/Tyrrrz/GitHubActionsTestLogger/issues/57).
+
+**To revisit**, all of the following must be true:
+
+1. `xunit.v3` ships an MTP v2–compatible variant (e.g., a future `xunit.v3.mtp-v2` package, or `xunit.v3` itself upgrades to MTP v2).
+2. `PrivateAssets="all"` is removed from the `GitHubActionsTestLogger` package reference (MTP mode requires the assembly at compile time).
+3. `xunit.runner.visualstudio` is evaluated for removal (MTP replaces the VSTest runner).
+4. The `--logger GitHubActions` argument in `ci.yml` is verified to still work, or updated to use MTP-style arguments (e.g., `--report-github-summary-include-passed false`).
 
 ### Handling Dependabot PRs
 
-1. **Review the PR** — check the package changelog for breaking changes.
-2. **Wait for CI** — CI Conclusion must pass (build, test, validate).
-3. **Squash merge with `fix(deps):` prefix** — this triggers a patch version bump. Example: `fix(deps): bump Azure.Identity from 1.17.0 to 1.18.0`. Use `feat(deps):` only if the update enables a new feature you're shipping.
-4. **For grouped updates**, the PR title usually works as-is after adding the `fix(deps):` prefix.
+The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). For human reviewers, the short checklist:
 
-If a Dependabot PR fails CI, investigate before merging. Common causes: breaking API changes in a major version bump, or transitive dependency conflicts.
+1. Read the package changelog for the bumped major/minor — most regressions are advertised there.
+2. Wait for **CI Conclusion** to pass (Build and Test, Source & Dependency Scan, Dependency Review, Validate Requirements).
+3. Squash-merge with a `fix(deps):` prefix (or `feat(deps):` if the bump enables a shipped feature) using `gh pr merge --squash --subject "..."` — don't let Dependabot's default subject through.
+
+A failing Dependabot PR usually means a breaking API change in a major bump, a transitive conflict, or one of the pitfalls listed in `CLAUDE.md`. Investigate before merging; never bypass CI.
 
 ---
 
