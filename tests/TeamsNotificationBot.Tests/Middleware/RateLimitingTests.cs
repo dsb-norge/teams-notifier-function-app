@@ -67,11 +67,18 @@ public class RateLimitingTests
         var count = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(shortTtl, 1), null);
         Assert.Equal(3, count);
 
-        // Wait for TTL to expire
-        await Task.Delay(1500);
-
-        // Counter should reset — next increment starts fresh at 1
-        var resetCount = await store.IncrementAndGetAsync(key, 1, new CounterAbsoluteTtl(DateTimeOffset.UtcNow.AddSeconds(60), 1), null);
+        // Poll until the TTL expires and the counter resets, instead of sleeping a
+        // fixed 1.5 s — fast in the happy case, bounded against an actually-broken
+        // TTL where the counter would never reset.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(3);
+        long resetCount = 0;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            resetCount = await store.IncrementAndGetAsync(
+                key, 1, new CounterAbsoluteTtl(DateTimeOffset.UtcNow.AddSeconds(60), 1), null);
+            if (resetCount == 1) break;
+            await Task.Delay(50);
+        }
         Assert.Equal(1, resetCount);
     }
 
@@ -214,63 +221,49 @@ public class RateLimitingTests
     // Identity Extraction — EasyAuth principal as per-caller rate limit key
     // ========================================================================
 
-    [Fact]
-    public void IdentityExtractor_PrincipalPresent_ReturnsId()
+    // Mirrors the IdentityIdExtractor lambda in Program.cs.
+    private static string? ExtractPrincipalId(IHeaderDictionary headers)
     {
-        // Mirrors the IdentityIdExtractor lambda in Program.cs
-        var headers = new HeaderDictionary { ["X-MS-CLIENT-PRINCIPAL-ID"] = "principal-abc-123" };
-
-        string? result = null;
         if (headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalId))
         {
             var value = principalId.ToString();
-            result = !string.IsNullOrEmpty(value) ? value : null;
+            return !string.IsNullOrEmpty(value) ? value : null;
         }
+        return null;
+    }
 
-        Assert.Equal("principal-abc-123", result);
+    [Fact]
+    public void IdentityExtractor_PrincipalPresent_ReturnsId()
+    {
+        var headers = new HeaderDictionary { ["X-MS-CLIENT-PRINCIPAL-ID"] = "principal-abc-123" };
+        Assert.Equal("principal-abc-123", ExtractPrincipalId(headers));
     }
 
     [Fact]
     public void IdentityExtractor_PrincipalMissing_ReturnsNull()
     {
-        var headers = new HeaderDictionary();
-
-        string? result = null;
-        if (headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalId))
-        {
-            var value = principalId.ToString();
-            result = !string.IsNullOrEmpty(value) ? value : null;
-        }
-
-        Assert.Null(result);
+        Assert.Null(ExtractPrincipalId(new HeaderDictionary()));
     }
 
     [Fact]
     public void IdentityExtractor_EmptyPrincipal_ReturnsNull()
     {
         var headers = new HeaderDictionary { ["X-MS-CLIENT-PRINCIPAL-ID"] = "" };
-
-        string? result = null;
-        if (headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalId))
-        {
-            var value = principalId.ToString();
-            result = !string.IsNullOrEmpty(value) ? value : null;
-        }
-
-        Assert.Null(result);
+        Assert.Null(ExtractPrincipalId(headers));
     }
 
     // ========================================================================
     // Response Format — ProblemDetails JSON (RFC 7807) for 429 responses
+    //
+    // The ResponseFabric is defined as an inline lambda in Program.cs and is not
+    // directly importable. These tests mirror its payload and content-type
+    // contract; keep them in sync with Program.cs.
     // ========================================================================
 
-    [Fact]
-    public void ResponseFabric_ProducesProblemDetailsJson()
-    {
-        // Mirrors the ResponseFabric in Program.cs — verifies the JSON structure
-        var retryAfterSeconds = 42;
-        var requestUri = "/api/v1/notify/test";
+    private const string ProblemDetailsContentType = "application/problem+json";
 
+    private static string BuildRateLimitProblemDetailsJson(int retryAfterSeconds, string requestUri)
+    {
         var problem = new
         {
             type = "https://httpstatuses.io/429",
@@ -279,8 +272,14 @@ public class RateLimitingTests
             detail = $"Rate limit exceeded. Try again in {retryAfterSeconds} seconds.",
             instance = requestUri
         };
+        return JsonSerializer.Serialize(problem);
+    }
 
-        var json = JsonSerializer.Serialize(problem);
+    [Fact]
+    public void ResponseFabric_ProducesProblemDetailsJson()
+    {
+        var json = BuildRateLimitProblemDetailsJson(retryAfterSeconds: 42, requestUri: "/api/v1/notify/test");
+
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -289,15 +288,20 @@ public class RateLimitingTests
         Assert.Equal(429, root.GetProperty("status").GetInt32());
         Assert.StartsWith("Rate limit exceeded.", root.GetProperty("detail").GetString());
         Assert.Contains("42", root.GetProperty("detail").GetString());
-        Assert.Equal(requestUri, root.GetProperty("instance").GetString());
+        Assert.Equal("/api/v1/notify/test", root.GetProperty("instance").GetString());
     }
 
     [Fact]
     public void ResponseFabric_ProblemDetailsHasCorrectContentType()
     {
-        // The ResponseFabric sets Content-Type: application/problem+json
-        var contentType = "application/problem+json";
-        Assert.Equal("application/problem+json", contentType);
+        // Set ContentType the same way ResponseFabric does, on a real HttpResponse,
+        // so the assertion exercises ASP.NET Core's header normalization rather
+        // than being a tautology against a local string variable.
+        var ctx = new DefaultHttpContext();
+        ctx.Response.ContentType = ProblemDetailsContentType;
+
+        Assert.Equal(ProblemDetailsContentType, ctx.Response.ContentType);
+        Assert.Equal(ProblemDetailsContentType, ctx.Response.Headers.ContentType.ToString());
     }
 
     // ========================================================================

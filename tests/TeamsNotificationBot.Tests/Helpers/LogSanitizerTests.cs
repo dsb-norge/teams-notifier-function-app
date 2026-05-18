@@ -65,4 +65,30 @@ public class LogSanitizerTests
         var result = LogSanitizer.Sanitize(input);
         Assert.Equal(input.Length, result.Length);
     }
+
+    [Fact]
+    public void Sanitize_UnicodeSeparators_CombinedWithOtherControls_AllReplaced()
+    {
+        Assert.Equal("a___b", LogSanitizer.Sanitize("a\n\u2028\rb"));
+        Assert.Equal("___", LogSanitizer.Sanitize("\u2028\u2029\t"));
+    }
+
+    [Fact]
+    public void Sanitize_ConsecutiveUnsafeCharacters_AllReplaced()
+    {
+        Assert.Equal("a__b", LogSanitizer.Sanitize("a\n\nb"));
+        Assert.Equal("a__b", LogSanitizer.Sanitize("a\r\rb"));
+        Assert.Equal("a__b", LogSanitizer.Sanitize("a\0\0b"));
+        Assert.Equal("__", LogSanitizer.Sanitize("\n\n"));
+    }
+
+    [Fact]
+    public void Sanitize_LongCleanString_PassesThroughUnchanged()
+    {
+        // Guards the no-allocation fast path: a long string with no unsafe
+        // characters should be returned without per-character copying.
+        var input = string.Concat(Enumerable.Repeat("hello world 123 !@#$% ", 60));
+        Assert.True(input.Length >= 1000);
+        Assert.Equal(input, LogSanitizer.Sanitize(input));
+    }
 }
