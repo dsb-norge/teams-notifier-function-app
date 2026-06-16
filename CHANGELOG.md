@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.4.1...teams-notifier-function-app-v1.5.0) (2026-06-16)
+
+
+### Features
+
+* **teams-app-package:** separate --teams-app-id from --bot-app-id ([#80](https://github.com/dsb-norge/teams-notifier-function-app/issues/80)) ([989e87d](https://github.com/dsb-norge/teams-notifier-function-app/commit/989e87d9f22909c7c0fc96d68402cc8ae3279828))
+
 ## [1.4.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.4.0...teams-notifier-function-app-v1.4.1) (2026-05-18)
 
 
