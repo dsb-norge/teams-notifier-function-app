@@ -13,30 +13,35 @@ This directory contains the manifest generation tooling for the Teams Notificati
 
 ## Creating the ZIP Package
 
-The script reads from two sources plus a required argument:
+The script reads from two sources plus one required and one strongly-recommended argument:
 
 1. **App requirements** (`src/TeamsNotificationBot/app-requirements.json`) -- commands, scopes, version (generated from code)
 2. **Branding metadata** (`app-metadata.json`) -- app names, descriptions, developer info
-3. **Bot App ID** (argument) -- the Entra ID app registration client ID for the bot
+3. **Bot App ID** (argument) -- the Entra ID app registration client ID for the bot (populates `manifest.bots[0].botId`)
+4. **Teams App ID** (argument, optional) -- the Teams catalog GUID for this install (populates `manifest.id`). Distinct from the bot's app reg because the catalog identity and the bot identity are two different things. If omitted, the script falls back to the bot app ID and prints a warning; that's fine for a single-env install but collides if you ever publish two envs that share the same bot app reg.
 
 ```bash
 cd teams-app-package
 
-# Basic usage (uses default icons from this directory)
-./create-teams-app-package.sh --bot-app-id <GUID>
+# Single-env install — Teams catalog id falls back to bot app id (with warning)
+./create-teams-app-package.sh --bot-app-id <BOT_GUID>
+
+# Multi-env install — distinct Teams catalog id per env (no warning)
+./create-teams-app-package.sh --bot-app-id <BOT_GUID> --teams-app-id <TEAMS_GUID>
 
 # With custom branded icons
-./create-teams-app-package.sh --bot-app-id <GUID> --icons-dir ../deployment/branding/
+./create-teams-app-package.sh --bot-app-id <BOT_GUID> --teams-app-id <TEAMS_GUID> --icons-dir ../deployment/branding/
 
 # Preview manifest without creating ZIP
-./create-teams-app-package.sh --bot-app-id <GUID> --dry-run
+./create-teams-app-package.sh --bot-app-id <BOT_GUID> --teams-app-id <TEAMS_GUID> --dry-run
 ```
 
 ### All options
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--bot-app-id <GUID>` | Yes | -- | Entra ID app registration client ID |
+| `--bot-app-id <GUID>` | Yes | -- | Entra ID app registration client ID for the bot (populates `manifest.bots[0].botId`) |
+| `--teams-app-id <GUID>` | No (recommended for multi-env) | falls back to `--bot-app-id` with warning | Teams catalog GUID (populates `manifest.id`). Generate once per env and pin -- changing it forces every Teams install to re-install. |
 | `--requirements <path>` | No | `../src/TeamsNotificationBot/app-requirements.json` | Path to app requirements |
 | `--metadata <path>` | No | `./app-metadata.json` | Path to branding metadata |
 | `--icons-dir <dir>` | No | Script directory | Directory containing `color.png` and `outline.png` |
