@@ -7,10 +7,17 @@
 # for upload to Teams Admin Center.
 #
 # Usage:
-#   ./create-teams-app-package.sh --bot-app-id <GUID> [OPTIONS]
+#   ./create-teams-app-package.sh --bot-app-id <GUID> [--teams-app-id <GUID>] [OPTIONS]
 #
 # Inputs:
 #   --bot-app-id     The Entra ID app registration client ID for the bot (required)
+#   --teams-app-id   The Teams catalog GUID for this app — populates manifest.id
+#                    (optional; falls back to --bot-app-id with a warning when
+#                    omitted, preserving pre-2026-06 behaviour for direct callers
+#                    that only know about one GUID). Multi-env consumers should
+#                    always supply a distinct value here so two envs sharing the
+#                    same bot app reg don't end up with colliding Teams catalog
+#                    entries.
 #   --requirements   Path to app-requirements.json (default: ../src/TeamsNotificationBot/app-requirements.json)
 #   --metadata       Path to app-metadata.json (default: ./app-metadata.json)
 #
@@ -27,20 +34,26 @@ OUTPUT_DIR="${SCRIPT_DIR}"
 REQUIREMENTS_FILE="${SCRIPT_DIR}/../src/TeamsNotificationBot/app-requirements.json"
 METADATA_FILE="${SCRIPT_DIR}/app-metadata.json"
 BOT_APP_ID=""
+TEAMS_APP_ID=""
 DRY_RUN=false
 
 # --- Usage ---
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --bot-app-id <GUID> [OPTIONS]
+Usage: $(basename "$0") --bot-app-id <GUID> [--teams-app-id <GUID>] [OPTIONS]
 
 Generate a Teams App manifest.json and ZIP package from app requirements
 and branding metadata.
 
 Required:
   --bot-app-id <GUID>    Entra ID app registration client ID for the bot
+                         (populates manifest.bots[0].botId)
 
 Options:
+  --teams-app-id <GUID>  Teams catalog GUID — populates manifest.id. Distinct
+                         from --bot-app-id because the Teams catalog identity
+                         and the bot Entra app reg are two different things.
+                         If omitted, falls back to --bot-app-id with a warning.
   --requirements <path>  Path to app-requirements.json (default: ../src/TeamsNotificationBot/app-requirements.json)
   --metadata <path>      Path to app-metadata.json (default: ./app-metadata.json)
   --output-dir <dir>     Directory for output files (default: script directory)
@@ -59,6 +72,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --bot-app-id)
       BOT_APP_ID="$2"
+      shift 2
+      ;;
+    --teams-app-id)
+      TEAMS_APP_ID="$2"
       shift 2
       ;;
     --requirements)
@@ -98,6 +115,21 @@ if [[ -z "${BOT_APP_ID}" ]]; then
   echo "Error: --bot-app-id is required." >&2
   echo "" >&2
   usage
+fi
+
+# Backward-compat: legacy callers that pre-date the --teams-app-id flag passed
+# only --bot-app-id and got a manifest where id == botId. That conflates the
+# Teams catalog identity with the bot Entra app reg — fine for a single-env
+# install, broken for multi-env (two envs sharing one bot reg would collide
+# in the Teams catalog). Keep the fallback so direct local runs don't break,
+# but warn loudly so consumers wire it up properly when they have a chance.
+if [[ -z "${TEAMS_APP_ID}" ]]; then
+  echo "Warning: --teams-app-id not provided; falling back to --bot-app-id for manifest.id." >&2
+  echo "  This is fine for a single-env / single-tenant install, but collides if you" >&2
+  echo "  ever publish two envs (e.g. dev + prod) that share the same bot app reg." >&2
+  echo "  Multi-env consumers should generate a distinct Teams catalog GUID per env" >&2
+  echo "  and pass it via --teams-app-id." >&2
+  TEAMS_APP_ID="${BOT_APP_ID}"
 fi
 
 # --- Validate prerequisites ---
@@ -154,6 +186,7 @@ SUPPORTS_CHANNEL_FEATURES=$(jq -r '.teams_app_configuration.supports_channel_fea
 
 echo ""
 echo "  Bot App ID:        ${BOT_APP_ID}"
+echo "  Teams App ID:      ${TEAMS_APP_ID}"
 echo "  App Name:          ${SHORT_NAME}"
 echo "  Version:           ${APP_VERSION}"
 echo "  Notification Only: ${IS_NOTIFICATION_ONLY}"
@@ -186,6 +219,7 @@ MANIFEST_PATH="${OUTPUT_DIR}/manifest.json"
 # supportsChannelFeatures) and array merging that a sed-based template can't.
 jq -n \
   --arg bot_app_id "${BOT_APP_ID}" \
+  --arg teams_app_id "${TEAMS_APP_ID}" \
   --arg supports_channel_features "${SUPPORTS_CHANNEL_FEATURES}" \
   --argjson reqs "$(cat "${REQUIREMENTS_FILE}")" \
   --argjson metadata "$(cat "${METADATA_FILE}")" \
@@ -193,7 +227,7 @@ jq -n \
     "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
     "manifestVersion": "1.25",
     "version": $reqs.notifier_application_version,
-    "id": $bot_app_id,
+    "id": $teams_app_id,
     "name": {
       "short": $metadata.short_name,
       "full": $metadata.full_name
