@@ -49,6 +49,8 @@ jobs:
               - 'src/**'
               - 'scripts/generate-requirements.sh'
               - 'scripts/validate-requirements.sh'
+              - 'teams-app-package/create-teams-app-package.sh'
+              - 'teams-app-package/app-metadata.json'
               - '.github/workflows/ci.yml'
 
   build-and-test:
@@ -191,6 +193,61 @@ jobs:
 
       - name: Validate app-requirements.json
         run: bash scripts/validate-requirements.sh
+
+      - name: Generate a sample Teams app manifest
+        # Exercises create-teams-app-package.sh end-to-end with dummy GUIDs
+        # so the next step can validate the resulting manifest.json against
+        # the live Teams schema. Catches regressions in the script's jq
+        # composition (e.g. drift from the schema's allowed properties)
+        # before the release-please artifact ships them to consumers.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/manifest-ci
+          bash teams-app-package/create-teams-app-package.sh \
+            --bot-app-id   00000000-aaaa-aaaa-aaaa-aaaaaaaaaaaa \
+            --teams-app-id 11111111-bbbb-bbbb-bbbb-bbbbbbbbbbbb \
+            --output-dir   /tmp/manifest-ci \
+            --dry-run
+
+      - name: Validate the manifest against the Teams app schema
+        # Fetches the schema URL from manifest.$schema and validates with
+        # Python's jsonschema. Fails the job on any schema error — keeps
+        # the manifest in sync with the schema declared in the file itself.
+        # If the schema ever introduces a new constraint we violate (or we
+        # accidentally add an unknown property), this step trips before the
+        # bad ZIP ever reaches a Teams Admin upload.
+        run: |
+          set -euo pipefail
+          SCHEMA_URL=$(jq -r '."$schema"' /tmp/manifest-ci/manifest.json)
+          if [ -z "$SCHEMA_URL" ] || [ "$SCHEMA_URL" = "null" ]; then
+            echo "::error::manifest.json has no \$schema field; nothing to validate against"
+            exit 1
+          fi
+          curl -fsSL --max-time 15 --retry 3 --retry-delay 2 \
+            "$SCHEMA_URL" -o /tmp/teams-schema.json
+          # `python3 -m pip` (not bare `pip`) so the installer matches the
+          # interpreter the next step uses. `--user` keeps the install out of
+          # the system path; `--break-system-packages` is required on
+          # ubuntu-latest (PEP 668) — `--user` alone is not enough on the
+          # current runner image.
+          python3 -m pip install --user --break-system-packages --quiet jsonschema
+          python3 - <<'PY'
+          import json, sys
+          from jsonschema import validators
+          schema = json.load(open('/tmp/teams-schema.json'))
+          manifest = json.load(open('/tmp/manifest-ci/manifest.json'))
+          Validator = validators.validator_for(schema)
+          Validator.check_schema(schema)
+          errors = sorted(Validator(schema).iter_errors(manifest), key=lambda e: list(e.absolute_path))
+          if not errors:
+              print('::notice title=Manifest validation::schema-valid against', schema.get('$id', 'Teams schema'))
+              sys.exit(0)
+          print(f'::error::Teams manifest schema validation failed ({len(errors)} error(s)):')
+          for e in errors:
+              path = '.'.join(str(p) for p in e.absolute_path) or '<root>'
+              print(f'::error::  at {path}: {e.message}')
+          sys.exit(1)
+          PY
 
   # Single required status check for branch protection.
   # This replaces requiring each job individually, which breaks when jobs
