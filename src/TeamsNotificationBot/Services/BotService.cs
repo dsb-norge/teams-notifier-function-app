@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Azure;
 using Azure.Data.Tables;
 using Microsoft.Agents.Authentication;
 using Microsoft.Agents.Builder;
@@ -12,6 +13,9 @@ namespace TeamsNotificationBot.Services;
 
 public class BotService : IBotService
 {
+    // Azure Table Storage caps a single SubmitTransaction at 100 entities.
+    private const int MaxBatchSize = 100;
+
     private static readonly JsonSerializerOptions CaseInsensitiveOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly CloudAdapter _adapter;
@@ -267,11 +271,9 @@ public class BotService : IBotService
                     var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, teamThreadId, ct);
                     _logger.LogInformation("Enumerated {Count} channels in team {TeamGuid}", channels.Count, teamGuid);
 
-                    foreach (var channel in channels)
+                    // Install channel was already stored by the handler — skip it here.
+                    foreach (var channel in channels.Where(c => c.Id != installChannelId))
                     {
-                        // Skip install channel — already stored by handler
-                        if (channel.Id == installChannelId) continue;
-
                         var channelRef = new ConversationReference
                         {
                             ServiceUrl = reference.ServiceUrl,
@@ -314,10 +316,20 @@ public class BotService : IBotService
         await foreach (var entity in _tableClient.QueryAsync<ConversationReferenceEntity>(
             e => e.PartitionKey == teamId, select: new[] { "PartitionKey", "RowKey" }))
         {
-            actions.Add(new TableTransactionAction(TableTransactionActionType.Delete, entity));
+            // Build a minimal entity with an explicit wildcard ETag — the query
+            // projection above doesn't include ETag, so we'd otherwise rely on
+            // an implicitly-defaulted value which TableTransactionAction.Delete
+            // treats as "must match", causing 412 on otherwise-valid deletes.
+            var deleteStub = new ConversationReferenceEntity
+            {
+                PartitionKey = entity.PartitionKey,
+                RowKey = entity.RowKey,
+                ETag = ETag.All
+            };
+            actions.Add(new TableTransactionAction(TableTransactionActionType.Delete, deleteStub));
             count++;
 
-            if (actions.Count == 100)
+            if (actions.Count == MaxBatchSize)
             {
                 await _tableClient.SubmitTransactionAsync(actions);
                 actions.Clear();
@@ -352,7 +364,7 @@ public class BotService : IBotService
             actions.Add(new TableTransactionAction(TableTransactionActionType.UpdateMerge, entity));
             count++;
 
-            if (actions.Count == 100)
+            if (actions.Count == MaxBatchSize)
             {
                 await _tableClient.SubmitTransactionAsync(actions);
                 actions.Clear();
@@ -370,12 +382,33 @@ public class BotService : IBotService
 
     private async Task UpdateLastUpdatedAsync(string partitionKey, string rowKey)
     {
+        // Best-effort bookkeeping. The optimistic ETag check races against any
+        // concurrent writer on the same row; retry a few times on 412 before
+        // giving up so a transient race doesn't silently drop the timestamp.
+        const int maxRetries = 3;
         try
         {
-            var response = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(partitionKey, rowKey);
-            var entity = response.Value;
-            entity.LastUpdated = DateTimeOffset.UtcNow;
-            await _tableClient.UpdateEntityAsync(entity, entity.ETag);
+            for (var attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var response = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(partitionKey, rowKey);
+                    var entity = response.Value;
+                    entity.LastUpdated = DateTimeOffset.UtcNow;
+                    await _tableClient.UpdateEntityAsync(entity, entity.ETag);
+                    return;
+                }
+                catch (RequestFailedException ex) when (ex.Status == 412 && attempt < maxRetries)
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Concurrency conflict updating LastUpdated for {PK}/{RK}; retrying attempt {Attempt}/{MaxRetries}",
+                        partitionKey, rowKey, attempt, maxRetries);
+                }
+            }
+            _logger.LogWarning(
+                "Failed to update LastUpdated for {PK}/{RK} after {MaxRetries} retries due to concurrency conflicts",
+                partitionKey, rowKey, maxRetries);
         }
         catch (Exception ex)
         {
