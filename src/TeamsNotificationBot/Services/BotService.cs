@@ -398,17 +398,23 @@ public class BotService : IBotService
                     await _tableClient.UpdateEntityAsync(entity, entity.ETag);
                     return;
                 }
-                catch (RequestFailedException ex) when (ex.Status == 412 && attempt < maxRetries)
+                catch (RequestFailedException ex) when (ex.Status == 412)
                 {
-                    _logger.LogDebug(
+                    if (attempt < maxRetries)
+                    {
+                        _logger.LogDebug(
+                            ex,
+                            "Concurrency conflict updating LastUpdated for {PK}/{RK}; retry {Next}/{MaxRetries}",
+                            partitionKey, rowKey, attempt + 1, maxRetries);
+                        continue;
+                    }
+                    _logger.LogWarning(
                         ex,
-                        "Concurrency conflict updating LastUpdated for {PK}/{RK}; retrying attempt {Attempt}/{MaxRetries}",
-                        partitionKey, rowKey, attempt, maxRetries);
+                        "Failed to update LastUpdated for {PK}/{RK} after {MaxRetries} concurrency conflicts",
+                        partitionKey, rowKey, maxRetries);
+                    return;
                 }
             }
-            _logger.LogWarning(
-                "Failed to update LastUpdated for {PK}/{RK} after {MaxRetries} retries due to concurrency conflicts",
-                partitionKey, rowKey, maxRetries);
         }
         catch (Exception ex)
         {
