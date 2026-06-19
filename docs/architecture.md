@@ -182,6 +182,8 @@ Azure Bot Service (F0 free tier, SingleTenant app type) with the Teams channel e
 
 Virtual network with two subnets, private endpoints, and IP restrictions. See the [Infrastructure diagram](#infrastructure--m9) below.
 
+**Outbound egress requirements:** the function app runs on Flex Consumption with VNet integration, so all outbound traffic — including to public Microsoft endpoints — exits through the integrated subnet's NIC and is subject to whatever NSG / firewall / UDR the consumer has in front of it. The bot will silently fail (accept inbound `/api/messages`, never reply, or queue triggers never wake from scale-to-zero) if egress is locked down without the right FQDN allow rules. The authoritative list lives in the Terraform module's [`required_outbound_fqdns` output](https://github.com/dsb-norge/terraform-azurerm-teams-notification-bot-lz/blob/main/outputs.tf) and is documented in its [README](https://github.com/dsb-norge/terraform-azurerm-teams-notification-bot-lz#required-outbound-network-access-important-for-byon-consumers) — categories cover Entra ID auth, Bot Framework, Teams reply path, Flex Consumption platform (Container Apps managed-identity + bootstrap), the host's own self-hairpin for SyncTriggers, and optionally App Insights ingestion.
+
 ### Monitoring
 
 Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines.
