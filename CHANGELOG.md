@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.5.0...teams-notifier-function-app-v1.5.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* **deps:** bump actions/checkout from 6.0.2 to 6.0.3 ([1f69d61](https://github.com/dsb-norge/teams-notifier-function-app/commit/1f69d61b08dc7baec308263f495826c25e6b31f4))
+* **deps:** bump actions/setup-dotnet from 5.2.0 to 5.3.0 ([4cfd7dc](https://github.com/dsb-norge/teams-notifier-function-app/commit/4cfd7dc496a61e012f329a05d1ae12232d03181e))
+* **deps:** bump azure-sdk group (Storage.Blobs + Storage.Queues) ([daa26f9](https://github.com/dsb-norge/teams-notifier-function-app/commit/daa26f931d30ffc3ac14bbdd8bfd7897e0cca07c))
+* **deps:** bump github/codeql-action from 4.35.5 to 4.36.2 ([9e45d54](https://github.com/dsb-norge/teams-notifier-function-app/commit/9e45d54a9de3b3f2d1e1f3123d323b6fbf4ab4cb))
+* **deps:** bump Microsoft.Azure.Functions.Worker.ApplicationInsights from 2.50.0 to 2.51.0 ([df2fd8a](https://github.com/dsb-norge/teams-notifier-function-app/commit/df2fd8a1e5f3248979dd7807c232672ab05ffced))
+* **deps:** bump Microsoft.NET.Test.Sdk from 18.5.1 to 18.6.0 ([99876fc](https://github.com/dsb-norge/teams-notifier-function-app/commit/99876fcff0cd360e12cc1f8143ff43785c80a60d))
+* tighten BotService batch ops + LastUpdated retry ([a9da943](https://github.com/dsb-norge/teams-notifier-function-app/commit/a9da943abd2781b8c0649b7e8e718dbee1c7c3e3))
+
 ## [1.5.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.4.1...teams-notifier-function-app-v1.5.0) (2026-06-16)
 
 
