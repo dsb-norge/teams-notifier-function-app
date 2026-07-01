@@ -43,9 +43,6 @@ var host = new HostBuilder()
             counterStore = new AzureTableCounterStore(tableServiceClient, "ThrottlingTrollCounters");
         }
 
-        var rateLimitPermit = int.TryParse(Environment.GetEnvironmentVariable("RateLimit__PermitLimit"), out var p) ? p : 60;
-        var rateLimitInterval = int.TryParse(Environment.GetEnvironmentVariable("RateLimit__IntervalInSeconds"), out var i) ? i : 60;
-
         worker.UseThrottlingTroll(options =>
         {
             options.CounterStore = counterStore;
@@ -53,23 +50,33 @@ var host = new HostBuilder()
             {
                 Rules =
                 [
+                    // AAD routes: keyed by EasyAuth principal (excludes the anonymous ingest sub-path).
                     new ThrottlingTrollRule
                     {
                         LimitMethod = new FixedWindowRateLimitMethod
                         {
-                            PermitLimit = rateLimitPermit,
-                            IntervalInSeconds = rateLimitInterval
+                            PermitLimit = RateLimitPolicy.ApiPermitLimit(),
+                            IntervalInSeconds = RateLimitPolicy.ApiIntervalSeconds()
                         },
                         IdentityIdExtractor = request =>
+                            RateLimitPolicy.PrincipalKey(
+                                request.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalId)
+                                    ? principalId.ToString() : null),
+                        UriPattern = RateLimitPolicy.ApiUriPattern
+                    },
+                    // Anonymous updown ingest: keyed by source IP (public endpoint, no principal).
+                    new ThrottlingTrollRule
+                    {
+                        LimitMethod = new FixedWindowRateLimitMethod
                         {
-                            if (request.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalId))
-                            {
-                                var value = principalId.ToString();
-                                return !string.IsNullOrEmpty(value) ? value : null;
-                            }
-                            return null;
+                            PermitLimit = RateLimitPolicy.IngestPermitLimit(),
+                            IntervalInSeconds = RateLimitPolicy.IngestIntervalSeconds()
                         },
-                        UriPattern = "/api/v1/.*"
+                        IdentityIdExtractor = request =>
+                            RateLimitPolicy.SourceIpKey(
+                                request.Headers.TryGetValue("X-Forwarded-For", out var xff) ? xff.ToString() : null,
+                                null),
+                        UriPattern = RateLimitPolicy.IngestUriPattern
                     }
                 ]
             };
@@ -141,6 +148,10 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
+        // Redact the updown ingress {token} from request telemetry (App Insights logs URLs by default).
+        services.AddSingleton<Microsoft.ApplicationInsights.Extensibility.ITelemetryInitializer,
+            TeamsNotificationBot.Helpers.TokenRedactingTelemetryInitializer>();
+
         // Override the Application Insights default logging filter that suppresses Info-level logs
         services.Configure<LoggerFilterOptions>(options =>
         {
@@ -205,6 +216,10 @@ var host = new HostBuilder()
             var idempotencyClient = new TableClient(connectionString, "idempotencykeys");
             idempotencyClient.CreateIfNotExists();
             services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
+
+            var webhookClient = new TableClient(connectionString, "webhooktokens");
+            webhookClient.CreateIfNotExists();
+            services.AddSingleton<IWebhookService>(new WebhookService(webhookClient));
         }
         else
         {
@@ -253,6 +268,10 @@ var host = new HostBuilder()
             var idempotencyClient = new TableClient(tableUri, "idempotencykeys", credential);
             idempotencyClient.CreateIfNotExists();
             services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
+
+            var webhookClient = new TableClient(tableUri, "webhooktokens", credential);
+            webhookClient.CreateIfNotExists();
+            services.AddSingleton<IWebhookService>(new WebhookService(webhookClient));
         }
 
         // Queue management service (for queue commands + poison queue monitoring)

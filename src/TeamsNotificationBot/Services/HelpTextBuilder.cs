@@ -11,6 +11,7 @@ public static class HelpTextBuilder
         "**Help topics:**\n" +
         "- **help aliases** \u2014 managing notification targets\n" +
         "- **help endpoints** \u2014 API endpoints for sending notifications\n" +
+        "- **help webhooks** \u2014 updown.io monitoring webhook ingress\n" +
         "- **help queues** \u2014 poison queue monitoring and retry\n" +
         "- **help diagnostics** \u2014 health checks and troubleshooting";
 
@@ -35,6 +36,29 @@ public static class HelpTextBuilder
         $"- `GET  https://{hostname}/api/v1/aliases` \u2014 list all aliases (JSON)\n" +
         $"- `GET  https://{hostname}/api/health` \u2014 bot health status\n\n" +
         "All endpoints require **Entra ID authentication**. Run **setup-guide** for auth setup instructions.";
+
+    public static string Webhooks() =>
+        "**updown.io webhooks** let the external monitoring service push uptime/SSL alerts into " +
+        "this conversation as Adaptive Cards — no Entra ID token required.\n\n" +
+        "Each webhook has its own **secret URL** containing a high-entropy token. That token is " +
+        "the only thing protecting the endpoint (updown does not sign its requests), so:\n" +
+        "- The URL is shown **once** at creation — store it in updown, don't paste it back in chat.\n" +
+        "- If it leaks, run **rotate-webhook** to invalidate the old one.\n" +
+        "- The token is never logged and only its hash is stored.\n\n" +
+        "Cards carry **no clickable buttons** and are labelled *unverified sender*. Only the updown.io " +
+        "downtime link is clickable.\n\n" +
+        "**Commands** (run in the target channel/chat):\n" +
+        "- **create-webhook** `[updown]` — create a webhook for this conversation; returns the secret URL once\n" +
+        "- **list-webhooks** — show configured webhooks (id, target, events, last received) — never the secret\n" +
+        "- **configure-webhook** `<id>` `<description|account|events>` `<value>` — update settings\n" +
+        "  - `events` takes a comma list, e.g. `check.down,check.up,check.ssl_expiration`, or `all`\n" +
+        "- **rotate-webhook** `<id>` — issue a new URL, invalidating the old token\n" +
+        "- **remove-webhook** `<id>` — delete the webhook\n\n" +
+        "**Events** (default = all except `check.performance_drop`): `check.down`, `check.up`, " +
+        "`check.ssl_invalid`, `check.ssl_valid`, `check.ssl_expiration`, `check.ssl_renewed`, " +
+        "`check.performance_drop`.\n\n" +
+        "**Setup:** paste the URL into updown as a webhook recipient. Send a test from " +
+        "updown's *recipients → test* page to verify delivery before going live.";
 
     public static string Queues() =>
         "Messages that fail processing are moved to **poison queues**. " +

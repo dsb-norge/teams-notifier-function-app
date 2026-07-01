@@ -19,6 +19,7 @@ public class TeamsBotHandler : TeamsActivityHandler
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
     private readonly IQueueManagementService? _queueService;
+    private readonly IWebhookService? _webhookService;
     private readonly TableClient _teamLookupTable;
     private readonly QueueClient _botOpsQueue;
     private readonly ILogger<TeamsBotHandler> _logger;
@@ -36,7 +37,8 @@ public class TeamsBotHandler : TeamsActivityHandler
         [FromKeyedServices("teamlookup")] TableClient teamLookupTable,
         [FromKeyedServices("botoperations")] QueueClient botOpsQueue,
         ILogger<TeamsBotHandler> logger,
-        IQueueManagementService? queueService = null)
+        IQueueManagementService? queueService = null,
+        IWebhookService? webhookService = null)
     {
         _botService = botService;
         _aliasService = aliasService;
@@ -44,6 +46,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         _botOpsQueue = botOpsQueue;
         _logger = logger;
         _queueService = queueService;
+        _webhookService = webhookService;
     }
 
     protected override async Task OnMessageActivityAsync(
@@ -118,6 +121,27 @@ public class TeamsBotHandler : TeamsActivityHandler
         {
             await HandleQueueRetryAsync(turnContext, command, cancellationToken);
         }
+        else if (command.StartsWith("create-webhook"))
+        {
+            await HandleCreateWebhookAsync(turnContext, command, cancellationToken);
+        }
+        else if (command.StartsWith("configure-webhook"))
+        {
+            await HandleConfigureWebhookAsync(turnContext, text, command, cancellationToken);
+        }
+        else if (command is "list-webhooks" or "list-webhook")
+        {
+            await HandleListWebhooksAsync(turnContext, cancellationToken);
+            showNudge = true;
+        }
+        else if (command.StartsWith("remove-webhook"))
+        {
+            await HandleRemoveWebhookAsync(turnContext, command, cancellationToken);
+        }
+        else if (command.StartsWith("rotate-webhook"))
+        {
+            await HandleRotateWebhookAsync(turnContext, command, cancellationToken);
+        }
         else if (command == "help" || command.StartsWith("help "))
         {
             await HandleHelpAsync(turnContext, command, cancellationToken);
@@ -158,10 +182,11 @@ public class TeamsBotHandler : TeamsActivityHandler
         {
             "aliases" or "alias" => HelpTextBuilder.Aliases(),
             "endpoints" or "endpoint" or "api" => HelpTextBuilder.Endpoints(GetHostname()),
+            "webhooks" or "webhook" => HelpTextBuilder.Webhooks(),
             "queues" or "queue" => HelpTextBuilder.Queues(),
             "diagnostics" or "diagnostic" or "diag" => HelpTextBuilder.Diagnostics(),
             "" => HelpTextBuilder.Overview(),
-            _ => $"Unknown help topic: `{topic}`\n\nAvailable topics: **aliases**, **endpoints**, **queues**, **diagnostics**"
+            _ => $"Unknown help topic: `{topic}`\n\nAvailable topics: **aliases**, **endpoints**, **webhooks**, **queues**, **diagnostics**"
         };
 
         await turnContext.SendActivityAsync(MessageFactory.Text(text), cancellationToken);
@@ -458,6 +483,226 @@ public class TeamsBotHandler : TeamsActivityHandler
             _poisonAliasNudgeCacheExpiry = DateTimeOffset.MinValue;
         }
     }
+
+    // --- Webhook (updown.io ingress) commands ---
+
+    private async Task<bool> EnsureWebhookAccessAsync(ITurnContext turnContext, CancellationToken ct)
+    {
+        if (!await IsAuthorizedForQueueCommandsAsync(turnContext))
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("Webhook commands require a valid Entra ID identity. Your account could not be verified."), ct);
+            return false;
+        }
+        if (_webhookService == null)
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("Webhook management is not available."), ct);
+            return false;
+        }
+        return true;
+    }
+
+    private async Task HandleCreateWebhookAsync(ITurnContext turnContext, string command, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var source = parts.Length > 1 ? parts[1] : "updown";
+        if (!string.Equals(source, "updown", StringComparison.OrdinalIgnoreCase))
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("Only **updown** webhooks are supported. Usage: **create-webhook** `[updown]`"), ct);
+            return;
+        }
+
+        var (pk, rk, targetType) = await ExtractConversationKeysAsync(turnContext.Activity);
+        if (pk == null || rk == null)
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("Could not determine conversation target from this context."), ct);
+            return;
+        }
+
+        var created = await _webhookService!.CreateAsync(
+            "updown", targetType,
+            targetType == "channel" ? pk : null,
+            targetType == "channel" ? rk : null,
+            targetType == "personal" ? rk : null,
+            targetType == "groupChat" ? rk : null,
+            turnContext.Activity.From?.AadObjectId ?? string.Empty,
+            turnContext.Activity.From?.Name ?? string.Empty);
+
+        _logger.LogInformation("Webhook '{Id}' created for {Type} by {User}",
+            created.Id, targetType, turnContext.Activity.From?.Name);
+
+        var url = $"https://{GetHostname()}/api/v1/ingest/updown/{created.Token}";
+        var defaultEvents = string.Join(", ", UpdownEventTypes.DefaultEnabled);
+
+        await turnContext.SendActivityAsync(MessageFactory.Text(
+            $"✅ Webhook **{created.Id}** created for this {targetType}.\n\n" +
+            "**Paste this URL into updown.io** — it is a secret and is shown only once:\n\n" +
+            $"`{url}`\n\n" +
+            $"Enabled events: {defaultEvents}.\n\n" +
+            $"Manage it with **configure-webhook {created.Id} …**, **rotate-webhook {created.Id}** (if it leaks), " +
+            $"or **remove-webhook {created.Id}**."), ct);
+    }
+
+    private async Task HandleConfigureWebhookAsync(
+        ITurnContext turnContext, string originalText, string command, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var lc = command.Split(' ', 4, StringSplitOptions.RemoveEmptyEntries);
+        if (lc.Length < 4)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text(
+                "Usage: **configure-webhook** `<id>` `<description|account|events>` `<value>`\n\n" +
+                "Examples:\n" +
+                "- `configure-webhook <id> description Production site health`\n" +
+                "- `configure-webhook <id> account prod-monitoring / ops@dsb.no`\n" +
+                "- `configure-webhook <id> events check.down,check.up,check.ssl_expiration` (or `all`)"), ct);
+            return;
+        }
+
+        var id = lc[1];
+        var field = lc[2].ToLowerInvariant();
+        // Preserve original casing for the value (descriptions, account labels, emails).
+        var origParts = originalText.TrimStart('/').Split(' ', 4, StringSplitOptions.RemoveEmptyEntries);
+        var value = origParts.Length > 3 ? origParts[3].Trim() : string.Empty;
+
+        bool ok;
+        switch (field)
+        {
+            case "description":
+            case "desc":
+                ok = await _webhookService!.ConfigureAsync(id, value, null, null);
+                break;
+            case "account":
+                ok = await _webhookService!.ConfigureAsync(id, null, value, null);
+                break;
+            case "events":
+                var requested = value
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(e => e.ToLowerInvariant())
+                    .ToList();
+
+                List<string> events;
+                if (requested.Count == 1 && requested[0] == "all")
+                {
+                    events = UpdownEventTypes.All.ToList();
+                }
+                else
+                {
+                    var invalid = requested.Where(e => !UpdownEventTypes.IsKnown(e)).ToList();
+                    if (requested.Count == 0 || invalid.Count > 0)
+                    {
+                        var bad = invalid.Count > 0 ? string.Join(", ", invalid) : "(none provided)";
+                        await turnContext.SendActivityAsync(MessageFactory.Text(
+                            $"Invalid event type(s): {bad}.\n\n" +
+                            $"Valid: {string.Join(", ", UpdownEventTypes.All)} (or `all`)."), ct);
+                        return;
+                    }
+                    events = requested;
+                }
+
+                ok = await _webhookService!.ConfigureAsync(id, null, null, events);
+                break;
+            default:
+                await turnContext.SendActivityAsync(MessageFactory.Text(
+                    "Unknown field. Use `description`, `account`, or `events`."), ct);
+                return;
+        }
+
+        await turnContext.SendActivityAsync(MessageFactory.Text(
+            ok ? $"✅ Webhook **{id}** updated ({field})."
+               : $"Webhook **{id}** not found."), ct);
+    }
+
+    private async Task HandleListWebhooksAsync(ITurnContext turnContext, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var webhooks = await _webhookService!.ListAsync();
+        if (webhooks.Count == 0)
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("No webhooks configured. Create one with **create-webhook**."), ct);
+            return;
+        }
+
+        var infos = webhooks.Select(w => new WebhookDisplayInfo(
+            Id: w.Id,
+            Source: w.Source,
+            TargetLabel: DescribeWebhookTarget(w),
+            Description: w.Description,
+            UpdownAccount: w.UpdownAccount,
+            EnabledEvents: string.Join(", ", w.GetEnabledEvents()),
+            CreatedByName: w.CreatedByName,
+            RelativeCreated: FormatRelativeTime(w.CreatedAt),
+            LastReceived: w.LastReceivedAt.HasValue ? FormatRelativeTime(w.LastReceivedAt.Value) : "never")).ToList();
+
+        var cardJson = WebhookListCardBuilder.Build(infos);
+        var attachment = new Attachment
+        {
+            ContentType = "application/vnd.microsoft.card.adaptive",
+            Content = JsonSerializer.Deserialize<object>(cardJson)
+        };
+        await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), ct);
+    }
+
+    private async Task HandleRemoveWebhookAsync(ITurnContext turnContext, string command, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text("Usage: **remove-webhook** `<id>`"), ct);
+            return;
+        }
+
+        var id = parts[1];
+        var removed = await _webhookService!.RemoveByIdAsync(id);
+        _logger.LogInformation("Webhook '{Id}' remove requested by {User}: removed={Removed}",
+            id, turnContext.Activity.From?.Name, removed);
+        await turnContext.SendActivityAsync(MessageFactory.Text(
+            removed ? $"Webhook **{id}** removed." : $"Webhook **{id}** not found."), ct);
+    }
+
+    private async Task HandleRotateWebhookAsync(ITurnContext turnContext, string command, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text("Usage: **rotate-webhook** `<id>`"), ct);
+            return;
+        }
+
+        var id = parts[1];
+        var newToken = await _webhookService!.RotateByIdAsync(id);
+        if (newToken == null)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text($"Webhook **{id}** not found."), ct);
+            return;
+        }
+
+        _logger.LogInformation("Webhook '{Id}' rotated by {User}", id, turnContext.Activity.From?.Name);
+        var url = $"https://{GetHostname()}/api/v1/ingest/updown/{newToken}";
+        await turnContext.SendActivityAsync(MessageFactory.Text(
+            $"🔄 Webhook **{id}** rotated. The previous URL no longer works.\n\n" +
+            $"**New URL** (shown once — update it in updown.io):\n\n`{url}`"), ct);
+    }
+
+    private static string DescribeWebhookTarget(WebhookTokenEntity w) => w.TargetType switch
+    {
+        "channel" => "channel",
+        "personal" => "personal chat",
+        "groupChat" => "group chat",
+        _ => w.TargetType
+    };
 
     // --- Setup guide command ---
 

@@ -45,8 +45,8 @@
         { "title": "delete-post", "description": "Delete a bot message (reply to it)" },
         { "title": "setup-guide", "description": "API authentication setup instructions" },
         { "title": "queue-status", "description": "Show queue message counts" },
-        { "title": "queue-peek", "description": "Peek poison queue messages" },
-        { "title": "queue-retry", "description": "Retry poison messages" }
+        { "title": "create-webhook", "description": "Create an updown.io webhook for this channel" },
+        { "title": "list-webhooks", "description": "Show configured webhooks" }
       ]
     },
     {
@@ -59,7 +59,9 @@
         { "title": "list-aliases", "description": "Show all aliases" },
         { "title": "setup-guide", "description": "API authentication setup instructions" },
         { "title": "queue-status", "description": "Show queue message counts" },
-        { "title": "queue-peek", "description": "Peek poison queue messages" }
+        { "title": "queue-peek", "description": "Peek poison queue messages" },
+        { "title": "create-webhook", "description": "Create an updown.io webhook for this chat" },
+        { "title": "list-webhooks", "description": "Show configured webhooks" }
       ]
     },
     {

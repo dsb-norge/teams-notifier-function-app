@@ -37,10 +37,13 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
         httpContext.Items["CorrelationId"] = correlationId;
         httpContext.Response.Headers["X-Correlation-Id"] = correlationId;
 
-        // Skip auth for bot messages endpoint (uses Bot Framework JWT auth), health probe, and OpenAPI spec
+        // Skip auth for bot messages endpoint (uses Bot Framework JWT auth), health probe, and OpenAPI spec.
+        // Also skip the anonymous updown.io webhook ingress: it is a distinct trust zone that performs its
+        // own token validation in-handler (no EasyAuth principal). See docs/feat-updown-io-webhook/design.md.
         if (path.EndsWith("/messages", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith("/health", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/openapi.yaml", StringComparison.OrdinalIgnoreCase))
+            path.EndsWith("/openapi.yaml", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/v1/ingest/", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;

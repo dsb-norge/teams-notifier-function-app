@@ -137,6 +137,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 | HTTP | Alert | `POST /api/v1/alert/{alias}` | Azure Monitor alert webhook |
 | HTTP | CheckIn | `POST /api/v1/checkin/{alias}` | Deployment verification ping |
 | HTTP | Send | `POST /api/v1/send` | Direct-target send (by team/channel/user ID) |
+| HTTP | UpdownIngest | `POST /api/v1/ingest/updown/{token}` | **Anonymous** updown.io webhook ingress; token-authenticated, isolated trust zone |
 | HTTP | GetAliases | `GET /api/v1/aliases` | List aliases (debug mode only) |
 | HTTP | OpenApi | `GET /api/v1/openapi.yaml` | OpenAPI specification |
 | HTTP | BotMessages | `POST /api/messages` | Bot Framework messaging endpoint |
@@ -155,15 +156,16 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 
 Azure Storage with shared access keys disabled. All access via RBAC (User-Assigned Managed Identity).
 
-**Tables** (5):
+**Tables** (6):
 
 | Table | Purpose |
 |---|---|
 | `aliases` | Maps alias names to conversation targets (channel, personal, groupChat) |
 | `conversationreferences` | Stores Bot Framework conversation references (auto-populated on bot install) |
 | `teamlookup` | Caches team metadata (team names) |
-| `idempotencykeys` | Deduplication records (no automatic expiry) |
+| `idempotencykeys` | Deduplication records (no automatic expiry); also stores updown webhook `(token,event,time)` dedupe markers |
 | `ThrottlingTrollCounters` | Rate limiter fixed window counters |
+| `webhooktokens` | updown.io webhook capability tokens (SHA-256 hashed) → conversation target + event filter |
 
 **Queues** (4):
 

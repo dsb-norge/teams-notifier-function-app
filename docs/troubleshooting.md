@@ -36,6 +36,17 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 | Messages appearing in the poison queue | Repeated delivery failures after 5 attempts | Use the `queue-status` bot command to view poison queue depth. Use `queue-peek` to inspect individual failed messages and their error details. Common causes: stale conversation references, expired bot credentials. |
 | Duplicate messages delivered to a channel | Idempotency key not provided, or retry after transient failure | Include an `Idempotency-Key` header in the request. The system deduplicates requests with the same key and operation type. |
 
+### updown.io Webhook Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| updown reports the webhook failing / `404 Not Found` | The `{token}` is wrong, or the webhook was removed/rotated | Recreate or rotate the URL with `rotate-webhook <id>` (or `create-webhook`) and update the recipient URL in updown. The URL is shown only once. |
+| updown delivers but no card appears in Teams | The event type is filtered out for this webhook (e.g. `check.performance_drop` is off by default), or the conversation reference is stale | Check the filter with `list-webhooks`; adjust with `configure-webhook <id> events …`. For stale references, reinstall the bot in the target conversation. |
+| Cards never arrive but updown shows 200 | The message enqueued but delivery failed (poison queue) | Use `queue-status` / `queue-peek notifications-poison`. |
+| Need to see exactly what updown sent | Payload troubleshooting | Set app setting `UpdownWebhook__DebugLogPayload=true` (off by default) to log the raw body (sanitized, no token) at Debug, then inspect App Insights `traces`. Turn it off afterwards. |
+| Verifying delivery before go-live | — | Use updown's *recipients → test* page to send a sample payload, and confirm a card lands. Source IPs are logged (search `traces` for `SourceIp`) — this is the data needed before enabling any IP allowlist. |
+| Worried a leaked URL could post fake cards | updown does not sign requests; the token is the only credential | Rotate immediately with `rotate-webhook <id>`. Cards have no actionable buttons and are labelled *unverified sender*, bounding the impact to channel text. |
+
 ### Function App Issues
 
 | Symptom | Cause | Fix |

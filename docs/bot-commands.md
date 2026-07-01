@@ -20,7 +20,7 @@ the conversation scope:
 | **Group chat** | Send the command directly: `help` |
 
 The bot is installed in three Teams scopes: `team`, `personal`, and `groupChat`. Not all commands
-are available in every scope — see [Command Availability by Scope](#6-command-availability-by-scope)
+are available in every scope — see [Command Availability by Scope](#7-command-availability-by-scope)
 for the full matrix.
 
 Commands are case-insensitive. Arguments are separated by spaces.
@@ -264,7 +264,83 @@ Moved 12 message(s) from notifications-poison to notifications.
 
 ---
 
-## 5. Other Commands
+## 5. Webhook Ingress (updown.io)
+
+These commands manage **anonymous webhook endpoints** that let [updown.io](https://updown.io) push
+uptime/SSL alerts into a conversation without an Entra ID token. Each webhook has its own secret
+URL (`POST /api/v1/ingest/updown/{token}`); the token is the only credential (updown does not sign
+its requests), so treat the URL as a secret and rotate it if it leaks. Only a SHA-256 of the token
+is stored. See the [API Reference](api-reference.md) for the endpoint and payload details, and
+`help webhooks` in the bot.
+
+Webhook management commands require a valid Entra ID identity (same as queue commands).
+
+### create-webhook `[updown]`
+
+Creates a webhook bound to the **current** conversation and returns its secret URL **once**. The
+source defaults to `updown` (the only supported source today). The default event filter is all
+events **except** `check.performance_drop`.
+
+**Example:**
+
+```
+@<bot-display-name> create-webhook
+```
+
+**Response (the URL is shown only once — paste it into updown.io):**
+
+```
+✅ Webhook a1b2c3d4 created for this channel.
+Paste this URL into updown.io — it is a secret and is shown only once:
+https://<function-app-name>.azurewebsites.net/api/v1/ingest/updown/<token>
+Enabled events: check.down, check.up, check.ssl_invalid, check.ssl_valid, check.ssl_expiration, check.ssl_renewed.
+```
+
+---
+
+### list-webhooks
+
+Displays configured webhooks as an Adaptive Card — id, source, target, description, updown account
+label, enabled events, creator, created time, and last-received time. **Never** shows the token/URL.
+
+---
+
+### configure-webhook `<id>` `<field>` `<value>`
+
+Updates one setting of a webhook. `field` is one of:
+
+| Field | Value |
+|-------|-------|
+| `description` | Free-text description (casing preserved) |
+| `account` | updown account label surfaced on cards, e.g. `prod-monitoring / ops@dsb.no` |
+| `events` | Comma-separated event types, or `all` |
+
+**Examples:**
+
+```
+@<bot-display-name> configure-webhook a1b2c3d4 account prod-monitoring / ops@dsb.no
+@<bot-display-name> configure-webhook a1b2c3d4 events check.ssl_expiration,check.ssl_renewed
+```
+
+Valid event types: `check.down`, `check.up`, `check.ssl_invalid`, `check.ssl_valid`,
+`check.ssl_expiration`, `check.ssl_renewed`, `check.performance_drop`.
+
+---
+
+### rotate-webhook `<id>`
+
+Issues a new secret URL and invalidates the old token immediately. Use this if a URL leaks. The new
+URL is shown once.
+
+---
+
+### remove-webhook `<id>`
+
+Deletes the webhook. Its URL stops working immediately.
+
+---
+
+## 6. Other Commands
 
 ### setup-guide
 
@@ -307,7 +383,7 @@ Message deleted.
 
 ---
 
-## 6. Command Availability by Scope
+## 7. Command Availability by Scope
 
 Not all commands are available in every conversation scope. Queue management commands that modify
 data are restricted to team channels and personal chat where administrative access is appropriate.
@@ -326,8 +402,17 @@ data are restricted to team channels and personal chat where administrative acce
 | queue-retry | Yes | -- | -- |
 | queue-retry-all | Yes | -- | -- |
 | delete-post | Yes | -- | -- |
+| create-webhook | Yes | Yes | Yes |
+| list-webhooks | Yes | Yes | Yes |
+| configure-webhook | Yes | Yes | Yes |
+| rotate-webhook | Yes | Yes | Yes |
+| remove-webhook | Yes | Yes | Yes |
 
 **Legend:** `Yes` = available, `--` = not available in this scope.
+
+> Webhook commands work in all scopes when typed. Autocomplete hints appear in the **team** and
+> **personal** compose menus (create-webhook, list-webhooks); the Teams 10-command-per-scope cap
+> means the full set is discoverable via `help webhooks` rather than the menu.
 
 **Rationale:**
 
@@ -339,7 +424,7 @@ data are restricted to team channels and personal chat where administrative acce
 
 ---
 
-## 7. Proactive Notifications
+## 8. Proactive Notifications
 
 In addition to responding to commands, the bot delivers proactive notifications when messages arrive
 through the API. These appear in the conversation associated with the target alias.
