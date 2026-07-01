@@ -201,8 +201,10 @@ public class UpdownIngestFunctionTests
     public async Task EnqueueFailure_Returns500_ForRetry()
     {
         var fn = NewFunction();
+        // A storage enqueue failure surfaces as RequestFailedException — the handler converts it to
+        // a controlled 500 (so updown retries). Non-storage exceptions intentionally bubble instead.
         _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
-            .ThrowsAsync(new InvalidOperationException("storage down"));
+            .ThrowsAsync(new Azure.RequestFailedException(503, "storage down"));
 
         var req = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
         var result = await fn.Run(req, "good-token");

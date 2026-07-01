@@ -94,15 +94,23 @@ public class WebhookService : IWebhookService
 
         var oldRowKey = entity.RowKey;
         var newToken = GenerateToken();
-        entity.RowKey = Sha256Hex(newToken);
-        entity.ETag = default; // new row
+        var newRowKey = Sha256Hex(newToken);
 
-        await _tableClient.UpsertEntityAsync(entity);
-        if (!string.Equals(oldRowKey, entity.RowKey, StringComparison.Ordinal))
-        {
-            try { await _tableClient.DeleteEntityAsync(Partition, oldRowKey); }
-            catch (RequestFailedException ex) when (ex.Status == 404) { /* already gone */ }
-        }
+        // Astronomically unlikely hash collision — the row already carries this token; nothing to do.
+        if (string.Equals(oldRowKey, newRowKey, StringComparison.Ordinal))
+            return newToken;
+
+        entity.RowKey = newRowKey;
+        entity.ETag = default;
+
+        // Old and new rows share the "webhook" partition, so add-new + delete-old is a single atomic
+        // transaction: either the token is swapped or nothing changes. Avoids leaving two rows for
+        // one webhook id if a separate delete were to fail after the new row was written.
+        await _tableClient.SubmitTransactionAsync(
+        [
+            new TableTransactionAction(TableTransactionActionType.Add, entity),
+            new TableTransactionAction(TableTransactionActionType.Delete, new TableEntity(Partition, oldRowKey), ETag.All)
+        ]);
         return newToken;
     }
 
