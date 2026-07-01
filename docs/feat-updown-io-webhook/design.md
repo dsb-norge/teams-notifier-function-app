@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Approved for implementation |
-| Supersedes | the original exploratory hand-off spec (now removed — its content, including cost/latency notes and the rejected poll alternative, is folded into this document, see §15) |
+| Supersedes | the original exploratory hand-off spec (now removed — its content, including cost/latency notes and the rejected poll alternative, is folded into this document, see §16) |
 | Audience | app developers (this repo) + platform engineers (Terraform module + consumer config) |
 | Companion docs | [implementation-plan.md](./implementation-plan.md), [manual-verification.md](./manual-verification.md) |
 
@@ -311,17 +311,37 @@ existing `ThrottlingTrollCounters` table (works across Flex instances).
 
 ---
 
-## 14. Open items to confirm during implementation
+## 14. Open items — resolved during implementation
 
-1. ThrottlingTroll null-identity behavior (that the generic `/api/v1/.*` rule skips anonymous
-   ingest) — cover with a test.
-2. EasyAuth `excludedPaths` prefix-matching semantics for the `{token}` suffix — confirm the
-   static prefix form the module should emit.
-3. Exact `HelpTextBuilder` API surface (method signatures) when adding `Webhooks()`.
+1. **ThrottlingTroll null-identity behavior** → *resolved by not depending on it.* The AAD rule uses
+   a negative-lookahead pattern `"/api/v1/(?!ingest/).*"` so anonymous ingest is deterministically
+   excluded from the principal-keyed rule; the ingest rule (`"/api/v1/ingest/.*"`) is keyed by
+   source IP. Logic extracted to `Middleware/RateLimitPolicy.cs` and unit-tested.
+2. **EasyAuth `excludedPaths` prefix form** → the generator emits the static prefix
+   `"/api/v1/ingest/updown"` (the `{token}` segment stripped) in
+   `bot_auth_settings.easy_auth_excluded_paths` alongside the messaging endpoint. (Consumed by the
+   module in the deferred phase 7.)
+3. **`HelpTextBuilder` surface** → added `Webhooks()`; wired `"webhooks"/"webhook"` in
+   `HandleHelpAsync`, and listed it in `Overview()` + the unknown-topic hint.
+
+## 15. As-built notes (differences from the original plan)
+
+- **Fixtures are inline** (`tests/.../UpdownPayloads.cs` `const string`s), not external `.json`
+  files — matches the repo's inline-JSON test convention.
+- **Models** live in one file (`Models/UpdownWebhookPayload.cs`) plus `Models/UpdownEventTypes.cs`,
+  matching `CommonAlertPayload.cs` — not a `Models/Updown/` subfolder.
+- **Command-hint lists** (Teams 10-per-scope cap): `create-webhook` + `list-webhooks` were added to
+  the **team** scope (dropping the `queue-peek`/`queue-retry` hints) and the **personal** scope;
+  `configure/rotate/remove-webhook` work by typing and are covered by `help webhooks`.
+- **Contract field**: `bot_auth_settings.easy_auth_excluded_paths` (list) is the signal the module
+  consumes; `well_known_routes.updown_webhook_ingest_endpoint` documents the route. Infra hash after
+  regeneration: `04eec911853e`.
+- Body cap `UpdownWebhook__MaxBodyBytes` (default 64 KB); debug dump `UpdownWebhook__DebugLogPayload`
+  (default off); dedupe stored in `idempotencykeys` under scope `updown-ingest`.
 
 ---
 
-## 15. Context notes (cost, latency, rejected alternative)
+## 16. Context notes (cost, latency, rejected alternative)
 
 Carried over from the superseded spec so nothing is lost:
 

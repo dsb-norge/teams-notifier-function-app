@@ -79,6 +79,13 @@ echo "  Alert route: ${ALERT_ROUTE}"
 MESSAGING_ENDPOINT="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/BotMessagesFunction.cs" | head -1)"
 echo "  Messaging endpoint: ${MESSAGING_ENDPOINT}"
 
+# updown webhook ingress route: Route = "v1/ingest/updown/{token}" in UpdownIngestFunction.cs
+INGEST_ROUTE="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/UpdownIngestFunction.cs" | head -1)"
+# EasyAuth excluded path = the static prefix, without the {token} segment
+INGEST_EXCLUDED_PATH="${INGEST_ROUTE%/*}"
+echo "  Ingest route: ${INGEST_ROUTE}"
+echo "  Ingest excluded path: ${INGEST_EXCLUDED_PATH}"
+
 # Required role from AuthMiddleware.cs
 REQUIRED_ROLE=$(grep -oP 'RequiredRole\s*=\s*"\K[^"]+' "${APP_DIR}/Middleware/AuthMiddleware.cs")
 echo "  Required role: ${REQUIRED_ROLE}"
@@ -100,6 +107,8 @@ jq -n \
   --argjson queues "${QUEUES}" \
   --arg alert_route "${ALERT_ROUTE}" \
   --arg messaging_endpoint "${MESSAGING_ENDPOINT}" \
+  --arg ingest_route "${INGEST_ROUTE}" \
+  --arg ingest_excluded "${INGEST_EXCLUDED_PATH}" \
   --arg required_role "${REQUIRED_ROLE}" \
   --arg dotnet_version "${DOTNET_VERSION}" \
   --arg app_version "${APP_VERSION}" \
@@ -112,10 +121,14 @@ jq -n \
     function_app_runtime_version: $dotnet_version,
     storage_account_required_queues: $queues,
     well_known_routes: {
-      azure_alert_webhook_receiver_endpoint: $alert_route
+      azure_alert_webhook_receiver_endpoint: $alert_route,
+      updown_webhook_ingest_endpoint: $ingest_route
     },
     function_app_required_app_settings: $seed.function_app_required_app_settings,
-    bot_auth_settings: ($seed.bot_auth_settings + { required_role: $required_role }),
+    bot_auth_settings: ($seed.bot_auth_settings + {
+      required_role: $required_role,
+      easy_auth_excluded_paths: [ $messaging_endpoint, $ingest_excluded ]
+    }),
     bot_service: ($seed.bot_service + { messaging_endpoint: $messaging_endpoint }),
     teams_app_configuration: $seed.teams_app_configuration,
     teams_app_command_lists: $seed.teams_app_command_lists

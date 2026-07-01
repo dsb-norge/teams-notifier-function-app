@@ -9,24 +9,51 @@ Repos:
 - **CONSUMER** — `dsb-infra/azure-terraform-ikt-app-platform-common-config` (reference; changes
   documented here, applied in that repo's own PR)
 
+## Status
+
+| Phase | Repo | Status |
+|-------|------|--------|
+| 0 — models & fixtures | APP | ✅ Done |
+| 1 — event → card | APP | ✅ Done |
+| 2 — webhook token store | APP | ✅ Done |
+| 3 — ingest function + middleware + telemetry | APP | ✅ Done |
+| 4 — bot commands + help | APP | ✅ Done |
+| 5 — rate limiting | APP | ✅ Done |
+| 6 — contract + docs | APP | ✅ Done |
+| 7 — Terraform module `excludedPaths` | MODULE | ⏳ Not started (deferred) |
+| 8 — consumer: open site inbound + module bump | CONSUMER | ⏳ Not started (deferred) |
+
+All APP phases landed on branch `feat/updown-io-webhook`; **406 tests green** (`dotnet test`,
+Azurite for integration). The route is **not reachable on a real deploy until phases 7–8** are done
+(EasyAuth excluded path + open site inbound). The generated `app-requirements.json` already advertises
+`well_known_routes.updown_webhook_ingest_endpoint` and `bot_auth_settings.easy_auth_excluded_paths`
+for the module to consume; infra hash is now `04eec911853e`.
+
+Where the as-built differs from the original plan below, the plan text has been updated to match
+(inline JSON fixtures instead of external files; single-file model; `RateLimitPolicy` helper;
+negative-lookahead rule exclusion). Deltas are called out inline.
+
 ---
 
-## Phase 0 — models & fixtures (APP)
+## Phase 0 — models & fixtures (APP) — ✅ Done
 
-1. **`src/TeamsNotificationBot/Models/Updown/UpdownEvent.cs`** (+ nested `UpdownCheck`,
-   `UpdownDowntime`, `UpdownSsl`, `UpdownCert`). One class graph mirroring the documented payload.
+1. **`src/TeamsNotificationBot/Models/UpdownWebhookPayload.cs`** — one file with the class graph
+   (`UpdownEvent` + `UpdownCheck`, `UpdownDowntime`, `UpdownSsl`, `UpdownCert`), matching the repo's
+   `CommonAlertPayload.cs` convention (single file, not a subfolder).
    - `System.Text.Json`, all properties **nullable**, `[JsonPropertyName]` for snake_case.
    - Deserialize the **array** wrapper (`List<UpdownEvent>`).
    - Lenient: unknown JSON properties ignored by default; do **not** annotate `[JsonRequired]`.
    - `event` string kept raw (so unknown/future types round-trip and can be logged+skipped).
-2. **`tests/.../fixtures/updown/*.json`** — the 7 verbatim payloads from
-   [manual-verification.md](./manual-verification.md) §Fixtures, plus crafted negatives:
-   `malformed.json`, `empty-array.json`, `unknown-event.json`, `nulls-everywhere.json`,
-   `not-an-array.json`.
-3. **Unit tests** `UpdownEventParsingTests` — each fixture deserializes; null-safe access; unknown
-   event type parses without throwing; array-of-N parses.
+   - Plus **`Models/UpdownEventTypes.cs`** — the 7 event-type constants + `DefaultEnabled` (all
+     except `check.performance_drop`) + `IsKnown`.
+2. **`tests/.../UpdownPayloads.cs`** — *(as-built: inline `const string` fixtures, not external
+   `.json` files, matching the repo's inline-JSON test convention)*. The 7 verbatim payloads plus
+   negatives: malformed, empty-array, unknown-event, nulls-everywhere, not-an-array, and an
+   evil-downtime-link case.
+3. **Unit tests** `Models/UpdownWebhookPayloadTests` — each fixture deserializes; null-safe access;
+   unknown event type parses without throwing; array-of-N parses; non-array/malformed throw.
 
-## Phase 1 — event → card (APP)
+## Phase 1 — event → card (APP) — ✅ Done
 
 4. **`src/TeamsNotificationBot/Services/UpdownCardBuilder.cs`** — `static string Build(UpdownEvent e,
    string? updownAccountLabel)`. Mirrors `AlertCardBuilder` conventions (returns card JSON string).
@@ -42,7 +69,7 @@ Repos:
    present; a null/missing-field case per event; assert every built card **passes
    `AdaptiveCardValidator.Validate`**; assert a non-updown.io `details_url` is not linkified.
 
-## Phase 2 — webhook token store (APP)
+## Phase 2 — webhook token store (APP) — ✅ Done
 
 6. **`src/TeamsNotificationBot/Models/WebhookTokenEntity.cs`** — `ITableEntity` with the fields in
    design §5.
@@ -64,7 +91,7 @@ Repos:
    resolve round-trip; resolve miss → null; rotate invalidates old hash; remove; configure updates
    fields; token is never persisted in plaintext (assert stored `RowKey`/props contain only hash).
 
-## Phase 3 — ingest function (APP)
+## Phase 3 — ingest function (APP) — ✅ Done
 
 10. **`src/TeamsNotificationBot/Middleware/AuthMiddleware.cs`** — add the ingest prefix to the
     skip-list (line ~41 alongside `/messages`): skip when
@@ -100,7 +127,7 @@ Repos:
     - oversized body → `413`;
     - debug-dump setting on → body appears in logs (captured logger), sanitized.
 
-## Phase 4 — bot commands + help (APP)
+## Phase 4 — bot commands + help (APP) — ✅ Done
 
 14. **`src/TeamsNotificationBot/Services/TeamsBotHandler.cs`** — add dispatch branches in
     `OnMessageActivityAsync` (before the generic fallback; longest-prefix first):
@@ -121,31 +148,40 @@ Repos:
     returns URL+id; list renders; configure updates; remove/rotate; unauthorized (no Entra id)
     rejected; `help webhooks` returns the section.
 
-## Phase 5 — rate limiting (APP)
+## Phase 5 — rate limiting (APP) — ✅ Done
 
-18. **`src/TeamsNotificationBot/Program.cs`** — add a second `ThrottlingTrollRule`:
-    `UriPattern = "/api/v1/ingest/.*"`, `IdentityIdExtractor` = source IP, `FixedWindow` from
-    `RateLimit__Ingest__PermitLimit` / `__IntervalInSeconds` (defaults e.g. 100/60). Confirm the
-    existing `/api/v1/.*` rule skips null-identity anonymous ingest.
-19. **Test** — anonymous ingest over the limit → `429` with `Retry-After`; under the limit → passes;
-    authenticated `/notify` still limited by the principal rule (regression).
+18. **`src/TeamsNotificationBot/Middleware/RateLimitPolicy.cs`** *(as-built: extracted a testable
+    helper instead of inline lambdas)* — holds the two `UriPattern`s, identity-key helpers, and
+    env-driven limits. The AAD rule uses a **negative-lookahead** pattern
+    `"/api/v1/(?!ingest/).*"` so anonymous ingest is *never* bucketed under the principal rule
+    (deterministic — does not rely on ThrottlingTroll's null-identity skip). The ingest rule is
+    `"/api/v1/ingest/.*"` keyed by source IP, defaults `RateLimit__Ingest__PermitLimit`=100 /
+    `__IntervalInSeconds`=60.
+19. **`Program.cs`** — wire both rules via `RateLimitPolicy`; the existing `ResponseFabric` already
+    emits RFC-7807 `429` + `Retry-After`.
+20. **Test** `Middleware/RateLimitPolicyTests` — the two patterns are disjoint (ingest excluded from
+    the AAD rule); principal key null/empty → null (rule skipped); source-IP key uses first
+    X-Forwarded-For hop with fallbacks.
 
-## Phase 6 — contract + docs (APP)
+## Phase 6 — contract + docs (APP) — ✅ Done
 
-20. **`scripts/generate-requirements.sh`** — extract the ingest `Route` from
-    `UpdownIngestFunction.cs`; add `well_known_routes.updown_webhook_ingest_endpoint`; add the
-    excluded-paths field the module will consume (design §12.2).
-21. **`scripts/requirements-static.json`** — add the 5 webhook commands to `teams_app_command_lists`
-    (team + personal + groupChat scopes as appropriate; webhook create/manage likely team+groupChat,
-    match the alias scoping).
-22. Run `scripts/generate-requirements.sh && scripts/validate-requirements.sh`; commit the
-    regenerated `app-requirements.json` (infra hash will change).
-23. **User docs** (this repo `docs/`): update `api-reference.md` (new endpoint, anonymous, event
-    payloads, 200-semantics), `bot-commands.md` (new commands), `architecture.md` (new route +
-    table + trust zone + open-inbound note), `troubleshooting.md` (updown didn't deliver / retries /
-    debug dump / rotate on leak). Cross-link this feature folder.
+21. **`scripts/generate-requirements.sh`** — extracts the ingest `Route` from
+    `UpdownIngestFunction.cs`; adds `well_known_routes.updown_webhook_ingest_endpoint` and
+    `bot_auth_settings.easy_auth_excluded_paths` = `[messaging_endpoint, "/api/v1/ingest/updown"]`
+    (the static prefix, `{token}` stripped) for the module to consume.
+22. **`scripts/requirements-static.json`** — *(as-built per the command-hint decision, given Teams'
+    10-per-scope cap)*: added `create-webhook` + `list-webhooks` to the **team** scope (dropping the
+    `queue-peek`/`queue-retry` hints to stay ≤10) and to the **personal** scope; groupChat unchanged.
+    The other webhook commands still work by typing and are documented in `help webhooks`. Validation
+    (`[8/9] Teams manifest limits`) confirms team 10, personal 10, groupChat 6.
+23. Ran `generate-requirements.sh && validate-requirements.sh` (all checks pass); committed the
+    regenerated `app-requirements.json` (infra hash → `04eec911853e`).
+24. **User docs** (this repo `docs/`): updated `api-reference.md` (new endpoint, anonymous, event
+    payloads, 200-semantics), `bot-commands.md` (new §5 + availability table), `architecture.md`
+    (new route + `webhooktokens` table + trust zone), `troubleshooting.md` (updown didn't deliver /
+    retries / debug dump / rotate on leak). Cross-linked this feature folder.
 
-## Phase 7 — MODULE
+## Phase 7 — MODULE — ⏳ Deferred (no TF changes yet, per instruction)
 
 24. **`main.compute.tf`** — change EasyAuth `excludedPaths` from `[messaging_endpoint]` to
     `concat([...messaging_endpoint], <additional excluded paths from app_requirements>)`.
@@ -154,7 +190,7 @@ Repos:
 26. **`examples/` + `README` + `CHANGELOG`** — document the new excluded-path capability and that
     consumers exposing an anonymous ingest route must open site inbound themselves. Version-bump.
 
-## Phase 8 — CONSUMER (documented; applied in that repo)
+## Phase 8 — CONSUMER (documented; applied in that repo) — ⏳ Deferred
 
 27. **`main/main.teams-notifier.tf`** — add `allowed_caller_rules` entry
     `{ name = "public-ingest", description = "Public updown.io webhook ingress", cidr = "0.0.0.0/0" }`

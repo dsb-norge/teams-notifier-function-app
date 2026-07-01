@@ -372,6 +372,75 @@ Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).
 
 ---
 
+### POST /v1/ingest/updown/{token}
+
+**Anonymous** ingress for [updown.io](https://updown.io) webhooks. Unlike every other `/v1/*`
+endpoint, this route is **not** Entra ID-gated — authentication is the high-entropy `{token}` in the
+path, which maps to a single conversation target. Create the URL with the **create-webhook** bot
+command (see [Bot Commands](bot-commands.md)); the token is shown once and only its SHA-256 is
+stored. updown does not sign its requests, so the URL is a bearer secret: keep it out of logs and
+**rotate-webhook** if it leaks.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `token` | string | The secret capability token issued by `create-webhook`. |
+
+**Request body** — updown always sends an **array** of events. Fields are parsed leniently
+(unknown fields ignored; unknown/future event types are accepted and skipped):
+
+```json
+[{
+  "event": "check.down",
+  "time": "2026-07-01T10:48:48Z",
+  "description": "DOWN: https://example.com since 10:38 (UTC), reason: 500",
+  "check": { "token": "xyz0", "url": "https://example.com", "alias": "prod-site", "down": true },
+  "downtime": { "details_url": "https://updown.io/downtimes/...", "started_at": "2026-07-01T10:38:48Z" }
+}]
+```
+
+Recognised `event` types: `check.down`, `check.up`, `check.ssl_invalid`, `check.ssl_valid`,
+`check.ssl_expiration`, `check.ssl_renewed`, `check.performance_drop`. Each webhook has a
+configurable event filter (default: all except `check.performance_drop`). Each eligible event is
+rendered as a color-coded Adaptive Card and delivered to the bound conversation.
+
+**Behaviour**
+
+- Returns **200 OK** on success (updown ignores the body). Retries are de-duplicated on
+  `(check token, event, time)`.
+- **Malformed or unparseable** bodies are logged and answered **200** (a bad body will not parse on
+  retry — this avoids updown's up-to-25× retry storm). Only a transient enqueue failure returns
+  **5xx** so a genuinely retryable delivery is retried.
+- Unknown token → **404**. Body over the size cap → **413**.
+- Cards contain **no clickable actions** and are labelled *unverified sender*; the only link is the
+  updown.io downtime URL (rendered only when it is under `https://updown.io/`).
+
+**Responses**
+
+| Code | Meaning |
+|------|---------|
+| 200 | Accepted (events enqueued and/or skipped; also returned for unparseable bodies) |
+| 404 | Unknown webhook token |
+| 413 | Body exceeds the size cap |
+| 429 | Rate limit exceeded (per source IP) |
+| 500 | Transient enqueue failure (updown will retry) |
+
+**Example**
+
+```bash
+curl -sS -X POST \
+  "https://<function-app-name>.azurewebsites.net/api/v1/ingest/updown/<token>" \
+  -H "Content-Type: application/json" \
+  -d '[{"event":"check.down","time":"2026-07-01T10:48:48Z","check":{"url":"https://example.com","token":"xyz0"}}]'
+```
+
+> **Testing:** updown's *recipients → test* page (<https://updown.io/recipients/test>) sends a
+> sample payload to the URL — use it to verify delivery before going live. See
+> [manual-verification.md](feat-updown-io-webhook/manual-verification.md) for a full curl runbook.
+
+---
+
 ### GET /v1/aliases
 
 List all registered aliases. This endpoint is only available when the application setting

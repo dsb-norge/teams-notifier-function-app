@@ -3,7 +3,7 @@
   "_description": "Requirements for Azure infrastructure and Teams configuration for the Teams Notifier application.",
   "_created_by": "https://github.com/dsb-norge/teams-notifier-function-app",
   "notifier_application_version": "1.5.1",
-  "infrastructure_requirements_unique_hash": "7deab6fa81e9",
+  "infrastructure_requirements_unique_hash": "04eec911853e",
   "function_app_runtime_version": "10.0",
   "storage_account_required_queues": [
     "botoperations",
@@ -12,7 +12,8 @@
     "notifications-poison"
   ],
   "well_known_routes": {
-    "azure_alert_webhook_receiver_endpoint": "/api/v1/alert/{alias}"
+    "azure_alert_webhook_receiver_endpoint": "/api/v1/alert/{alias}",
+    "updown_webhook_ingest_endpoint": "/api/v1/ingest/updown/{token}"
   },
   "function_app_required_app_settings": [
     "ApiAppId",
@@ -32,7 +33,11 @@
     "require_authentication": false,
     "unauthenticated_action": "AllowAnonymous",
     "identity_provider": "azureActiveDirectory",
-    "required_role": "Notifications.Send"
+    "required_role": "Notifications.Send",
+    "easy_auth_excluded_paths": [
+      "/api/messages",
+      "/api/v1/ingest/updown"
+    ]
   },
   "bot_service": {
     "type": "SingleTenant",
@@ -87,12 +92,12 @@
           "description": "Show queue message counts"
         },
         {
-          "title": "queue-peek",
-          "description": "Peek poison queue messages"
+          "title": "create-webhook",
+          "description": "Create an updown.io webhook for this channel"
         },
         {
-          "title": "queue-retry",
-          "description": "Retry poison messages"
+          "title": "list-webhooks",
+          "description": "Show configured webhooks"
         }
       ]
     },
@@ -132,6 +137,14 @@
         {
           "title": "queue-peek",
           "description": "Peek poison queue messages"
+        },
+        {
+          "title": "create-webhook",
+          "description": "Create an updown.io webhook for this chat"
+        },
+        {
+          "title": "list-webhooks",
+          "description": "Show configured webhooks"
         }
       ]
     },
