@@ -24,7 +24,12 @@ namespace TeamsNotificationBot.Functions;
 public class UpdownIngestFunction
 {
     private const string DedupeScope = "updown-ingest";
-    private const int DefaultMaxBodyBytes = 64 * 1024;
+
+    // 28 KB matches the app-wide body limit (AuthMiddleware). It also keeps the derived, Base64-
+    // encoded queue message safely under Azure Storage Queue's 64 KB (post-encoding) message limit,
+    // so an accepted body can't produce a QueueMessage that always fails SendMessageAsync → 500 →
+    // endless updown retries. Overridable via UpdownWebhook__MaxBodyBytes for intentional tuning.
+    private const int DefaultMaxBodyBytes = 28 * 1024;
 
     private readonly IWebhookService _webhookService;
     private readonly QueueClient _queueClient;
@@ -129,9 +134,15 @@ public class UpdownIngestFunction
                 continue;
             }
 
-            // Dedupe updown's retries on (webhook, check, event, time).
-            var dedupeKey = $"{webhook.Id}:{e.Check?.Token}:{e.Event}:{e.Time}";
-            if (await _idempotency.GetAsync(DedupeScope, dedupeKey) != null)
+            // Dedupe updown's retries on (webhook, event, check token, time). Only when the event
+            // carries a stable identity (token + time both present) — otherwise a leniently-parsed
+            // event with null token/time could collapse onto unrelated events and be dropped. The
+            // key is hashed to a fixed-size, RowKey-safe hex string (the raw fields may contain
+            // characters Table Storage disallows in a RowKey).
+            string? dedupeKey = e.Time is { Length: > 0 } t && e.Check?.Token is { Length: > 0 } ct
+                ? WebhookService.Sha256Hex($"{webhook.Id}|{e.Event}|{ct}|{t}")
+                : null;
+            if (dedupeKey != null && await _idempotency.GetAsync(DedupeScope, dedupeKey) != null)
             {
                 skipped++;
                 continue;
@@ -151,9 +162,11 @@ public class UpdownIngestFunction
             {
                 await _queueClient.SendMessageAsync(JsonSerializer.Serialize(queueMessage));
             }
-            catch (Exception ex)
+            catch (Azure.RequestFailedException ex)
             {
-                // Transient enqueue failure — return 5xx so updown retries the delivery.
+                // Storage enqueue failure — return 5xx so updown retries the delivery. Narrowed to
+                // the Azure Storage exception; any other unexpected failure bubbles to a host 500
+                // (which updown also retries).
                 _logger.LogError(ex,
                     "Failed to enqueue updown card. WebhookId={WebhookId}, CorrelationId={CorrelationId}",
                     webhook.Id, correlationId);
@@ -161,7 +174,8 @@ public class UpdownIngestFunction
                     "Failed to enqueue notification.", instance, correlationId);
             }
 
-            await _idempotency.SetAsync(DedupeScope, dedupeKey, 200, string.Empty);
+            if (dedupeKey != null)
+                await _idempotency.SetAsync(DedupeScope, dedupeKey, 200, string.Empty);
             enqueued++;
         }
 

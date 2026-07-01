@@ -336,7 +336,8 @@ existing `ThrottlingTrollCounters` table (works across Flex instances).
 - **Contract field**: `bot_auth_settings.easy_auth_excluded_paths` (list) is the signal the module
   consumes; `well_known_routes.updown_webhook_ingest_endpoint` documents the route. Infra hash after
   regeneration: `04eec911853e`.
-- Body cap `UpdownWebhook__MaxBodyBytes` (default 64 KB); debug dump `UpdownWebhook__DebugLogPayload`
+- Body cap `UpdownWebhook__MaxBodyBytes` (default 28 KB — matches the app-wide body limit and keeps
+  the Base64-encoded queue message under Storage's 64 KB cap); debug dump `UpdownWebhook__DebugLogPayload`
   (default off); dedupe stored in `idempotencykeys` under scope `updown-ingest`.
 
 ---
