@@ -342,4 +342,28 @@ public class TeamsBotHandlerWebhookCommandsTests
             It.Is<IActivity>(a => TextContains(a, "valid Entra ID")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task ShowIpAllowList_UnknownSource_ShowsUsage()
+    {
+        var ctx = Context("show-ip-allow-list foo");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "Only", "updown", "show-ip-allow-list")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _ipAllowlist.Verify(s => s.GetAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateIpAllowList_UnknownSource_ShowsUsage_AndDoesNotRefresh()
+    {
+        var ctx = Context("update-ip-allow-list bar");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "Only", "updown", "update-ip-allow-list")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _ipAllowlist.Verify(s => s.RefreshAsync(It.IsAny<string>()), Times.Never);
+    }
 }
