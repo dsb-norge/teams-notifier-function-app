@@ -56,6 +56,17 @@ public class RateLimitPolicyTests
     }
 
     [Fact]
+    public void SourceIpKey_StripsAzurePort_SoSameIpSharesOneKey()
+    {
+        // Azure X-Forwarded-For is "ip:port"; the port must be stripped or each request keys separately
+        // and the per-source-IP limit never triggers.
+        Assert.Equal("ingest-ip:1.2.3.4", RateLimitPolicy.SourceIpKey("1.2.3.4:51789", null));
+        Assert.Equal(
+            RateLimitPolicy.SourceIpKey("1.2.3.4:51789", null),
+            RateLimitPolicy.SourceIpKey("1.2.3.4:52000", null));
+    }
+
+    [Fact]
     public void IngestAndApiPatterns_AreDisjoint()
     {
         // No path should match both rules.
