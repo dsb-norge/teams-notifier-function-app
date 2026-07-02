@@ -17,6 +17,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     private readonly Mock<TableClient> _teamLookupTable = new();
     private readonly Mock<QueueClient> _botOpsQueue = new();
     private readonly Mock<IWebhookService> _webhook = new();
+    private readonly Mock<IUpdownIpAllowlistService> _ipAllowlist = new();
 
     private TeamsBotHandler NewHandler(bool withWebhookService = true)
     {
@@ -28,7 +29,8 @@ public class TeamsBotHandlerWebhookCommandsTests
             _botService.Object, _aliasService.Object, _teamLookupTable.Object, _botOpsQueue.Object,
             NullLogger<TeamsBotHandler>.Instance,
             queueService: null,
-            webhookService: withWebhookService ? _webhook.Object : null);
+            webhookService: withWebhookService ? _webhook.Object : null,
+            ipAllowlistService: withWebhookService ? _ipAllowlist.Object : null);
     }
 
     private static Mock<ITurnContext<IMessageActivity>> Context(string text, string? aadObjectId = "user-aad-oid")
@@ -264,6 +266,80 @@ public class TeamsBotHandlerWebhookCommandsTests
 
         ctx.Verify(t => t.SendActivityAsync(
             It.Is<IActivity>(a => TextContains(a, "create-webhook", "rotate-webhook", "unverified sender")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // --- IP allowlist commands (design §17) ---
+
+    [Fact]
+    public async Task ShowIpAllowList_RendersModeAndEntries()
+    {
+        _ipAllowlist.Setup(s => s.GetAsync()).ReturnsAsync(new UpdownIpAllowlistEntity
+        {
+            Cidrs = "1.2.3.4,10.0.0.0/8",
+            RefreshedAt = DateTimeOffset.UtcNow,
+            RefreshedBy = "tester"
+        });
+
+        var ctx = Context("show-ip-allow-list updown");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "allowlist", "10.0.0.0/8")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ShowIpAllowList_Empty_HintsToUpdate()
+    {
+        _ipAllowlist.Setup(s => s.GetAsync()).ReturnsAsync((UpdownIpAllowlistEntity?)null);
+
+        var ctx = Context("show-ip-allow-list updown");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "update-ip-allow-list")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateIpAllowList_ReportsRefreshResult()
+    {
+        _ipAllowlist.Setup(s => s.RefreshAsync(It.IsAny<string>()))
+            .ReturnsAsync(new AllowlistRefreshResult(
+                Added: ["3.3.3.3"], Removed: [], Current: ["1.1.1.1", "3.3.3.3"], Error: null));
+
+        var ctx = Context("update-ip-allow-list updown");
+        await Run(NewHandler(), ctx);
+
+        _ipAllowlist.Verify(s => s.RefreshAsync(It.IsAny<string>()), Times.Once);
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "refreshed", "2")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateIpAllowList_Error_Reported()
+    {
+        _ipAllowlist.Setup(s => s.RefreshAsync(It.IsAny<string>()))
+            .ReturnsAsync(new AllowlistRefreshResult([], [], ["1.1.1.1"], "dns down"));
+
+        var ctx = Context("update-ip-allow-list updown");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "failed", "dns down")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IpAllowListCommand_NoEntraId_Rejected()
+    {
+        var ctx = Context("show-ip-allow-list updown", aadObjectId: null);
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "valid Entra ID")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 }

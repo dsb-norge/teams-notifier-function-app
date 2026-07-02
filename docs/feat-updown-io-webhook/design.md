@@ -22,7 +22,7 @@ via a **webhook push** to a new, isolated, anonymous ingress route on the functi
 updown webhooks are **unsigned and carry no secret header** (confirmed against the live API — the
 `custom_headers` field in the payload is the *monitored target's* request headers, not something
 attachable to the webhook). Therefore origin assurance rests on a **high-entropy secret token in
-the URL** (primary control) plus **source-IP observation** (deferred enforcement — see §7).
+the URL** (primary control) plus **source-IP allowlisting** on the ingress endpoint (see §17).
 
 ---
 
@@ -35,7 +35,7 @@ the URL** (primary control) plus **source-IP observation** (deferred enforcement
 | D3 | **No alias argument** on the command. The conversation target is captured from *where the command is run* (like `set-alias`); the token itself is the routing key. | The user wanted entropy in the token, not a guessable alias, and no alias-namespace coupling. |
 | D4 | **No Key Vault, no updown API key, no origin verification** in v1. Accept the webhook at face value; the secret token is the control. | Simplest; multi-account becomes trivial (see §6). |
 | D5 | **Per-webhook config**: human-readable `description`, an `updownAccount` label, and an **event filter**. Default enabled events = **all except `check.performance_drop`**. | Operability; e.g. a test env in shutdown wants only SSL events. |
-| D6 | **Dynamic in-app IP allowlist is DEFERRED**, gated on confirming we can obtain usable webhook source IPs. **Source-IP logging is in scope now** (observe first). | updown does not document that webhooks egress from the published `ips.updown.io` node IPs; enforcing blindly risks dropping real alerts. |
+| D6 | **Dynamic in-app source-IP filtering for the updown ingress — now IN scope** (was deferred). Confirmed with updown: resolving `ips.updown.io` (DNS) returns the **complete** set of webhook egress IPs, **including the test-payload sender**, so the allowlist is reliable. The filter applies **only** to `/api/v1/ingest/updown/*`, refreshes from DNS on a timer + on demand (`show-ip-allow-list` / `update-ip-allow-list`), and has a configurable enforcement mode (`off` / `log-only` / `enforce`). Source IP is always logged. Full spec in §17. | Adds real spoofing defense-in-depth on top of the secret token, now that the IP source is trustworthy. |
 | D7 | **Site inbound is opened** (network layer); security is EasyAuth+role on `/api/v1/*` and token on `/ingest`. | App Service IP restrictions are whole-app (no per-path); a public webhook is inherently public; AAD routes stay cryptographically gated (§4). |
 | D8 | **Dedicated rate-limit rule** for `/api/v1/ingest/.*`, keyed by source IP. | The existing rule keys on the EasyAuth principal, absent on anonymous calls. |
 | D9 | **Debug payload dump** behind a dedicated off-by-default setting; **parse/validation failures log at Error but return `200`**; token redacted from telemetry. | Troubleshooting without leaking secrets; stop updown's 25× retry storm on malformed bodies. |
@@ -178,14 +178,14 @@ mapping logic.
 
 | Threat | Control in v1 | Residual |
 |---|---|---|
-| Spoofing | High-entropy secret token (SHA-256 stored). Source IP **logged** (not yet enforced — D6). | If a token leaks, spoofed cards are possible. Mitigated by: no actionable card content, "unverified sender" footer, downtime link domain-gated (below). |
+| Spoofing | High-entropy secret token (SHA-256 stored) **plus** source-IP allowlist against `ips.updown.io` (§17). Source IP always logged. | With the IP allowlist in `enforce` mode, an attacker needs both a leaked token **and** an updown-owned source IP. Residual mitigations remain: no actionable card content, "unverified sender" footer, downtime link domain-gated (below). |
 | Tampering | TLS in transit; strict null-safe parsing; card built by us, not passed through. | Leaked token → attacker-controlled card *text* only. |
 | Repudiation | Log source IP + token **id** (never the secret) + event type + correlation id. | — |
 | Info disclosure | Token stored only as SHA-256; token redacted from request telemetry; debug body-dump off by default and sanitized. | Low. |
 | DoS / cost | Per-source-IP rate limit (D8); Flex scale cap; fast `404` on unknown token before parse. | Bounded. |
 | Elevation / phishing | Cards carry **no** `Action.OpenUrl/Submit/Execute` and no external images (same rules as `AdaptiveCardValidator`). The only clickable link is the **downtime `details_url`**, rendered as a link **only after validating it is under `https://updown.io/`** — otherwise plain text. `check.url` (arbitrary monitored site) is **never** auto-linked. | Worst case = benign text in a channel. |
 
-**Deferred (D6):** the dynamic IP allowlist (`ips.updown.io` DNS resolve on a timer, `webhook-source-IP` state, `show-ip-allow-list` / `update-ip-allow-list` commands, and enforcement) is **not built in v1**. We log source IPs first and use updown's [test-payload feature](https://updown.io/recipients/test) plus early real events to learn the true webhook egress ranges. Only then do we decide whether/how to enforce.
+**Source-IP allowlist (§17):** originally deferred (D6), **now implemented** — updown confirmed `ips.updown.io` resolves to the full webhook egress set (incl. the test-payload sender). The filter is scoped to the ingress endpoint only, refreshed from DNS, and defaults to `log-only` so a first deploy observes before it blocks.
 
 ---
 
@@ -225,6 +225,8 @@ commands). Ordering: place `*-webhook` / `*-webhooks` branches so longer prefixe
 | `list-webhooks` | Adaptive Card listing id, source, description, account, enabled events, last-received. **Never** the secret. |
 | `remove-webhook <id>` | Delete the row. |
 | `rotate-webhook <id>` | Generate a new token (new `RowKey` hash), keep config, return new URL once; old token stops working. |
+| `show-ip-allow-list updown` | Show the current updown source-IP allowlist: enforcement mode, entry count, last-refreshed age, and the resolved CIDRs/IPs (see §17). |
+| `update-ip-allow-list updown` | Force an immediate refresh from `ips.updown.io` (A + AAAA) and report what changed (added/removed). |
 
 **Help:** add `HelpTextBuilder.Webhooks()` + a `"webhooks"`/`"webhook"` case in `HandleHelpAsync`,
 list it in `Overview()` and the unknown-topic hint. `help webhooks` must be **comprehensive**:
@@ -302,9 +304,8 @@ existing `ThrottlingTrollCounters` table (works across Flex instances).
 
 ## 13. Explicitly out of scope for v1
 
-- Dynamic IP allowlist: DNS resolve of `ips.updown.io`, refresh timer, `webhook-source-IP` state
-  table, `show-ip-allow-list` / `update-ip-allow-list` commands, and any IP **enforcement**. (D6 —
-  revisit once real webhook source IPs are known.)
+- ~~Dynamic IP allowlist~~ — **now in scope, see §17** (D6 revisited: updown confirmed
+  `ips.updown.io` returns the full webhook egress set incl. the test sender).
 - updown read-only API key, origin verification, Key Vault. (D4)
 - Fan-out (one token → many channels). One token → one conversation target.
 - Interactive Adaptive Card form for `configure-webhook` (text args in v1).
@@ -360,3 +361,122 @@ Carried over from the superseded spec so nothing is lost:
   for near-instant delivery and no steady poll cost, accepting the public-surface trade-off (§7). If
   the public surface is ever judged too costly, the poll design is the fallback and is doable
   entirely platform-side without app changes.
+
+---
+
+## 17. updown source-IP filtering (added — un-defers D6)
+
+**Trigger for the change:** updown confirmed that `ips.updown.io` (DNS A/AAAA) resolves to the
+**complete** set of IPs their webhooks egress from — **including the source used by the
+test-payload feature** (`/recipients/test`). Earlier this was uncertain (the published set was
+documented as *monitoring node* IPs), which is why enforcement was deferred. With that confirmed,
+an in-app source-IP allowlist is now a reliable defense-in-depth layer on top of the secret token.
+
+### 17.1 Scope & principles
+
+- **Endpoint-scoped:** the filter applies **only** to `POST /api/v1/ingest/updown/{token}`. It must
+  **never** affect any other route (the AAD `/api/v1/*` endpoints, `/api/messages`, health, etc.).
+- **Defense-in-depth, not the primary control:** the secret token remains primary. The IP filter
+  reduces the blast radius of a leaked token (attacker would also need an updown-owned source IP).
+- **In-app, not infra:** stays out of Terraform/platform IP rules — dynamic, refreshable without a
+  deploy. (Consistent with the site-inbound-open decision, D7.)
+- **Fail-safe on data availability:** if the allowlist is empty/unknown (e.g. DNS never succeeded),
+  the filter must **not** hard-block (that would drop all alerts on a transient DNS issue) — it
+  logs and allows, surfacing the degraded state via `show-ip-allow-list`.
+
+### 17.2 Enforcement modes (`UpdownWebhook__IpFilterMode`)
+
+| Mode | Behaviour on a non-allowlisted source IP | Use |
+|---|---|---|
+| `off` | No IP check at all. | Manual verification / curl from arbitrary IPs (see manual-verification.md). |
+| `log-only` *(default)* | Log a warning with the source IP, **process the event anyway**. | First deploy — observe real sources before blocking. |
+| `enforce` | Log + **reject `403`** before parsing/enqueue. | Steady state, once the allowlist is confirmed to cover real traffic. |
+
+Default is **`log-only`** so a fresh deploy never silently drops alerts; flip to `enforce` after
+confirming (via logs / `show-ip-allow-list`) that real deliveries match the list.
+
+### 17.3 Source of truth & refresh
+
+- Resolve `ips.updown.io` via `System.Net.Dns.GetHostAddresses` (A **and** AAAA). This goes through
+  the platform resolver → the vWAN firewall DNS proxy, so it needs **DNS resolution only, no egress
+  allow-rule** to updown. (We resolve, we don't connect.)
+- Persist the resolved set + metadata in a small state table (§17.4). This makes the list survive
+  cold starts / scale events and available to every instance without each one resolving.
+- **Refresh triggers (no timer — avoids a new trigger type / package):**
+  1. **Lazy, when stale:** the ingest handler reads the cached row; if it is missing or older than
+     `UpdownWebhook__IpAllowlistMaxAgeHours` (default 48), it **refreshes synchronously *before* the
+     enforce check**, then evaluates against the fresh list. This closes the enforce-mode staleness
+     gap (a newly-added updown IP is picked up on the first stale-triggering request) without a
+     background timer, at the cost of an occasional DNS resolve (~tens of ms) on a sparse endpoint.
+  2. **On-demand:** the **`update-ip-allow-list updown`** command forces an immediate refresh
+     (used to prime the list right after deploy).
+- Refresh is idempotent (upsert of a single row), so concurrent lazy refreshes are harmless.
+- A **timer trigger was considered and rejected**: on this sparse endpoint, freshness only matters
+  when a request actually arrives — which is exactly when the lazy path refreshes — so a daily timer
+  adds a new trigger type + `Extensions.Timer` package + Flex scale-controller dependency for no
+  real gain. updown also retries webhooks up to 25× over several days, so a delivery briefly `403`'d
+  by a stale list self-heals once the lazy/command refresh runs.
+
+### 17.4 Data model — new `updownipallowlist` table
+
+Runtime-created (`CreateIfNotExists`), like the other tables — no infra change.
+
+| Field | Notes |
+|---|---|
+| `PartitionKey` | `"updown"` (constant; generic-ready for other sources later) |
+| `RowKey` | `"current"` (single row holds the active set) |
+| `Cidrs` | the resolved IPs/CIDRs, comma-joined (IPv4 + IPv6) |
+| `Source` | `"ips.updown.io"` |
+| `RefreshedAt` | last successful DNS resolve |
+| `RefreshedBy` | `"lazy"` \| operator name (from `update-ip-allow-list`) |
+| `ResolveError` | last resolve error (empty on success) — surfaced by `show-ip-allow-list` |
+
+### 17.5 Ingest handler integration
+
+In `UpdownIngestFunction`, **after** reading the source IP (already logged) and **before** the
+token point-read / parse:
+
+1. If mode is `off` → skip.
+2. Load the cached allowlist row; if missing/stale (§17.3), refresh synchronously first.
+3. Compute `allowed = IpMatcher.IsAllowed(sourceIp, cidrs)` (source IP = `X-Forwarded-For` first hop;
+   match against IPs and CIDR ranges, IPv4 + IPv6).
+4. `log-only` → log the decision (allowed/not) with source IP; continue regardless.
+5. `enforce` → if not allowed, log a warning and return **`403`** (RFC-7807) before token lookup;
+   updown will retry, but a spoofer is shed cheaply. Empty/unknown list → treat as allow (fail-safe,
+   §17.1) and log the degraded state.
+
+Ordering note: keep the IP filter **before** the token point-read so junk is shed before any table
+read; the per-source-IP rate limit (§10) still applies in front of everything.
+
+### 17.6 Commands
+
+- **`show-ip-allow-list updown`** — Adaptive Card / text: mode, entry count, `RefreshedAt` (relative),
+  any `ResolveError`, and the list of CIDRs/IPs. Read-only; any valid Entra ID (same authz as the
+  webhook/queue commands).
+- **`update-ip-allow-list updown`** — resolve now, upsert the row, reply with added/removed diff and
+  the new count. Gated the same way.
+
+Both are added to `HelpTextBuilder.Webhooks()` and (optionally) the Teams command-hint lists —
+subject to the same 10-per-scope cap already hit, so likely help-only.
+
+### 17.7 Config surface (all optional, defaults safe)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `UpdownWebhook__IpFilterMode` | `log-only` | `off` \| `log-only` \| `enforce` |
+| `UpdownWebhook__IpAllowlistHost` | `ips.updown.io` | DNS name to resolve |
+| `UpdownWebhook__IpAllowlistMaxAgeHours` | `48` | staleness threshold for the optional lazy refresh + `show` warning |
+
+No Key Vault, no new required app settings, no Terraform/module change (the timer trigger runs on
+the existing app; DNS resolution needs no new egress rule).
+
+### 17.8 Testing
+
+- **Unit:** CIDR/IP membership (IPv4 + IPv6, in/out of range, malformed), `X-Forwarded-For` parsing,
+  mode behaviour (`off`/`log-only`/`enforce` → allow vs 403), fail-safe on empty list, allowlist
+  state parse/format round-trip.
+- **Integration (Azurite):** allowlist service round-trip; ingest handler returns 403 in `enforce`
+  for a non-listed IP and 200 for a listed IP; `log-only` never blocks.
+- **Manual (see manual-verification.md):** deploy/run with `IpFilterMode=off` (or `log-only`) to curl
+  from a non-updown IP; use updown's test-payload to confirm the real source IP appears in the list;
+  then flip to `enforce`.

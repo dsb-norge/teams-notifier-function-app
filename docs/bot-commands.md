@@ -340,6 +340,25 @@ Deletes the webhook. Its URL stops working immediately.
 
 ---
 
+### show-ip-allow-list `updown`
+
+Shows the updown source-IP allowlist that protects the ingress endpoint: the enforcement **mode**
+(`off` / `log-only` / `enforce`, from the `UpdownWebhook__IpFilterMode` app setting), the number of
+entries, when it was last refreshed (and by whom), any last resolve error, and the resolved
+CIDRs/IPs. Read-only.
+
+### update-ip-allow-list `updown`
+
+Refreshes the allowlist immediately by resolving updown's published IPs (`ips.updown.io`), then
+reports how many entries were added/removed. The list also refreshes lazily when the ingress sees a
+stale/missing list, so this is mainly for priming it right after deploy or after updown changes IPs.
+
+> **Source-IP filtering** is defense-in-depth on top of the secret token. `log-only` (the default)
+> logs non-updown source IPs but never blocks; `enforce` rejects them with `403`. An empty/unresolved
+> list never blocks (fail-safe). See [api-reference.md](api-reference.md) and design §17.
+
+---
+
 ## 6. Other Commands
 
 ### setup-guide
@@ -407,6 +426,8 @@ data are restricted to team channels and personal chat where administrative acce
 | configure-webhook | Yes | Yes | Yes |
 | rotate-webhook | Yes | Yes | Yes |
 | remove-webhook | Yes | Yes | Yes |
+| show-ip-allow-list | Yes | Yes | Yes |
+| update-ip-allow-list | Yes | Yes | Yes |
 
 **Legend:** `Yes` = available, `--` = not available in this scope.
 

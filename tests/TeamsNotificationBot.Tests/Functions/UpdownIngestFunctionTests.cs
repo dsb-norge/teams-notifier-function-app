@@ -16,6 +16,7 @@ public class UpdownIngestFunctionTests
     private readonly Mock<IWebhookService> _webhookService = new();
     private readonly Mock<QueueClient> _queueClient = new();
     private readonly Mock<IIdempotencyService> _idempotency = new();
+    private readonly Mock<IUpdownIpAllowlistService> _ipAllowlist = new();
 
     private static WebhookTokenEntity ChannelWebhook(string enabledEvents = "") => new()
     {
@@ -41,7 +42,7 @@ public class UpdownIngestFunctionTests
             .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
 
         return new UpdownIngestFunction(
-            _webhookService.Object, _queueClient.Object, _idempotency.Object,
+            _webhookService.Object, _queueClient.Object, _idempotency.Object, _ipAllowlist.Object,
             logger ?? NullLogger<UpdownIngestFunction>.Instance);
     }
 
@@ -211,6 +212,79 @@ public class UpdownIngestFunctionTests
 
         var obj = Assert.IsType<ObjectResult>(result);
         Assert.Equal(500, obj.StatusCode);
+    }
+
+    // --- source-IP filter (design §17) ---
+
+    private void SetupAllowlist(string cidrs) =>
+        _ipAllowlist.Setup(s => s.GetOrRefreshAsync(It.IsAny<TimeSpan>(), It.IsAny<string>()))
+            .ReturnsAsync(new UpdownIpAllowlistEntity { Cidrs = cidrs });
+
+    private async Task<IActionResult> RunWithMode(string mode, Dictionary<string, string>? headers = null)
+    {
+        var fn = NewFunction();
+        var prev = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode");
+        Environment.SetEnvironmentVariable("UpdownWebhook__IpFilterMode", mode);
+        try
+        {
+            var req = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown, headers: headers);
+            return await fn.Run(req, "good-token");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("UpdownWebhook__IpFilterMode", prev);
+        }
+    }
+
+    [Fact]
+    public async Task IpFilter_Enforce_NonAllowlistedIp_Returns403_NothingEnqueued()
+    {
+        SetupAllowlist("9.9.9.9");
+        var result = await RunWithMode("enforce", new() { ["X-Forwarded-For"] = "1.2.3.4" });
+
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, obj.StatusCode);
+        VerifyEnqueued(Times.Never());
+    }
+
+    [Fact]
+    public async Task IpFilter_Enforce_AllowlistedIp_Passes()
+    {
+        SetupAllowlist("1.2.3.0/24");
+        var result = await RunWithMode("enforce", new() { ["X-Forwarded-For"] = "1.2.3.4" });
+
+        Assert.IsType<OkObjectResult>(result);
+        VerifyEnqueued(Times.Once());
+    }
+
+    [Fact]
+    public async Task IpFilter_LogOnly_NonAllowlistedIp_NotBlocked()
+    {
+        SetupAllowlist("9.9.9.9");
+        var result = await RunWithMode("log-only", new() { ["X-Forwarded-For"] = "1.2.3.4" });
+
+        Assert.IsType<OkObjectResult>(result);
+        VerifyEnqueued(Times.Once());
+    }
+
+    [Fact]
+    public async Task IpFilter_Off_SkipsCheck()
+    {
+        SetupAllowlist("9.9.9.9"); // would not match, but mode=off ignores it
+        var result = await RunWithMode("off", new() { ["X-Forwarded-For"] = "1.2.3.4" });
+
+        Assert.IsType<OkObjectResult>(result);
+        VerifyEnqueued(Times.Once());
+    }
+
+    [Fact]
+    public async Task IpFilter_Enforce_EmptyList_FailSafeAllows()
+    {
+        // Default mock: GetOrRefreshAsync returns null → empty entries → must NOT block even in enforce.
+        var result = await RunWithMode("enforce", new() { ["X-Forwarded-For"] = "1.2.3.4" });
+
+        Assert.IsType<OkObjectResult>(result);
+        VerifyEnqueued(Times.Once());
     }
 
     [Fact]

@@ -20,6 +20,7 @@ public class TeamsBotHandler : TeamsActivityHandler
     private readonly IAliasService _aliasService;
     private readonly IQueueManagementService? _queueService;
     private readonly IWebhookService? _webhookService;
+    private readonly IUpdownIpAllowlistService? _ipAllowlistService;
     private readonly TableClient _teamLookupTable;
     private readonly QueueClient _botOpsQueue;
     private readonly ILogger<TeamsBotHandler> _logger;
@@ -38,7 +39,8 @@ public class TeamsBotHandler : TeamsActivityHandler
         [FromKeyedServices("botoperations")] QueueClient botOpsQueue,
         ILogger<TeamsBotHandler> logger,
         IQueueManagementService? queueService = null,
-        IWebhookService? webhookService = null)
+        IWebhookService? webhookService = null,
+        IUpdownIpAllowlistService? ipAllowlistService = null)
     {
         _botService = botService;
         _aliasService = aliasService;
@@ -47,6 +49,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         _logger = logger;
         _queueService = queueService;
         _webhookService = webhookService;
+        _ipAllowlistService = ipAllowlistService;
     }
 
     protected override async Task OnMessageActivityAsync(
@@ -141,6 +144,14 @@ public class TeamsBotHandler : TeamsActivityHandler
         else if (command.StartsWith("rotate-webhook"))
         {
             await HandleRotateWebhookAsync(turnContext, command, cancellationToken);
+        }
+        else if (command.StartsWith("show-ip-allow-list"))
+        {
+            await HandleShowIpAllowListAsync(turnContext, cancellationToken);
+        }
+        else if (command.StartsWith("update-ip-allow-list"))
+        {
+            await HandleUpdateIpAllowListAsync(turnContext, cancellationToken);
         }
         else if (command == "help" || command.StartsWith("help "))
         {
@@ -703,6 +714,72 @@ public class TeamsBotHandler : TeamsActivityHandler
         "groupChat" => "group chat",
         _ => w.TargetType
     };
+
+    // --- updown source-IP allowlist commands (design §17) ---
+
+    private async Task<bool> EnsureIpAllowlistAccessAsync(ITurnContext turnContext, CancellationToken ct)
+    {
+        if (!await IsAuthorizedForQueueCommandsAsync(turnContext))
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("This command requires a valid Entra ID identity. Your account could not be verified."), ct);
+            return false;
+        }
+        if (_ipAllowlistService == null)
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text("IP allowlist management is not available."), ct);
+            return false;
+        }
+        return true;
+    }
+
+    private async Task HandleShowIpAllowListAsync(ITurnContext turnContext, CancellationToken ct)
+    {
+        if (!await EnsureIpAllowlistAccessAsync(turnContext, ct)) return;
+
+        var mode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode") is { Length: > 0 } m
+            ? m.ToLowerInvariant() : "log-only";
+        var entity = await _ipAllowlistService!.GetAsync();
+        var entries = entity?.GetCidrs() ?? [];
+
+        var lines = new List<string>
+        {
+            "**updown source-IP allowlist**",
+            $"- Mode: **{mode}**",
+            $"- Entries: **{entries.Count}**",
+            $"- Last refreshed: {(entity?.RefreshedAt is { } at ? $"{FormatRelativeTime(at)} (by {entity.RefreshedBy})" : "never")}",
+        };
+        if (!string.IsNullOrEmpty(entity?.ResolveError))
+            lines.Add($"- ⚠️ Last resolve error: {entity!.ResolveError}");
+        if (entries.Count > 0)
+            lines.Add("\n" + string.Join(", ", entries.Select(e => $"`{e}`")));
+        else
+            lines.Add("\n_No entries yet — run **update-ip-allow-list updown** to populate._");
+
+        await turnContext.SendActivityAsync(MessageFactory.Text(string.Join("\n", lines)), ct);
+    }
+
+    private async Task HandleUpdateIpAllowListAsync(ITurnContext turnContext, CancellationToken ct)
+    {
+        if (!await EnsureIpAllowlistAccessAsync(turnContext, ct)) return;
+
+        var by = turnContext.Activity.From?.Name is { Length: > 0 } n ? n : "operator";
+        var result = await _ipAllowlistService!.RefreshAsync(by);
+        _logger.LogInformation("updown IP allowlist refreshed by {User}: +{Added}/-{Removed}, {Total} total",
+            by, result.Added.Count, result.Removed.Count, result.Current.Count);
+
+        if (result.Error != null)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text(
+                $"⚠️ Refresh failed: {result.Error}\n\nThe previous list ({result.Current.Count} entries) is unchanged."), ct);
+            return;
+        }
+
+        await turnContext.SendActivityAsync(MessageFactory.Text(
+            $"✅ updown IP allowlist refreshed: **{result.Current.Count}** entries " +
+            $"(added {result.Added.Count}, removed {result.Removed.Count})."), ct);
+    }
 
     // --- Setup guide command ---
 
