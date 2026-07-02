@@ -213,26 +213,53 @@ causing Teams to silently drop all messages.
 
 ---
 
-## 5. Rate Limiting
+## 5. Webhook Token Authentication (updown.io ingress)
 
-API endpoints are protected by ThrottlingTroll middleware to prevent abuse and ensure fair access
-across callers.
+`POST /api/v1/ingest/updown/{token}` is a deliberately **separate, anonymous trust zone** for
+[updown.io](https://updown.io) webhooks (which cannot obtain an Entra ID token and are unsigned).
+It never shares code with the AAD-gated routes.
 
-| Parameter | Value |
-|-----------|-------|
-| Window | 60 seconds (fixed) |
-| Limit | 60 requests per window |
-| Key | `X-MS-CLIENT-PRINCIPAL-ID` header (per-caller, set by EasyAuth) |
-| Counter storage | `ThrottlingTrollCounters` Azure Table |
-| Response when exceeded | `429 Too Many Requests` with `Retry-After` header |
-
-Rate limiting is applied **after** authentication — unauthenticated requests are rejected by
-EasyAuth with 401 before they reach the throttling layer. This means rate-limit counters only track
-legitimate, authenticated callers.
+- **The `{token}` is the credential.** It is a high-entropy capability secret embedded in the URL,
+  created by the `create-webhook` bot command and bound to one conversation. Only its **SHA-256** is
+  stored (`webhooktokens` table); the plaintext is shown **once** and never logged. Rotate with
+  `rotate-webhook` if a URL leaks.
+- **Why anonymous works safely for the rest of the app.** EasyAuth runs with
+  `unauthenticatedClientAction=AllowAnonymous`, so it only *validates* a bearer token when one is
+  present and otherwise forwards the request. `AuthMiddleware` skips paths containing `/v1/ingest/`
+  (like it skips `/api/messages`). The AAD routes are unaffected: they still require the
+  EasyAuth-validated `X-MS-CLIENT-PRINCIPAL-ID` header — no token → `401`. Opening the ingress does
+  not weaken them. (The module can also add the ingress prefix to `excludedPaths`; because EasyAuth
+  is AllowAnonymous this is defensive/forward-looking — see `easy_auth_excluded_paths`.)
+- **Source-IP allowlist — defense-in-depth, not the primary control.** The ingress optionally
+  restricts callers to updown's published IPs (resolved from `ips.updown.io`), with modes
+  `off` / `log-only` (default) / `enforce`. `enforce` returns `403` for a non-updown IP; an
+  empty/unresolved list never blocks (fail-safe). Managed via the `show-ip-allow-list` /
+  `update-ip-allow-list` bot commands. The token remains the primary gate.
+- **No secrets in telemetry.** `TokenRedactingTelemetryInitializer` strips the `{token}` segment
+  from App Insights request URLs; logged values pass through `LogSanitizer`.
+- Cards are rendered by the app (validator-safe, no actionable content), labelled *unverified
+  sender*, so a leaked token is bounded to benign card text.
 
 ---
 
-## 6. Configuration Reference
+## 6. Rate Limiting
+
+API endpoints are protected by ThrottlingTroll middleware to prevent abuse and ensure fair access
+across callers. Two disjoint rules apply:
+
+| Zone | Key | Window / limit |
+|------|-----|----------------|
+| AAD routes (`/api/v1/notify\|alert\|send\|checkin\|aliases`) | `X-MS-CLIENT-PRINCIPAL-ID` (per authenticated caller, set by EasyAuth) | 60 req / 60 s |
+| updown ingress (`/api/v1/ingest/*`) | **source IP** (`X-Forwarded-For` first hop) | 100 req / 60 s (defaults) |
+
+Counters are stored in the `ThrottlingTrollCounters` Azure Table; exceeding a limit returns
+`429 Too Many Requests` with a `Retry-After` header. The AAD rule uses a negative-lookahead pattern
+so it never applies to the anonymous ingress; the ingress rule is keyed by source IP because those
+requests carry no principal.
+
+---
+
+## 7. Configuration Reference
 
 Auth-related environment variables on the Function App, set by Terraform at deployment time.
 
@@ -253,6 +280,20 @@ Auth-related environment variables on the Function App, set by Terraform at depl
 `<uami-client-id>`) are compiled into the app and must match the Terraform-injected environment
 variables. Ensure these values are consistent between `appsettings.json` and the Terraform module configuration.
 
+### Webhook ingress settings (optional)
+
+These tune the updown ingress (§5). All are **optional with production-safe defaults** and are
+**not** exposed as Terraform module inputs — set them ad-hoc on the Function App (`az functionapp
+config appsettings set ...`) only when you need to deviate from the default.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `UpdownWebhook__IpFilterMode` | `log-only` | Source-IP allowlist mode: `off` / `log-only` / `enforce`. |
+| `UpdownWebhook__IpAllowlistHost` | `ips.updown.io` | DNS name resolved for the allowlist. |
+| `UpdownWebhook__IpAllowlistMaxAgeHours` | `48` | Staleness threshold that triggers a lazy allowlist refresh. |
+| `UpdownWebhook__DebugLogPayload` | `false` | When `true`, logs the raw webhook body (sanitized, no token) at Debug. Turn off after troubleshooting. |
+| `UpdownWebhook__MaxBodyBytes` | `28672` (28 KB) | Ingress body cap; keeps the Base64-encoded queue message under Storage's 64 KB limit. |
+
 ---
 
-*Last updated: 2026-03-01*
+*Last updated: 2026-07-02*

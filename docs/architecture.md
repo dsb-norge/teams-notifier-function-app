@@ -122,6 +122,39 @@ sequenceDiagram
     end
 ```
 
+### M5: updown.io Webhook Ingress Flow
+
+An **anonymous, token-authenticated** ingress (distinct trust zone from the AAD `/api/v1/*` routes).
+[updown.io](https://updown.io) posts uptime/SSL events; the app renders them as validator-safe
+Adaptive Cards and delivers them through the same queue path as `/notify` (reusing the direct-target
+message, so `QueueProcessor` is unchanged).
+
+```mermaid
+sequenceDiagram
+    participant U as updown.io
+    participant EA as EasyAuth<br/>(AllowAnonymous)
+    participant AM as AuthMiddleware<br/>(skips /v1/ingest/)
+    participant IF as UpdownIngestFunction
+    participant WT as webhooktokens<br/>(SHA-256 lookup)
+    participant Q as notifications queue
+    participant QP as QueueProcessor → Teams
+
+    U->>EA: POST /api/v1/ingest/updown/{token}
+    EA->>AM: forward (no bearer token → anonymous)
+    Note over AM: correlation id + source IP set; auth skipped
+    AM->>IF: forward (per-source-IP rate limit)
+    Note over IF: source-IP allowlist (off/log-only/enforce)<br/>enforce + not allowed → 403
+    IF->>WT: point-read SHA-256(token)
+    WT-->>IF: miss → 404 · hit → webhook config
+    Note over IF: parse event array (lenient/null-safe)<br/>per event: filter + dedupe + build card
+    IF->>Q: enqueue QueueMessage{ Target, adaptive-card }
+    IF-->>U: 200 (5xx only if enqueue itself failed)
+    Q->>QP: dequeue → resolve target → deliver
+```
+
+Malformed/unparseable bodies are logged and answered **200** (a bad body won't parse on retry —
+avoids updown's up-to-25× retry storm); only a transient enqueue failure returns 5xx.
+
 ---
 
 ## Components
@@ -187,6 +220,8 @@ Virtual network with two subnets, private endpoints, and IP restrictions. See th
 
 **Outbound egress requirements:** the function app runs on Flex Consumption with VNet integration, so all outbound traffic — including to public Microsoft endpoints — exits through the integrated subnet's NIC and is subject to whatever NSG / firewall / UDR the consumer has in front of it. The bot will silently fail (accept inbound `/api/messages`, never reply, or queue triggers never wake from scale-to-zero) if egress is locked down without the right FQDN allow rules. The authoritative list lives in the Terraform module's [`required_outbound_fqdns` output](https://github.com/dsb-norge/terraform-azurerm-teams-notification-bot-lz/blob/main/outputs.tf) and is documented in its [README](https://github.com/dsb-norge/terraform-azurerm-teams-notification-bot-lz#required-outbound-network-access-important-for-byon-consumers) — categories cover Entra ID auth, Bot Framework, Teams reply path, Flex Consumption platform (Container Apps managed-identity + bootstrap), the host's own self-hairpin for SyncTriggers, and optionally App Insights ingestion.
 
+The updown webhook ingress adds one **DNS-only** requirement: resolving `ips.updown.io` (A/AAAA) to refresh the source-IP allowlist. This is name resolution through the platform/firewall DNS proxy — no outbound *connection* to updown is made — so it needs no new egress allow-rule. Inbound, the anonymous ingress route requires the consumer to open site inbound (e.g. a `0.0.0.0/0` `allowed_caller_rules` entry) so updown can reach it; auth is the per-webhook token plus the in-app source-IP filter.
+
 ### Monitoring
 
 Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines.
@@ -241,6 +276,32 @@ erDiagram
         string PartitionKey "counter key"
         string RowKey "window identifier"
         int Count "request count"
+    }
+
+    webhooktokens {
+        string PartitionKey "always 'webhook'"
+        string RowKey "SHA-256(token) hex — plaintext never stored"
+        string Id "short public id (list/remove/rotate)"
+        string Source "'updown'"
+        string TargetType "channel | personal | groupChat"
+        string TeamId "nullable"
+        string ChannelId "nullable"
+        string UserId "nullable"
+        string ChatId "nullable"
+        string Description ""
+        string UpdownAccount "human label shown on cards"
+        string EnabledEvents "comma-joined; empty = defaults"
+        datetime LastReceivedAt "nullable"
+    }
+
+    updownipallowlist {
+        string PartitionKey "always 'updown'"
+        string RowKey "always 'current'"
+        string Cidrs "resolved IPs/CIDRs, comma-joined"
+        string Source "'ips.updown.io'"
+        datetime RefreshedAt ""
+        string RefreshedBy "'lazy' | operator name"
+        string ResolveError "empty on success"
     }
 
     notifications_queue {

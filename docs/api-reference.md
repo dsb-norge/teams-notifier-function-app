@@ -83,16 +83,17 @@ For a complete guide on setting up authentication, registering callers, and assi
 
 ## 4. Rate Limiting
 
-The API enforces per-principal rate limits to prevent abuse:
+The API enforces rate limits to prevent abuse. Two disjoint rules apply:
 
-| Parameter | Value |
-|-----------|-------|
-| Window | 60 seconds (fixed) |
-| Max requests | 60 per authenticated principal |
-| Scope | All endpoints combined |
+| Zone | Key | Window / max |
+|------|-----|--------------|
+| AAD routes (`/v1/notify`, `/alert`, `/send`, `/checkin`, `/aliases`) | authenticated principal (`X-MS-CLIENT-PRINCIPAL-ID`) | 60 s / 60 requests |
+| updown ingress (`/v1/ingest/*`) | source IP (`X-Forwarded-For` first hop) | 60 s / 100 requests (default) |
 
-When the limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header
-indicating the number of seconds to wait before retrying.
+The AAD rule excludes the ingress (negative-lookahead pattern); the ingress is keyed by source IP
+because those anonymous requests carry no principal. When a limit is exceeded, the API returns
+`429 Too Many Requests` with a `Retry-After` header indicating the number of seconds to wait before
+retrying.
 
 ```http
 HTTP/1.1 429 Too Many Requests
@@ -443,7 +444,8 @@ curl -sS -X POST \
 
 > **Testing:** updown's *recipients → test* page (<https://updown.io/recipients/test>) sends a
 > sample payload to the URL — use it to verify delivery before going live. See
-> [manual-verification.md](feat-updown-io-webhook/manual-verification.md) for a full curl runbook.
+> [local-development.md](local-development.md) for a local curl runbook and
+> [troubleshooting.md](troubleshooting.md) for the go-live (`log-only` → `enforce`) sequence.
 
 ---
 
