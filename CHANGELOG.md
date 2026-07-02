@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.5.1...teams-notifier-function-app-v1.6.0) (2026-07-02)
+
+
+### Features
+
+* **updown-webhook:** add source-IP allowlist filtering for the ingress ([4498d17](https://github.com/dsb-norge/teams-notifier-function-app/commit/4498d178b6534060088064f6d4cda3dd8ca9c704))
+* **updown-webhook:** implement anonymous updown.io webhook ingress ([faad213](https://github.com/dsb-norge/teams-notifier-function-app/commit/faad213e64ca54222db08936954c278de9e39e52))
+
+
+### Bug Fixes
+
+* **deps:** bump NuGet packages (dependabot [#86](https://github.com/dsb-norge/teams-notifier-function-app/issues/86), [#90](https://github.com/dsb-norge/teams-notifier-function-app/issues/90), [#91](https://github.com/dsb-norge/teams-notifier-function-app/issues/91)) ([aac269a](https://github.com/dsb-norge/teams-notifier-function-app/commit/aac269a811cf26ca7799564415ef2c3611e42511))
+* **deps:** bump pinned GitHub Actions (dependabot [#85](https://github.com/dsb-norge/teams-notifier-function-app/issues/85), [#87](https://github.com/dsb-norge/teams-notifier-function-app/issues/87), [#88](https://github.com/dsb-norge/teams-notifier-function-app/issues/88), [#89](https://github.com/dsb-norge/teams-notifier-function-app/issues/89)) ([2be466b](https://github.com/dsb-norge/teams-notifier-function-app/commit/2be466b55cea1c0152a3c25e8c4875ada520d57f))
+* **updown-webhook:** address PR [#92](https://github.com/dsb-norge/teams-notifier-function-app/issues/92) review (Copilot + code-quality) ([900da60](https://github.com/dsb-norge/teams-notifier-function-app/commit/900da60c8c52cb00d5740a2428c650648affe4d3))
+* **updown-webhook:** robust source-IP parse + effective-mode display (Copilot review [#94](https://github.com/dsb-norge/teams-notifier-function-app/issues/94)) ([7b13665](https://github.com/dsb-norge/teams-notifier-function-app/commit/7b13665b4e8b492d08b05c92d2347ddf990dd254))
+* **updown-webhook:** robustify rate-limit key, DNS timeout, maxage clamp (Copilot review [#94](https://github.com/dsb-norge/teams-notifier-function-app/issues/94)) ([08ec862](https://github.com/dsb-norge/teams-notifier-function-app/commit/08ec862640125dd063ab157d7fcfafcec023e236))
+* **updown-webhook:** validate source arg on IP-allowlist commands (Copilot review [#94](https://github.com/dsb-norge/teams-notifier-function-app/issues/94)) ([0c2cfc9](https://github.com/dsb-norge/teams-notifier-function-app/commit/0c2cfc94543601c1f56aab354dce88118daf4edf))
+
 ## [1.5.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.5.0...teams-notifier-function-app-v1.5.1) (2026-06-19)
 
 
