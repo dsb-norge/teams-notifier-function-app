@@ -50,6 +50,8 @@ dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~Notif
 
 All tests must pass before submitting a pull request. Integration tests require Azurite to be running.
 
+The updown webhook ingress is covered by: unit tests for payload parsing (inline fixtures in `UpdownPayloads.cs`), card building (colour/facts/null-safety/validator-clean/link domain-gating), the webhook token store (hash-only persistence, rotate), `IpMatcher` (IPv4/IPv6/CIDR + `ip:port` normalisation), and command routing; Azurite integration tests for the ingest function (token 404, malformed→200, filter modes → 403/allow, dedupe) and the allowlist service (resolve/diff/DNS-failure-keeps-list/lazy refresh).
+
 ---
 
 ## 4. App Requirements
@@ -77,6 +79,8 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 - Keep functions thin: validate input, delegate to services, return responses.
 - Use constructor injection for all dependencies.
 - Log at appropriate levels: `Information` for business events, `Warning` for recoverable issues, `Error` for failures.
+- Wrap user-controlled values in `LogSanitizer.Sanitize()` before logging (CWE-117 barrier — see the CI/CD section on CodeQL).
+- Secret/webhook handling: never log a plaintext token (store/compare only its SHA-256); derive the source IP from the `X-Forwarded-For` first hop via `IpMatcher.ParseClientIp` (strips Azure's `ip:port`) with a fallback to `RemoteIpAddress`; wrap DNS resolution in try/catch so a transient failure degrades gracefully rather than throwing.
 
 ---
 
@@ -116,7 +120,7 @@ Every pull request targeting `main` runs three CI jobs (in `ci.yml`). A **CI Con
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
 | **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
 
-**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` teaches CodeQL that `LogSanitizer.Sanitize()` is a taint barrier. Default Setup auto-discovers extensions in this directory. See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
+**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` marks `LogSanitizer.Sanitize()` as a taint barrier for advanced/custom CodeQL setups. **Note:** GitHub **Default Setup does not load repo-local model packs**, so it does not recognise this barrier — `cs/log-forging` alerts still fire on `Sanitize()`-wrapped values and are triaged as **false positives** (the sanitizer strips CR/LF/tab + U+2028/U+2029 and `ILogger` uses structured, non-interpolated logging). Dismiss such alerts with that rationale (see the dismissed alerts for the established wording). See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
 
 A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 

@@ -77,6 +77,35 @@ curl -X POST http://localhost:7071/api/v1/notify/test \
 
 The message will be queued and processed by the QueueProcessor, but since Teams integration is disabled, no actual message is sent. You will see the full processing flow in the function host logs. The health endpoint (`GET /api/v1/health`) does not require auth headers.
 
+### Test the updown webhook ingress
+
+The updown ingress (`POST /api/v1/ingest/updown/{token}`) is **anonymous** — no EasyAuth headers.
+Two things to know for local testing:
+
+1. **Disable the source-IP filter** so requests from your machine aren't rejected. It defaults to
+   `log-only` (which already lets everything through while logging), but to be explicit set
+   `UpdownWebhook__IpFilterMode=off` in `local.settings.json`. Only `enforce` would return `403`.
+2. **You need a webhook token.** Create one via the `create-webhook` bot command (online mode), or
+   for a pure-offline test insert a row into the Azurite `webhooktokens` table with
+   `RowKey = SHA-256(hex)` of your chosen token (see `WebhookService.Sha256Hex`).
+
+Then POST an updown event array (updown always sends an array):
+
+```bash
+curl -sS -X POST "http://localhost:7071/api/v1/ingest/updown/<token>" \
+  -H "Content-Type: application/json" \
+  -d '[{"event":"check.down","time":"2026-07-01T10:48:48Z",
+        "description":"DOWN: https://example.com, reason: 500",
+        "check":{"token":"xyz0","url":"https://example.com","alias":"prod-site","down":true},
+        "downtime":{"details_url":"https://updown.io/downtimes/abc","started_at":"2026-07-01T10:38:48Z"}}]'
+# → 200; an adaptive-card message is enqueued on `notifications` (verify via Azurite / queue-status).
+```
+
+Negative cases worth checking: unknown token → `404`; malformed/non-array body → `200` (logged, not
+enqueued); `check.performance_drop` → skipped (off by default). Event types and per-event card
+fields are in [api-reference.md](api-reference.md); the bot commands (`create-webhook`,
+`show-ip-allow-list`, …) are in [bot-commands.md](bot-commands.md).
+
 ---
 
 ## 4. Online Mode

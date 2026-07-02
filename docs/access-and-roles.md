@@ -507,6 +507,21 @@ must additionally be an **owner** of the API app registration. This is an Azure 
 requirement for Action Groups with AAD-authenticated webhooks — it cannot be satisfied
 by RBAC roles alone. See [prerequisites section 3.2](prerequisites.md#32-api-app-registration).
 
+### 4.4 updown.io Webhook Access Model
+
+The updown webhook ingress uses a different access model from the AAD API:
+
+- **Managing webhooks** (`create-webhook`, `configure-webhook`, `rotate-webhook`, `remove-webhook`,
+  `show-ip-allow-list`, `update-ip-allow-list`) requires **any valid Entra ID identity** in the
+  target Teams conversation — the same bar as the queue-management commands. **No app role** is
+  needed, and there is no separate admin role for webhooks.
+- **Calling the ingress endpoint** (`POST /api/v1/ingest/updown/{token}`) needs **no Entra ID and no
+  role** — the per-webhook **token is the access control** (a capability secret, not an identity).
+  This is why the URL must be treated as a secret and rotated if it leaks. Optional source-IP
+  allowlisting adds defense-in-depth. See [authentication.md §5](authentication.md#5-webhook-token-authentication-updownio-ingress).
+- The AAD API endpoints (`/notify`, `/alert`, `/send`, `/checkin`) are unchanged — they still require
+  a token with the **`Notifications.Send`** app role.
+
 ---
 
 ## 5. Troubleshooting Permission Issues

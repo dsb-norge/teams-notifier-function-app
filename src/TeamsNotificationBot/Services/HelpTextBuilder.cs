@@ -8,6 +8,8 @@ public static class HelpTextBuilder
         "Notifications are routed via **aliases** \u2014 named targets that map to a " +
         "specific channel, personal chat, or group chat. External systems send " +
         "notifications to the bot's API using the alias name.\n\n" +
+        "External monitoring (e.g. [updown.io](https://updown.io)) can also push alerts straight " +
+        "into a conversation via a per-channel **webhook** \u2014 run **help webhooks**.\n\n" +
         "**Help topics:**\n" +
         "- **help aliases** \u2014 managing notification targets\n" +
         "- **help endpoints** \u2014 API endpoints for sending notifications\n" +
@@ -33,9 +35,12 @@ public static class HelpTextBuilder
         $"- `POST https://{hostname}/api/v1/alert/{{alias}}` \u2014 receive Azure Monitor alert webhooks\n" +
         $"- `POST https://{hostname}/api/v1/send` \u2014 send to a specific conversation by reference\n" +
         $"- `POST https://{hostname}/api/v1/checkin/{{alias}}` \u2014 application heartbeat check-in\n" +
-        $"- `GET  https://{hostname}/api/v1/aliases` \u2014 list all aliases (JSON)\n" +
-        $"- `GET  https://{hostname}/api/health` \u2014 bot health status\n\n" +
-        "All endpoints require **Entra ID authentication**. Run **setup-guide** for auth setup instructions.";
+        $"- `POST https://{hostname}/api/v1/ingest/updown/{{token}}` \u2014 anonymous updown.io webhook ingress (run **help webhooks**)\n" +
+        $"- `GET  https://{hostname}/api/v1/aliases` \u2014 list all aliases (JSON; debug mode only)\n" +
+        $"- `GET  https://{hostname}/api/health` \u2014 bot health status (public)\n\n" +
+        "The `notify`, `alert`, `send`, and `checkin` endpoints require **Entra ID authentication** " +
+        "(run **setup-guide** for setup). `/api/health` is public. The updown ingress is authenticated " +
+        "by its per-webhook secret token, not Entra ID \u2014 see **help webhooks**.";
 
     public static string Webhooks() =>
         "**updown.io webhooks** let the external monitoring service push uptime/SSL alerts into " +
@@ -59,7 +64,7 @@ public static class HelpTextBuilder
         "The ingress is also protected by a **source-IP allowlist** of updown's published IPs " +
         "(`ips.updown.io`). It has three modes (app setting `UpdownWebhook__IpFilterMode`): `off`, " +
         "`log-only` (default — logs but never blocks), and `enforce` (rejects non-updown IPs). " +
-        "The list refreshes automatically and via **update-ip-allow-list**.\n\n" +
+        "The list refreshes automatically when stale, and on demand via **update-ip-allow-list**.\n\n" +
         "**Events** (default = all except `check.performance_drop`): `check.down`, `check.up`, " +
         "`check.ssl_invalid`, `check.ssl_valid`, `check.ssl_expiration`, `check.ssl_renewed`, " +
         "`check.performance_drop`.\n\n" +

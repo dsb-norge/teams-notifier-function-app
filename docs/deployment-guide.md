@@ -301,6 +301,47 @@ alert rules.
 
 ---
 
+## Step 7b: updown.io Webhook Ingress (Optional)
+
+Lets [updown.io](https://updown.io) push uptime/SSL alerts into a Teams channel via an **anonymous,
+token-authenticated** endpoint (`POST /api/v1/ingest/updown/{token}`). See
+[api-reference.md](api-reference.md) for the endpoint and [authentication.md](authentication.md#5-webhook-token-authentication-updownio-ingress)
+for the trust model.
+
+**Infrastructure prerequisites:**
+
+1. **Module `v1.1.0` or later.** Older versions lack `bot_auth_settings.easy_auth_excluded_paths`
+   (which the app's `app-requirements.json` now declares). Pin the module accordingly:
+   ```hcl
+   module "teams_notification_bot" {
+     source  = "dsb-norge/teams-notification-bot-lz/azurerm"
+     version = "1.1.0"   # or later
+     # ...
+   }
+   ```
+2. **Open site inbound** so updown's (external, non-Azure) IPs can reach the endpoint. The module
+   default-denies inbound; add a public rule:
+   ```hcl
+   allowed_caller_rules = [
+     # ... existing rules ...
+     { name = "public-ingest", description = "Public updown.io webhook ingress", cidr = "0.0.0.0/0" },
+   ]
+   ```
+   The AAD `/api/v1/*` routes stay protected regardless (EasyAuth + `Notifications.Send`); the
+   ingress is guarded by its per-webhook token plus the in-app source-IP allowlist.
+
+**Per-channel setup (in Teams):**
+
+1. In the target channel: **`create-webhook`** → the bot returns a secret URL (shown once).
+2. Paste that URL into updown.io as a webhook recipient.
+3. Use updown's *recipients → test* page to send a sample payload; confirm a card lands in Teams.
+4. **Harden the IP filter** once real traffic is confirmed: it defaults to `log-only` (observes,
+   never blocks). Run **`show-ip-allow-list updown`** to confirm updown's IPs are captured, then set
+   the app setting `UpdownWebhook__IpFilterMode=enforce` (see [authentication.md §7](authentication.md#7-configuration-reference)
+   — these are operator-set app settings via `az`, not module inputs).
+
+---
+
 ## Step 8: End-to-End Verification
 
 Run through each endpoint to confirm the full deployment is working. First,
