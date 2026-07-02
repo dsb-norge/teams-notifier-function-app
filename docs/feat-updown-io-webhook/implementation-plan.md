@@ -209,8 +209,9 @@ Un-defers D6. Full spec: design.md §17. Endpoint-scoped to `/api/v1/ingest/updo
     `RefreshedBy`, `ResolveError`. Runtime `CreateIfNotExists` (no infra change).
 30. **`Helpers/IpMatcher.cs`** (pure, unit-testable) — `bool IsAllowed(string sourceIp, IEnumerable<string> cidrs)`:
     parse `IPAddress`, match against single IPs and CIDR ranges, IPv4 **and** IPv6; empty list → the
-    caller decides (fail-safe). Plus `SourceIp(HttpRequest)` shared with the ingest handler
-    (X-Forwarded-For first hop).
+    caller decides (fail-safe). Plus `ParseClientIp(string?)` — normalises an X-Forwarded-For hop
+    or `RemoteIpAddress` to a bare IP, stripping the `ip:port` form Azure uses; used by the ingest
+    handler to derive the source IP.
 31. **`Services/IUpdownIpAllowlistService.cs` + impl** — `GetAsync()` (read cached row),
     `RefreshAsync(refreshedBy)` (resolve `UpdownWebhook__IpAllowlistHost` via an injectable resolver
     defaulting to `System.Net.Dns` A+AAAA, upsert row, capture `ResolveError` on failure, return
@@ -234,7 +235,7 @@ Un-defers D6. Full spec: design.md §17. Endpoint-scoped to `/api/v1/ingest/updo
     round-trip + ingest `enforce`→403 for non-listed / 200 for listed / `log-only` never blocks.
 37. **Docs** — `bot-commands.md` (2 commands + help), `api-reference.md` (403 on ingest when
     enforced), `troubleshooting.md` (filter dropped a delivery / how to observe / flip modes),
-    `architecture.md` (new table + timer). No `app-requirements.json` change is required for the
+    `architecture.md` (new table, no timer). No `app-requirements.json` change is required for the
     filter (it needs no infra/module support), but regenerate to be safe if any generated field
     changes.
 

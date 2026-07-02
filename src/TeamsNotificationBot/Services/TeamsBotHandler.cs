@@ -738,8 +738,10 @@ public class TeamsBotHandler : TeamsActivityHandler
     {
         if (!await EnsureIpAllowlistAccessAsync(turnContext, ct)) return;
 
-        var mode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode") is { Length: > 0 } m
-            ? m.ToLowerInvariant() : "log-only";
+        // Show the EFFECTIVE mode: the ingest path normalises anything invalid to "log-only",
+        // so mirror that here rather than echoing a misleading raw setting value.
+        var rawMode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode")?.Trim().ToLowerInvariant();
+        var mode = rawMode is "off" or "log-only" or "enforce" ? rawMode : "log-only";
         var entity = await _ipAllowlistService!.GetAsync();
         var entries = entity?.GetCidrs() ?? [];
 

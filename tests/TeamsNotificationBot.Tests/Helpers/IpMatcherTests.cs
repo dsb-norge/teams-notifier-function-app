@@ -50,4 +50,26 @@ public class IpMatcherTests
         Assert.True(IpMatcher.IsAllowed("1.2.3.4", ["garbage/99", "not-a-cidr", "1.2.3.0/24"]));
         Assert.False(IpMatcher.IsAllowed("9.9.9.9", ["garbage", "10.0.0.0/8"]));
     }
+
+    [Theory]
+    [InlineData("1.2.3.4", "1.2.3.4")]              // bare IPv4
+    [InlineData("1.2.3.4:5678", "1.2.3.4")]         // Azure XFF form (ip:port) — port stripped
+    [InlineData("2001:db8::1", "2001:db8::1")]      // bare IPv6
+    [InlineData("[2001:db8::1]:443", "2001:db8::1")]// bracketed IPv6 + port
+    [InlineData("  1.2.3.4  ", "1.2.3.4")]          // trimmed
+    public void ParseClientIp_NormalizesToBareIp(string input, string expected)
+    {
+        Assert.Equal(expected, IpMatcher.ParseClientIp(input));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("unknown")]
+    [InlineData("not-an-ip")]
+    public void ParseClientIp_InvalidReturnsNull(string? input)
+    {
+        Assert.Null(IpMatcher.ParseClientIp(input));
+    }
 }
