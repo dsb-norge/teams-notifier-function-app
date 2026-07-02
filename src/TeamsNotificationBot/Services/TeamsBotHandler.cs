@@ -147,11 +147,11 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
         else if (command.StartsWith("show-ip-allow-list"))
         {
-            await HandleShowIpAllowListAsync(turnContext, cancellationToken);
+            await HandleShowIpAllowListAsync(turnContext, command, cancellationToken);
         }
         else if (command.StartsWith("update-ip-allow-list"))
         {
-            await HandleUpdateIpAllowListAsync(turnContext, cancellationToken);
+            await HandleUpdateIpAllowListAsync(turnContext, command, cancellationToken);
         }
         else if (command == "help" || command.StartsWith("help "))
         {
@@ -734,9 +734,28 @@ public class TeamsBotHandler : TeamsActivityHandler
         return true;
     }
 
-    private async Task HandleShowIpAllowListAsync(ITurnContext turnContext, CancellationToken ct)
+    /// <summary>
+    /// Validates the optional source token on the IP-allowlist commands. Only "updown" is supported
+    /// (a missing token defaults to it). Anything else gets a usage hint so a typo'd/unknown source
+    /// doesn't silently operate on updown.
+    /// </summary>
+    private async Task<bool> ValidIpAllowlistSourceAsync(
+        ITurnContext turnContext, string command, string commandName, CancellationToken ct)
+    {
+        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var source = parts.Length > 1 ? parts[1] : "updown";
+        if (string.Equals(source, "updown", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        await turnContext.SendActivityAsync(
+            MessageFactory.Text($"Only **updown** is supported. Usage: **{commandName}** `updown`"), ct);
+        return false;
+    }
+
+    private async Task HandleShowIpAllowListAsync(ITurnContext turnContext, string command, CancellationToken ct)
     {
         if (!await EnsureIpAllowlistAccessAsync(turnContext, ct)) return;
+        if (!await ValidIpAllowlistSourceAsync(turnContext, command, "show-ip-allow-list", ct)) return;
 
         // Show the EFFECTIVE mode: the ingest path normalises anything invalid to "log-only",
         // so mirror that here rather than echoing a misleading raw setting value.
@@ -762,9 +781,10 @@ public class TeamsBotHandler : TeamsActivityHandler
         await turnContext.SendActivityAsync(MessageFactory.Text(string.Join("\n", lines)), ct);
     }
 
-    private async Task HandleUpdateIpAllowListAsync(ITurnContext turnContext, CancellationToken ct)
+    private async Task HandleUpdateIpAllowListAsync(ITurnContext turnContext, string command, CancellationToken ct)
     {
         if (!await EnsureIpAllowlistAccessAsync(turnContext, ct)) return;
+        if (!await ValidIpAllowlistSourceAsync(turnContext, command, "update-ip-allow-list", ct)) return;
 
         var by = turnContext.Activity.From?.Name is { Length: > 0 } n ? n : "operator";
         var result = await _ipAllowlistService!.RefreshAsync(by);
