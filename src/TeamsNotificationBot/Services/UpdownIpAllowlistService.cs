@@ -16,6 +16,10 @@ public class UpdownIpAllowlistService : IUpdownIpAllowlistService
     private const string Row = "current";
     private const string DefaultHost = "ips.updown.io";
 
+    // DNS resolve happens on the (synchronous) lazy-refresh path from the ingest handler, so bound it —
+    // a stuck resolver must not hang the request. On timeout the catch below keeps the previous list.
+    private static readonly TimeSpan ResolveTimeout = TimeSpan.FromSeconds(5);
+
     private readonly TableClient _tableClient;
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<string>>> _resolve;
 
@@ -62,7 +66,8 @@ public class UpdownIpAllowlistService : IUpdownIpAllowlistService
         IReadOnlyList<string> resolved;
         try
         {
-            resolved = await _resolve(Host, CancellationToken.None);
+            using var cts = new CancellationTokenSource(ResolveTimeout);
+            resolved = await _resolve(Host, cts.Token);
         }
         catch (Exception ex)
         {

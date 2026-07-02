@@ -25,13 +25,17 @@ public static class RateLimitPolicy
     public static string? PrincipalKey(string? principalId) =>
         string.IsNullOrEmpty(principalId) ? null : principalId;
 
-    /// <summary>Source-IP identity for the ingest zone (first X-Forwarded-For hop, else remote IP).</summary>
+    /// <summary>
+    /// Source-IP identity for the ingest zone (first X-Forwarded-For hop, else remote IP). The IP is
+    /// normalised via <see cref="Helpers.IpMatcher.ParseClientIp"/> — Azure's X-Forwarded-For carries
+    /// an ephemeral `ip:port`, so without stripping the port every request would get a distinct key
+    /// and the per-source-IP limit would never trigger.
+    /// </summary>
     public static string SourceIpKey(string? xForwardedFor, string? remoteIp)
     {
-        var ip = xForwardedFor?.Split(',')[0].Trim();
-        if (string.IsNullOrEmpty(ip))
-            ip = remoteIp;
-        return $"ingest-ip:{(string.IsNullOrEmpty(ip) ? "unknown" : ip)}";
+        var firstHop = xForwardedFor?.Split(',')[0];
+        var ip = Helpers.IpMatcher.ParseClientIp(firstHop) ?? Helpers.IpMatcher.ParseClientIp(remoteIp);
+        return $"ingest-ip:{ip ?? "unknown"}";
     }
 
     public static int ApiPermitLimit() => EnvInt("RateLimit__PermitLimit", DefaultApiPermitLimit);
