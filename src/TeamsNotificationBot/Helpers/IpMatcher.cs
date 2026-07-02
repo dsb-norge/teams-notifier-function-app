@@ -19,23 +19,17 @@ public static class IpMatcher
         if (string.IsNullOrWhiteSpace(sourceIp) || !IPAddress.TryParse(sourceIp.Trim(), out var ip))
             return false;
 
-        foreach (var raw in entries)
-        {
-            var entry = raw?.Trim();
-            if (string.IsNullOrEmpty(entry))
-                continue;
+        return entries.Any(entry => Matches(entry, ip));
+    }
 
-            if (entry.Contains('/'))
-            {
-                if (IPNetwork.TryParse(entry, out var network) && network.Contains(ip))
-                    return true;
-            }
-            else if (IPAddress.TryParse(entry, out var single) && single.Equals(ip))
-            {
-                return true;
-            }
-        }
+    private static bool Matches(string? rawEntry, IPAddress ip)
+    {
+        var entry = rawEntry?.Trim();
+        if (string.IsNullOrEmpty(entry))
+            return false;
 
-        return false;
+        return entry.Contains('/')
+            ? IPNetwork.TryParse(entry, out var network) && network.Contains(ip)
+            : IPAddress.TryParse(entry, out var single) && single.Equals(ip);
     }
 }
