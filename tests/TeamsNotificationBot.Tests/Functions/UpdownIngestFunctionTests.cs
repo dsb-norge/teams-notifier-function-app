@@ -258,6 +258,30 @@ public class UpdownIngestFunctionTests
     }
 
     [Fact]
+    public async Task IpFilter_Enforce_AzureXffWithPort_PortStripped_Passes()
+    {
+        // Azure sends X-Forwarded-For as "ip:port" — the port must be stripped or enforce would
+        // reject every real request.
+        SetupAllowlist("1.2.3.0/24");
+        var result = await RunWithMode("enforce", new() { ["X-Forwarded-For"] = "1.2.3.4:51789" });
+
+        Assert.IsType<OkObjectResult>(result);
+        VerifyEnqueued(Times.Once());
+    }
+
+    [Fact]
+    public async Task IpFilter_Enforce_BlankXff_DoesNotFalselyReject_WhenNoRemoteIp()
+    {
+        // Blank XFF + no RemoteIpAddress → source "unknown"; with a non-empty allowlist that's not a
+        // member, enforce rejects — but the point is a blank XFF must not be treated as a valid IP.
+        SetupAllowlist("1.2.3.0/24");
+        var result = await RunWithMode("enforce", new() { ["X-Forwarded-For"] = "" });
+
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(403, obj.StatusCode);
+    }
+
+    [Fact]
     public async Task IpFilter_LogOnly_NonAllowlistedIp_NotBlocked()
     {
         SetupAllowlist("9.9.9.9");

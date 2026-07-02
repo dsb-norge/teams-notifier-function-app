@@ -59,8 +59,12 @@ public class UpdownIngestFunction
         var correlationId = req.HttpContext.Items["CorrelationId"] as string;
         // NB: never put the token in `instance`/logs — it is a bearer secret.
         const string instance = "/api/v1/ingest/updown";
-        var sourceIp = req.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
-                       ?? req.HttpContext.Connection.RemoteIpAddress?.ToString()
+        // Prefer the first X-Forwarded-For hop, but only if it parses as an IP (Azure sends "ip:port",
+        // so strip the port); otherwise fall back to the connection's RemoteIpAddress. A blank/garbage
+        // XFF must not become the "source IP" — that would cause an enforce-mode false rejection.
+        var xffFirstHop = req.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',').FirstOrDefault();
+        var sourceIp = IpMatcher.ParseClientIp(xffFirstHop)
+                       ?? IpMatcher.ParseClientIp(req.HttpContext.Connection.RemoteIpAddress?.ToString())
                        ?? "unknown";
 
         // Source-IP allowlist (design §17) — updown-endpoint-only. Modes: off | log-only | enforce.
