@@ -20,14 +20,16 @@ Repos:
 | 4 — bot commands + help | APP | ✅ Done |
 | 5 — rate limiting | APP | ✅ Done |
 | 6 — contract + docs | APP | ✅ Done |
-| 7 — Terraform module `excludedPaths` | MODULE | ⏳ Not started (deferred) |
-| 8 — consumer: open site inbound + module bump | CONSUMER | ⏳ Not started (deferred) |
+| 7 — Terraform module `excludedPaths` | MODULE | ✅ Merged (module PR #8); release `v1.1.0` pending |
+| 8 — consumer: open site inbound + module bump | CONSUMER | ⏳ Held ("wait for release") |
+| 9 — updown source-IP filtering | APP | 🔜 In progress (un-defers D6; see §17 of design.md) |
 
-All APP phases landed on branch `feat/updown-io-webhook`; **406 tests green** (`dotnet test`,
-Azurite for integration). The route is **not reachable on a real deploy until phases 7–8** are done
-(EasyAuth excluded path + open site inbound). The generated `app-requirements.json` already advertises
+Phases 0–6 landed on `feat/updown-io-webhook` (merged → app release `1.6.0` **held**); **406 tests
+green**. Phase 7 merged in the module repo (PR #8), pending its `v1.1.0` release. Phase 9 (below) was
+originally deferred as D6 and is now in scope — updown confirmed `ips.updown.io` returns the full
+webhook egress set (incl. the test sender). The generated `app-requirements.json` advertises
 `well_known_routes.updown_webhook_ingest_endpoint` and `bot_auth_settings.easy_auth_excluded_paths`
-for the module to consume; infra hash is now `04eec911853e`.
+for the module to consume.
 
 Where the as-built differs from the original plan below, the plan text has been updated to match
 (inline JSON fixtures instead of external files; single-file model; `RateLimitPolicy` helper;
@@ -197,6 +199,48 @@ negative-lookahead rule exclusion). Deltas are called out inline.
     (+ `::/0` if needed); bump module `version`. No KV, no app settings, no updown IP rules.
 28. Apply Terraform (updates auth excludedPaths + inbound) **before** the app deploy — the infra
     hash gate in the deploy pipeline enforces this ordering.
+
+## Phase 9 — updown source-IP filtering (APP) — 🔜 In progress
+
+Un-defers D6. Full spec: design.md §17. Endpoint-scoped to `/api/v1/ingest/updown/*` only.
+
+29. **`Models/UpdownIpAllowlistEntity.cs`** — `ITableEntity` for the `updownipallowlist` table
+    (PK=`"updown"`, RK=`"current"`): `Cidrs` (comma-joined IPv4+IPv6), `Source`, `RefreshedAt`,
+    `RefreshedBy`, `ResolveError`. Runtime `CreateIfNotExists` (no infra change).
+30. **`Helpers/IpMatcher.cs`** (pure, unit-testable) — `bool IsAllowed(string sourceIp, IEnumerable<string> cidrs)`:
+    parse `IPAddress`, match against single IPs and CIDR ranges, IPv4 **and** IPv6; empty list → the
+    caller decides (fail-safe). Plus `SourceIp(HttpRequest)` shared with the ingest handler
+    (X-Forwarded-For first hop).
+31. **`Services/IUpdownIpAllowlistService.cs` + impl** — `GetAsync()` (read cached row),
+    `RefreshAsync(refreshedBy)` (resolve `UpdownWebhook__IpAllowlistHost` via an injectable resolver
+    defaulting to `System.Net.Dns` A+AAAA, upsert row, capture `ResolveError` on failure, return
+    added/removed diff), and `GetOrRefreshAsync(maxAge, refreshedBy)` (return cached; refresh first
+    if missing/older than maxAge). Injectable resolver keeps it unit-testable without real DNS.
+    DI-registered with a `TableClient("updownipallowlist")` in both Program.cs storage branches.
+    **No timer trigger** — refresh is lazy-when-stale (below) + command-driven (design §17.3).
+32. **`UpdownIngestFunction`** — after source-IP logging, before token point-read: read
+    `UpdownWebhook__IpFilterMode` (`off`/`log-only`/`enforce`, default `log-only`); if not `off`,
+    `GetOrRefreshAsync(maxAge, "lazy")` then `IpMatcher.IsAllowed`. `off`→skip; `log-only`→log
+    decision, continue; `enforce`→`403` if not allowed (empty/unknown list → fail-safe allow + log
+    degraded). Inject `IUpdownIpAllowlistService`.
+34. **Bot commands** — `show-ip-allow-list updown` (mode, count, RefreshedAt, ResolveError, entries;
+    read-only) and `update-ip-allow-list updown` (calls `RefreshAsync("<user>")`, replies diff).
+    Add branches in `TeamsBotHandler` (same `EnsureWebhookAccessAsync` authz), extend
+    `HelpTextBuilder.Webhooks()`. Command-hint lists: help-only (10-per-scope cap already hit).
+35. **Config** — settings `UpdownWebhook__IpFilterMode`, `UpdownWebhook__IpAllowlistHost`
+    (default `ips.updown.io`), `UpdownWebhook__IpAllowlistMaxAgeHours` (default 48). All optional.
+36. **Tests** — unit: `IpMatcher` (IPv4/IPv6 in/out/CIDR/malformed), XFF parsing, mode behaviour,
+    fail-safe on empty, allowlist row parse/format; integration (Azurite): allowlist service
+    round-trip + ingest `enforce`→403 for non-listed / 200 for listed / `log-only` never blocks.
+37. **Docs** — `bot-commands.md` (2 commands + help), `api-reference.md` (403 on ingest when
+    enforced), `troubleshooting.md` (filter dropped a delivery / how to observe / flip modes),
+    `architecture.md` (new table + timer). No `app-requirements.json` change is required for the
+    filter (it needs no infra/module support), but regenerate to be safe if any generated field
+    changes.
+
+**Deploy note:** ship with `UpdownWebhook__IpFilterMode` unset (⇒ `log-only`) so the first live
+deploy observes real source IPs without dropping alerts; flip to `enforce` once `show-ip-allow-list`
+confirms the list covers real traffic.
 
 ---
 

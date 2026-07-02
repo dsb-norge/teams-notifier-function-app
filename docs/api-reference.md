@@ -413,6 +413,11 @@ rendered as a color-coded Adaptive Card and delivered to the bound conversation.
   retry — this avoids updown's up-to-25× retry storm). Only a transient enqueue failure returns
   **5xx** so a genuinely retryable delivery is retried.
 - Unknown token → **404**. Body over the size cap → **413**.
+- **Source-IP allowlist:** the endpoint accepts requests only from updown's published IPs
+  (`ips.updown.io`) when the `UpdownWebhook__IpFilterMode` setting is `enforce` — otherwise a
+  non-updown source IP gets **403**. Default is `log-only` (logs but does not block); `off` disables
+  the check. An empty/unresolved list never blocks (fail-safe). See design §17 and the
+  `show-ip-allow-list` / `update-ip-allow-list` bot commands.
 - Cards contain **no clickable actions** and are labelled *unverified sender*; the only link is the
   updown.io downtime URL (rendered only when it is under `https://updown.io/`).
 
@@ -421,6 +426,7 @@ rendered as a color-coded Adaptive Card and delivered to the bound conversation.
 | Code | Meaning |
 |------|---------|
 | 200 | Accepted (events enqueued and/or skipped; also returned for unparseable bodies) |
+| 403 | Source IP not in the updown allowlist (only when `IpFilterMode=enforce`) |
 | 404 | Unknown webhook token |
 | 413 | Body exceeds the size cap |
 | 429 | Rate limit exceeded (per source IP) |

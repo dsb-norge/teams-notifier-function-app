@@ -53,7 +53,13 @@ public static class HelpTextBuilder
         "- **configure-webhook** `<id>` `<description|account|events>` `<value>` — update settings\n" +
         "  - `events` takes a comma list, e.g. `check.down,check.up,check.ssl_expiration`, or `all`\n" +
         "- **rotate-webhook** `<id>` — issue a new URL, invalidating the old token\n" +
-        "- **remove-webhook** `<id>` — delete the webhook\n\n" +
+        "- **remove-webhook** `<id>` — delete the webhook\n" +
+        "- **show-ip-allow-list** `updown` — show the source-IP allowlist (mode, entries, last refresh)\n" +
+        "- **update-ip-allow-list** `updown` — refresh the allowlist from updown's published IPs\n\n" +
+        "The ingress is also protected by a **source-IP allowlist** of updown's published IPs " +
+        "(`ips.updown.io`). It has three modes (app setting `UpdownWebhook__IpFilterMode`): `off`, " +
+        "`log-only` (default — logs but never blocks), and `enforce` (rejects non-updown IPs). " +
+        "The list refreshes automatically and via **update-ip-allow-list**.\n\n" +
         "**Events** (default = all except `check.performance_drop`): `check.down`, `check.up`, " +
         "`check.ssl_invalid`, `check.ssl_valid`, `check.ssl_expiration`, `check.ssl_renewed`, " +
         "`check.performance_drop`.\n\n" +

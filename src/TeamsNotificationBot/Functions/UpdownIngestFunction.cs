@@ -34,17 +34,20 @@ public class UpdownIngestFunction
     private readonly IWebhookService _webhookService;
     private readonly QueueClient _queueClient;
     private readonly IIdempotencyService _idempotency;
+    private readonly IUpdownIpAllowlistService _ipAllowlist;
     private readonly ILogger<UpdownIngestFunction> _logger;
 
     public UpdownIngestFunction(
         IWebhookService webhookService,
         QueueClient queueClient,
         IIdempotencyService idempotency,
+        IUpdownIpAllowlistService ipAllowlist,
         ILogger<UpdownIngestFunction> logger)
     {
         _webhookService = webhookService;
         _queueClient = queueClient;
         _idempotency = idempotency;
+        _ipAllowlist = ipAllowlist;
         _logger = logger;
     }
 
@@ -59,6 +62,40 @@ public class UpdownIngestFunction
         var sourceIp = req.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
                        ?? req.HttpContext.Connection.RemoteIpAddress?.ToString()
                        ?? "unknown";
+
+        // Source-IP allowlist (design §17) — updown-endpoint-only. Modes: off | log-only | enforce.
+        // Placed before body read so an enforced rejection is shed cheaply.
+        var ipMode = GetIpFilterMode();
+        if (ipMode != "off")
+        {
+            var allowlist = await _ipAllowlist.GetOrRefreshAsync(TimeSpan.FromHours(GetAllowlistMaxAgeHours()), "lazy");
+            var entries = allowlist?.GetCidrs() ?? [];
+
+            if (!IpMatcher.IsAllowed(sourceIp, entries))
+            {
+                if (entries.Count == 0)
+                {
+                    // Fail-safe: never block when we have no list at all (e.g. DNS never resolved) —
+                    // that would drop every alert on a transient DNS issue. Log the degraded state.
+                    _logger.LogWarning(
+                        "updown IP allowlist empty/unavailable — allowing without IP check (fail-safe). SourceIp={SourceIp}, CorrelationId={CorrelationId}",
+                        Sanitize(sourceIp), correlationId);
+                }
+                else if (ipMode == "enforce")
+                {
+                    _logger.LogWarning(
+                        "Rejected updown webhook: source IP not in allowlist (enforce). SourceIp={SourceIp}, CorrelationId={CorrelationId}",
+                        Sanitize(sourceIp), correlationId);
+                    return ApiResponse.Problem(403, "Forbidden", "Source IP not allowed.", instance, correlationId);
+                }
+                else // log-only
+                {
+                    _logger.LogWarning(
+                        "updown webhook source IP not in allowlist (log-only — not blocked). SourceIp={SourceIp}, CorrelationId={CorrelationId}",
+                        Sanitize(sourceIp), correlationId);
+                }
+            }
+        }
 
         var maxBytes = GetMaxBodyBytes();
         var (tooLarge, body) = await ReadBodyAsync(req, maxBytes);
@@ -214,6 +251,17 @@ public class UpdownIngestFunction
     private static bool DebugDumpEnabled() =>
         string.Equals(Environment.GetEnvironmentVariable("UpdownWebhook__DebugLogPayload"),
             "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Source-IP filter mode: "off" | "log-only" | "enforce". Defaults to "log-only".</summary>
+    private static string GetIpFilterMode()
+    {
+        var mode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode")?.Trim().ToLowerInvariant();
+        return mode is "off" or "log-only" or "enforce" ? mode : "log-only";
+    }
+
+    private static int GetAllowlistMaxAgeHours() =>
+        int.TryParse(Environment.GetEnvironmentVariable("UpdownWebhook__IpAllowlistMaxAgeHours"), out var v) && v > 0
+            ? v : 48;
 
     /// <summary>Reads the body with a hard cap. Returns (tooLarge, body); body is "" when tooLarge.</summary>
     private static async Task<(bool tooLarge, string body)> ReadBodyAsync(HttpRequest req, int maxBytes)

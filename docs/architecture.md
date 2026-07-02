@@ -156,7 +156,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 
 Azure Storage with shared access keys disabled. All access via RBAC (User-Assigned Managed Identity).
 
-**Tables** (6):
+**Tables** (7):
 
 | Table | Purpose |
 |---|---|
@@ -166,6 +166,7 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 | `idempotencykeys` | Deduplication records (no automatic expiry); also stores updown webhook `(token,event,time)` dedupe markers |
 | `ThrottlingTrollCounters` | Rate limiter fixed window counters |
 | `webhooktokens` | updown.io webhook capability tokens (SHA-256 hashed) → conversation target + event filter |
+| `updownipallowlist` | Cached updown source-IP allowlist (resolved from `ips.updown.io`) for the ingress source-IP filter; refreshed lazily-when-stale + on demand |
 
 **Queues** (4):
 

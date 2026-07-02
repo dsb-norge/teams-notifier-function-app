@@ -28,6 +28,28 @@ In **offline** local mode, delivery to Teams is simulated (`TEAMS_INTEGRATION_DI
 `queue-status`) — not an actual Teams card. For end-to-end Teams delivery use `online` mode or a
 deployed instance bound to a real channel.
 
+### Running/deploying with the source-IP filter OFF (important for these curl checks)
+
+The ingest endpoint has a source-IP allowlist (design §17) that only accepts updown's IPs. Since
+you'll be calling it from your own machine / CI, **the filter must not be in `enforce` mode** or
+your curl calls get `403`. Set the mode:
+
+```bash
+# Local: local.settings.json → "Values": { "UpdownWebhook__IpFilterMode": "off" }
+# (default is "log-only", which also lets curl through — it logs but never blocks)
+
+# Deployed: temporarily set the app setting, then flip back when done
+az functionapp config appsettings set -g <rg> -n <function-app-name> \
+  --settings UpdownWebhook__IpFilterMode=off
+# ... run the checks below ...
+az functionapp config appsettings set -g <rg> -n <function-app-name> \
+  --settings UpdownWebhook__IpFilterMode=enforce      # restore
+```
+
+`off` disables the check entirely; `log-only` (the default) lets everything through but logs the
+decision — either works for manual verification. Only `enforce` would reject your curl. The §8
+section below verifies the filter itself.
+
 ---
 
 ## 1. Create a webhook token (in Teams)
@@ -244,12 +266,57 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/v1/notify/anything"
 
 Use updown's built-in test: **<https://updown.io/recipients/test>** — configure the recipient URL
 as the create-webhook URL and send a test payload. Confirm a card lands in Teams **and** capture
-the **source IP** from our logs (this is the data we need before deciding on IP-allowlist
-enforcement — design D6). KQL for source IPs:
+the **source IP** from our logs. KQL for source IPs:
 
 ```kusto
 traces | where message contains "ingest" and message contains "SourceIp" | project timestamp, message
 ```
+
+---
+
+## 8. Source-IP filter verification (design §17)
+
+Verifies the updown-only IP allowlist. Do this after §1–§7 pass with the filter `off`/`log-only`.
+
+**8a. Populate + inspect the allowlist**
+
+```
+update-ip-allow-list updown     # bot command — resolves ips.updown.io, reports added/removed
+show-ip-allow-list updown       # bot command — mode, entry count, last-refreshed age, CIDRs
+```
+
+Confirm the list is non-empty and (after a real updown test-payload in §7) that the observed source
+IP is a member. The list also refreshes lazily when the ingest handler sees a stale/missing list.
+
+**8b. `log-only` (default) never blocks**
+
+With `UpdownWebhook__IpFilterMode=log-only`, POST a valid `check.down` (from §2a) from your machine
+(not an updown IP): expect **200** and an enqueued card, plus a log line noting the source IP was
+not in the allowlist. Nothing is dropped.
+
+**8c. `enforce` blocks non-updown sources**
+
+```bash
+# Deployed: flip to enforce, then call from a non-updown IP
+az functionapp config appsettings set -g <rg> -n <function-app-name> \
+  --settings UpdownWebhook__IpFilterMode=enforce
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" -H 'Content-Type: application/json' \
+  -d '[{"event":"check.down","time":"2026-07-01T10:48:48Z","check":{"url":"https://x","token":"xyz0"}}]'
+# → 403 (source IP not in allowlist). Real updown deliveries (from ips.updown.io) still succeed.
+```
+
+To simulate an allowed source locally, add your own IP to the allowlist row in Azurite (or run
+`update-ip-allow-list` against a host that resolves to your IP) and confirm the same request returns
+**200**.
+
+**8d. Fail-safe**
+
+Empty allowlist (e.g. DNS never resolved) in `enforce` mode must **not** block — POST returns 200
+and `show-ip-allow-list` surfaces the `ResolveError` / empty state. (Covered by automated tests; spot
+-check by clearing the `updownipallowlist` row and posting once.)
+
+> **Go-live sequence:** deploy with mode unset (⇒ `log-only`) → run updown's test-payload → confirm
+> the source IP appears via `show-ip-allow-list` and logs → flip to `enforce`.
 
 ---
 

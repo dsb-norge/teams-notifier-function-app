@@ -220,6 +220,10 @@ var host = new HostBuilder()
             var webhookClient = new TableClient(connectionString, "webhooktokens");
             webhookClient.CreateIfNotExists();
             services.AddSingleton<IWebhookService>(new WebhookService(webhookClient));
+
+            var ipAllowlistClient = new TableClient(connectionString, "updownipallowlist");
+            ipAllowlistClient.CreateIfNotExists();
+            services.AddSingleton<IUpdownIpAllowlistService>(new UpdownIpAllowlistService(ipAllowlistClient));
         }
         else
         {
@@ -272,6 +276,10 @@ var host = new HostBuilder()
             var webhookClient = new TableClient(tableUri, "webhooktokens", credential);
             webhookClient.CreateIfNotExists();
             services.AddSingleton<IWebhookService>(new WebhookService(webhookClient));
+
+            var ipAllowlistClient = new TableClient(tableUri, "updownipallowlist", credential);
+            ipAllowlistClient.CreateIfNotExists();
+            services.AddSingleton<IUpdownIpAllowlistService>(new UpdownIpAllowlistService(ipAllowlistClient));
         }
 
         // Queue management service (for queue commands + poison queue monitoring)

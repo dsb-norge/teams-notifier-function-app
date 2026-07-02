@@ -28,7 +28,12 @@ public class UpdownIngestFlowTests
     private (UpdownIngestFunction fn, QueueClient queue) NewFunction(string queueName)
     {
         var queue = _azurite.CreateQueueClient(queueName);
-        var fn = new UpdownIngestFunction(_webhookService, queue, _idempotency,
+        // Empty-resolver allowlist service → empty list → fail-safe allow (default log-only mode),
+        // so these flow tests exercise enqueue/dedupe/target without the IP filter interfering.
+        var ipAllowlist = new UpdownIpAllowlistService(
+            _azurite.CreateTableClient("updownipallowlist"),
+            (_, _) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
+        var fn = new UpdownIngestFunction(_webhookService, queue, _idempotency, ipAllowlist,
             NullLogger<UpdownIngestFunction>.Instance);
         return (fn, queue);
     }
