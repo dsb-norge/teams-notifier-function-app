@@ -1,5 +1,13 @@
 # Design: updown.io → Teams Notifier webhook ingress
 
+> **📦 ARCHIVED — historical reference, not maintained.** This doc captured the design during the
+> feature's development. Its still-relevant content is folded into the permanent docs, which are the
+> source of truth: [architecture.md](../architecture.md), [authentication.md](../authentication.md),
+> [api-reference.md](../api-reference.md), [bot-commands.md](../bot-commands.md),
+> [deployment-guide.md](../deployment-guide.md), [troubleshooting.md](../troubleshooting.md),
+> [local-development.md](../local-development.md), [access-and-roles.md](../access-and-roles.md).
+> This `feat-updown-io-webhook/` folder is slated for deletion.
+
 | Field | Value |
 |---|---|
 | Status | Approved for implementation |

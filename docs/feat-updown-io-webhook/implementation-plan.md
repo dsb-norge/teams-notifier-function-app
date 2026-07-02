@@ -1,5 +1,9 @@
 # Implementation plan: updown.io webhook ingress
 
+> **📦 ARCHIVED — historical reference, not maintained.** A work-tracking artifact from the feature's
+> development. Current design/behaviour lives in the permanent docs (see [design.md](./design.md)'s
+> banner). This `feat-updown-io-webhook/` folder is slated for deletion.
+
 Companion to [design.md](./design.md). File-by-file work, ordered so each step builds and tests
 green before the next. Paths are relative to each repo's root.
 
