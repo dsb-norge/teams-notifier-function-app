@@ -1,5 +1,10 @@
 # Manual verification plan: updown.io webhook ingress
 
+> **📦 ARCHIVED — historical reference, not maintained.** The local/deployed test procedure now lives
+> in [local-development.md](../local-development.md) (ingest testing) and the go-live sequence in
+> [troubleshooting.md](../troubleshooting.md). This `feat-updown-io-webhook/` folder is slated for
+> deletion.
+
 A curl-driven runbook to verify the ingest feature against a **local** (`func host start` +
 Azurite) or **deployed** instance. Companion to [design.md](./design.md) /
 [implementation-plan.md](./implementation-plan.md).
