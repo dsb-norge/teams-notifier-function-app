@@ -414,7 +414,7 @@ Azure Functions Flex Consumption uses **per-function scaling**: each queue trigg
 (e.g. many updown events at once), surfacing as `ReplyToActivity … '(429) TooManyRequests'`. `BotService`
 wraps each send in `ThrottleRetry`, which retries the whole send with **capped exponential backoff**
 on a detected 429, then rethrows so the queue can still retry. At the defaults (4 attempts, 20 s cap)
-that is 3 waits between attempts — 1 s, 2 s, 4 s (the nth wait is 2ⁿ⁻¹ seconds, clamped to the 20 s
+that is 3 waits between attempts — 1 s, 2 s, 4 s (each doubles the previous, clamped to the 20 s
 cap), so the cap only binds once the attempt count is raised.
 This smooths short bursts without burning the queue's dequeue budget (a persistent throttle would
 otherwise reach `maxDequeueCount` and poison the card).
