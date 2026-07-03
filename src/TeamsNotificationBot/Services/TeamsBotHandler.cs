@@ -419,11 +419,8 @@ public class TeamsBotHandler : TeamsActivityHandler
         try
         {
             var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, currentTeamThreadId);
-            foreach (var ch in channels)
-            {
-                if (!string.IsNullOrEmpty(ch.Name))
-                    cache[ch.Id] = ch.Name;
-            }
+            foreach (var ch in channels.Where(c => !string.IsNullOrEmpty(c.Name)))
+                cache[ch.Id] = ch.Name;
         }
         catch (Exception ex)
         {
@@ -446,7 +443,7 @@ public class TeamsBotHandler : TeamsActivityHandler
                 return string.IsNullOrEmpty(value) ? null : value;
             }
         }
-        catch { /* best-effort */ }
+        catch (JsonException) { /* malformed stored reference — best-effort, treat as absent */ }
         return null;
     }
 
