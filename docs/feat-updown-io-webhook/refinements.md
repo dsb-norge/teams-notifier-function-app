@@ -19,7 +19,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 |---|---------|----------|--------|
 | F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | FIXED (worker); host-side `requests` residual |
 | F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | FIXED (code); needs post-deploy header verify |
-| F1 | IP allowlist not populated automatically at boot/deploy | Medium | PROPOSED |
+| F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | PROPOSED |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | PROPOSED |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
@@ -160,7 +160,16 @@ Claude, App Insights query 2026-07-02 — raw bogus token present in both `reque
 
 ---
 
-## F1 — IP allowlist not populated automatically at boot/deploy  **[Medium, PROPOSED]**
+## F1 — IP allowlist not populated automatically at boot/deploy  **[Medium — FIXED]**
+
+> **Resolution (this branch):** added `UpdownIpAllowlistWarmupService` (`IHostedService`) that runs the
+> staleness-gated `GetOrRefreshAsync` at worker startup — populating the list before the first webhook,
+> with no bot command or deploy step. It is fire-and-forget (never delays readiness) and best-effort
+> (swallows/logs failures; the ingest lazy-refresh still self-heals). Config read shared via
+> `UpdownWebhookConfig.AllowlistMaxAge` (used by both the warm-up and the ingest handler). Tests:
+> `UpdownIpAllowlistWarmupServiceTests`, `UpdownWebhookConfigTests`. No `app-requirements.json` change
+> (not a Function trigger). Chose the startup-warm-up over the "hoist refresh regardless of mode"
+> option because the operator's need was boot-time population, not just first-webhook.
 
 ### Observation (operator, pics 1–2)
 After the 1.6.0 deploy, `show-ip-allow-list updown` reported **Mode: log-only, Entries: 0, Last
