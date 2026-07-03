@@ -9,11 +9,14 @@ public interface IWebhookService
 
     /// <summary>
     /// Generates a fresh token, stores only its hash, and returns the plaintext token
-    /// (shown to the operator exactly once). Applies the default event filter.
+    /// (shown to the operator exactly once). Applies the default event filter. <paramref name="description"/>
+    /// and <paramref name="updownAccount"/> are human-facing labels captured at creation
+    /// (both required by the create-webhook command) and editable later via <see cref="ConfigureAsync"/>.
     /// </summary>
     Task<WebhookCreateResult> CreateAsync(
         string source, string targetType,
         string? teamId, string? channelId, string? userId, string? chatId,
+        string description, string updownAccount,
         string createdBy, string createdByName);
 
     Task<IReadOnlyList<WebhookTokenEntity>> ListAsync();

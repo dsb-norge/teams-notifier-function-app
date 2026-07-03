@@ -33,6 +33,7 @@ public class WebhookService : IWebhookService
     public async Task<WebhookCreateResult> CreateAsync(
         string source, string targetType,
         string? teamId, string? channelId, string? userId, string? chatId,
+        string description, string updownAccount,
         string createdBy, string createdByName)
     {
         var token = GenerateToken();
@@ -47,6 +48,8 @@ public class WebhookService : IWebhookService
             ChannelId = channelId,
             UserId = userId,
             ChatId = chatId,
+            Description = description,
+            UpdownAccount = updownAccount,
             EnabledEvents = string.Join(',', UpdownEventTypes.DefaultEnabled),
             CreatedBy = createdBy,
             CreatedByName = createdByName,

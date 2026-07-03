@@ -15,7 +15,8 @@ public class WebhookServiceStorageTests
     }
 
     private Task<WebhookCreateResult> CreateChannelAsync() =>
-        _service.CreateAsync("updown", "channel", "team-1", "channel-1", null, null, "oid-1", "Tester");
+        _service.CreateAsync("updown", "channel", "team-1", "channel-1", null, null,
+            "test description", "test@dsb.no", "oid-1", "Tester");
 
     [Fact]
     public async Task Create_Then_ResolveByToken_RoundTrips()

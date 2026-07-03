@@ -126,7 +126,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
         else if (command.StartsWith("create-webhook"))
         {
-            await HandleCreateWebhookAsync(turnContext, command, cancellationToken);
+            await HandleCreateWebhookAsync(turnContext, text, command, cancellationToken);
         }
         else if (command.StartsWith("configure-webhook"))
         {
@@ -514,16 +514,21 @@ public class TeamsBotHandler : TeamsActivityHandler
         return true;
     }
 
-    private async Task HandleCreateWebhookAsync(ITurnContext turnContext, string command, CancellationToken ct)
+    private async Task HandleCreateWebhookAsync(
+        ITurnContext turnContext, string originalText, string command, CancellationToken ct)
     {
         if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
 
-        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var source = parts.Length > 1 ? parts[1] : "updown";
-        if (!string.Equals(source, "updown", StringComparison.OrdinalIgnoreCase))
+        // Args after the "create-webhook" word, from the original text so account/description keep
+        // their casing (emails, labels). Grammar: [updown] account <account> description <description>.
+        var trimmed = originalText.TrimStart('/').Trim();
+        var afterCommand = trimmed.Length > "create-webhook".Length
+            ? trimmed["create-webhook".Length..]
+            : string.Empty;
+        var (args, error) = WebhookCommandParser.ParseCreate(afterCommand);
+        if (args is null)
         {
-            await turnContext.SendActivityAsync(
-                MessageFactory.Text("Only **updown** webhooks are supported. Usage: **create-webhook** `[updown]`"), ct);
+            await turnContext.SendActivityAsync(MessageFactory.Text(error), ct);
             return;
         }
 
@@ -541,6 +546,7 @@ public class TeamsBotHandler : TeamsActivityHandler
             targetType == "channel" ? rk : null,
             targetType == "personal" ? rk : null,
             targetType == "groupChat" ? rk : null,
+            args.Description, args.Account,
             turnContext.Activity.From?.AadObjectId ?? string.Empty,
             turnContext.Activity.From?.Name ?? string.Empty);
 
@@ -552,6 +558,8 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         await turnContext.SendActivityAsync(MessageFactory.Text(
             $"✅ Webhook **{created.Id}** created for this {targetType}.\n\n" +
+            $"- Account: **{args.Account}**\n" +
+            $"- Description: {args.Description}\n\n" +
             "**Paste this URL into updown.io** — it is a secret and is shown only once:\n\n" +
             $"`{url}`\n\n" +
             $"Enabled events: {defaultEvents}.\n\n" +

@@ -21,7 +21,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | FIXED (code); needs post-deploy header verify |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
-| F3 | `create-webhook` doesn't capture (and require) account + description | Medium | PROPOSED |
+| F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
 | F5 | `help <command>` doesn't work for individual commands | Low | PROPOSED |
 | F4 | No `show-webhook <id>` command | Low | PROPOSED |
@@ -259,7 +259,16 @@ Do **not** frame this as "lost references on reboot" — that's not what happene
 
 ---
 
-## F3 — `create-webhook` doesn't capture / require account + description  **[Medium, PROPOSED]**
+## F3 — `create-webhook` doesn't capture / require account + description  **[Medium — FIXED]**
+
+> **Resolution (this branch):** `create-webhook` now requires a keyed grammar
+> `create-webhook [updown] account <account> description <description>` (parsed by the unit-tested
+> `WebhookCommandParser` from the original text, preserving casing for emails/labels). Both are passed
+> into `IWebhookService.CreateAsync` (new `description`/`updownAccount` params) and echoed in the
+> confirmation; still editable via `configure-webhook`. Help text updated. Tests: parser (valid,
+> optional `updown`, slashed/email account, non-greedy split, usage/source errors) + handler
+> (pass-through, explicit `updown`, missing-field rejection). Also added the G4.2 explicit-`updown`
+> positive test.
 
 ### Observation (operator, pic 4)
 Design intended two human-facing free-text fields at creation: **updownAccount** (e.g. the account

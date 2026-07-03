@@ -43,7 +43,7 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-full");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-1", "channel-1", null, null, "oid", "Tester");
+            "updown", "channel", "team-1", "channel-1", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
         await _webhookService.ConfigureAsync(created.Id, "prod site", "prod / ops@dsb.no", null);
 
         var req = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
@@ -74,7 +74,7 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-dedupe");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-2", "channel-2", null, null, "oid", "Tester");
+            "updown", "channel", "team-2", "channel-2", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
 
         var req1 = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
         var req2 = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
@@ -91,7 +91,7 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-processor");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-3", "channel-3", null, null, "oid", "Tester");
+            "updown", "channel", "team-3", "channel-3", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
 
         await fn.Run(HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown), created.Token);
 
