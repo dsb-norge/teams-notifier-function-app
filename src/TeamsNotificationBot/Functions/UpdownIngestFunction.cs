@@ -72,7 +72,7 @@ public class UpdownIngestFunction
 
         // Source-IP allowlist (design §17) — updown-endpoint-only. Modes: off | log-only | enforce.
         // Placed before body read so an enforced rejection is shed cheaply.
-        var ipMode = GetIpFilterMode();
+        var ipMode = UpdownWebhookConfig.IpFilterMode;
         if (ipMode != "off")
         {
             var allowlist = await _ipAllowlist.GetOrRefreshAsync(UpdownWebhookConfig.AllowlistMaxAge, "lazy");
@@ -291,13 +291,6 @@ public class UpdownIngestFunction
             Sanitize(req.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "null"),
             Sanitize(ipHeaders),
             Sanitize(names));
-    }
-
-    /// <summary>Source-IP filter mode: "off" | "log-only" | "enforce". Defaults to "log-only".</summary>
-    private static string GetIpFilterMode()
-    {
-        var mode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode")?.Trim().ToLowerInvariant();
-        return mode is "off" or "log-only" or "enforce" ? mode : "log-only";
     }
 
     /// <summary>Reads the body with a hard cap. Returns (tooLarge, body); body is "" when tooLarge.</summary>

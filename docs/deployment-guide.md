@@ -335,10 +335,13 @@ for the trust model.
 1. In the target channel: **`create-webhook`** → the bot returns a secret URL (shown once).
 2. Paste that URL into updown.io as a webhook recipient.
 3. Use updown's *recipients → test* page to send a sample payload; confirm a card lands in Teams.
-4. **Harden the IP filter** once real traffic is confirmed: it defaults to `log-only` (observes,
-   never blocks). Run **`show-ip-allow-list updown`** to confirm updown's IPs are captured, then set
-   the app setting `UpdownWebhook__IpFilterMode=enforce` (see [authentication.md §7](authentication.md#7-configuration-reference)
-   — these are operator-set app settings via `az`, not module inputs).
+4. **IP filter is `enforce` by default** (secure by default). The empty-list fail-safe means a fresh
+   deploy never blocks until the allowlist populates (startup warm-up + `ips.updown.io`), then
+   non-updown IPs get `403`. Run **`show-ip-allow-list updown`** to confirm updown's IPs are captured.
+   To observe first without blocking, temporarily set `UpdownWebhook__IpFilterMode=log-only` (or `off`)
+   via `az` — a per-deployment override that reverts to `enforce` on the next infra apply. See
+   [authentication.md §7](authentication.md#7-configuration-reference). These are operator-set app
+   settings via `az`, not module inputs.
 
 ---
 

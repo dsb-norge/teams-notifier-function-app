@@ -353,8 +353,8 @@ Refreshes the allowlist immediately by resolving updown's published IPs (`ips.up
 reports how many entries were added/removed. The list also refreshes lazily when the ingress sees a
 stale/missing list, so this is mainly for priming it right after deploy or after updown changes IPs.
 
-> **Source-IP filtering** is defense-in-depth on top of the secret token. `log-only` (the default)
-> logs non-updown source IPs but never blocks; `enforce` rejects them with `403`. An empty/unresolved
+> **Source-IP filtering** is defense-in-depth on top of the secret token. `enforce` (the default)
+> rejects non-updown source IPs with `403`; `log-only` logs them but never blocks. An empty/unresolved
 > list never blocks (fail-safe). See [api-reference.md](api-reference.md) and design §17.
 
 ---

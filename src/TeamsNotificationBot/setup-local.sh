@@ -64,6 +64,7 @@ write_settings() {
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     "TEAMS_INTEGRATION_DISABLED": "${teams_disabled}",
     "DEBUG_MODE": "true",
+    "UpdownWebhook__IpFilterMode": "off",
     "BotAppId": "${BOT_APP_ID}",
     "TenantId": "${TENANT_ID}",
     "Connections__ServiceConnection__Settings__AuthType": "ClientSecret",
