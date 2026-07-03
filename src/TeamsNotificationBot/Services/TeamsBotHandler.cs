@@ -1215,7 +1215,12 @@ public class TeamsBotHandler : TeamsActivityHandler
             return;
         }
 
-        var replyToId = turnContext.Activity.ReplyToId;
+        // Prefer an explicit quoted-message reference: quoting a card (the natural gesture for an
+        // older post, e.g. a past alert) embeds <quoted messageId="…"> in the text but does NOT set
+        // ReplyToId, so this used to silently do nothing (refinements.md F7). Then a direct reply's
+        // ReplyToId, then the thread-root id from the conversation id.
+        var replyToId = TeamsMessageParsing.ExtractQuotedMessageId(turnContext.Activity.Text)
+                        ?? turnContext.Activity.ReplyToId;
 
         // Fallback: extract root message ID from thread conversation ID.
         // Teams thread replies may not set ReplyToId, but the conversation ID
@@ -1238,7 +1243,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         {
             await turnContext.SendActivityAsync(
                 MessageFactory.Text(
-                    "Reply to a bot message and send **delete-post** to delete it."),
+                    "Reply to — or quote — a bot message and send **delete-post** to delete it."),
                 cancellationToken);
             return;
         }

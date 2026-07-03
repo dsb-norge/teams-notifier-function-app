@@ -20,7 +20,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | FIXED (worker); host-side `requests` residual |
 | F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | FIXED (code); needs post-deploy header verify |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
-| F7 | `delete-post` does nothing on quoted / older cards | Medium | PROPOSED |
+| F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | PROPOSED |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
 | F5 | `help <command>` doesn't work for individual commands | Low | PROPOSED |
@@ -209,7 +209,15 @@ against is moot).
 
 ---
 
-## F7 — `delete-post` does nothing on quoted / older cards  **[Medium, PROPOSED]**
+## F7 — `delete-post` does nothing on quoted / older cards  **[Medium — quote-parse FIXED]**
+
+> **Resolution (this branch):** `delete-post` now resolves its target as
+> `ExtractQuotedMessageId(Activity.Text)` → `ReplyToId` → thread-root `;messageid=`. Quoting a card
+> (the natural gesture for an older post) embeds `<quoted messageId="…">` in the text but doesn't set
+> `ReplyToId`, so it previously did nothing; the new `TeamsMessageParsing.ExtractQuotedMessageId`
+> parser (unit-tested) picks it up. Guidance updated to "reply to — or quote — a bot message". The
+> optional larger enhancement (persist sent activity ids for `delete-post <id>` / "delete last N")
+> is **not** done — deferred unless product wants command-driven deletion without a reply/quote.
 
 ### Observation (operator, pic 5)
 `delete-post` on an Azure Monitor alert card posted by the **previous app version (1.5)**, issued
