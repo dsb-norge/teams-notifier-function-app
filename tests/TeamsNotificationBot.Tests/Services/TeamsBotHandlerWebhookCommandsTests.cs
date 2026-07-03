@@ -461,8 +461,11 @@ public class TeamsBotHandlerWebhookCommandsTests
         var ctx = Context("show-ip-allow-list updown");
         await Run(NewHandler(), ctx);
 
+        // Mode display must reflect the single source of truth (UpdownWebhookConfig.IpFilterMode,
+        // secure default "enforce") — guards against a duplicate read drifting from actual enforcement.
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a, "allowlist", "10.0.0.0/8")),
+            It.Is<IActivity>(a => TextContains(a, "allowlist", "10.0.0.0/8",
+                $"Mode: **{TeamsNotificationBot.Helpers.UpdownWebhookConfig.IpFilterMode}**")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
