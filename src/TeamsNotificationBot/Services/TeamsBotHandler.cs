@@ -604,6 +604,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
 
         string displayField, oldValue, newValue;
+        bool ok;
         switch (field)
         {
             case "description":
@@ -611,13 +612,13 @@ public class TeamsBotHandler : TeamsActivityHandler
                 displayField = "description";
                 oldValue = existing.Description ?? string.Empty;
                 newValue = value;
-                await _webhookService.ConfigureAsync(id, value, null, null);
+                ok = await _webhookService.ConfigureAsync(id, value, null, null);
                 break;
             case "account":
                 displayField = "account";
                 oldValue = existing.UpdownAccount ?? string.Empty;
                 newValue = value;
-                await _webhookService.ConfigureAsync(id, null, value, null);
+                ok = await _webhookService.ConfigureAsync(id, null, value, null);
                 break;
             case "events":
                 displayField = "events";
@@ -647,12 +648,21 @@ public class TeamsBotHandler : TeamsActivityHandler
 
                 oldValue = string.Join(", ", existing.GetEnabledEvents());
                 newValue = string.Join(", ", events);
-                await _webhookService.ConfigureAsync(id, null, null, events);
+                ok = await _webhookService.ConfigureAsync(id, null, null, events);
                 break;
             default:
                 await turnContext.SendActivityAsync(MessageFactory.Text(
                     "Unknown field. Use `description`, `account`, or `events`."), ct);
                 return;
+        }
+
+        // The webhook existed at the pre-read; if the update reports not-found it was removed in
+        // between (concurrent delete) — don't send a misleading "updated" confirmation.
+        if (!ok)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text(
+                $"Webhook **{id}** not found (it may have just been removed)."), ct);
+            return;
         }
 
         await turnContext.SendActivityAsync(

@@ -51,8 +51,10 @@ public class UpdownIpAllowlistWarmupService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // Detached so DNS/table I/O never delays worker readiness or the first request.
-        _ = Task.Run(() => WarmUpAsync(CancellationToken.None), CancellationToken.None);
+        // Fire-and-forget so DNS/table I/O never delays worker readiness or the first request.
+        // No Task.Run — WarmUpAsync is already async (yields at its first await) and swallows its own
+        // exceptions, so it won't fault the unobserved task. The host start token is passed through.
+        _ = WarmUpAsync(cancellationToken);
         return Task.CompletedTask;
     }
 
