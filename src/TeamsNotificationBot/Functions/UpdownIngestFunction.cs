@@ -68,6 +68,8 @@ public class UpdownIngestFunction
                            req.HttpContext.Connection.RemoteIpAddress?.ToString())
                        ?? "unknown";
 
+        LogHeaderDiagnostics(req, correlationId);
+
         // Source-IP allowlist (design §17) — updown-endpoint-only. Modes: off | log-only | enforce.
         // Placed before body read so an enforced rejection is shed cheaply.
         var ipMode = GetIpFilterMode();
@@ -256,6 +258,40 @@ public class UpdownIngestFunction
     private static bool DebugDumpEnabled() =>
         string.Equals(Environment.GetEnvironmentVariable("UpdownWebhook__DebugLogPayload"),
             "true", StringComparison.OrdinalIgnoreCase);
+
+    private static bool DebugLogHeadersEnabled() =>
+        string.Equals(Environment.GetEnvironmentVariable("UpdownWebhook__DebugLogHeaders"),
+            "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Diagnostic for F8: on Flex + isolated worker the real client IP wasn't seen in any header we
+    /// tried (X-Forwarded-For / X-Azure-*), so this logs the IP-carrying headers + names to discover
+    /// which header (if any) actually carries it. Off by default; enable via
+    /// <c>UpdownWebhook__DebugLogHeaders=true</c>. Logs only IP-ish header values (names matching
+    /// for/ip/client/addr/forwarded) plus all header names — never Authorization/Cookie values.
+    /// </summary>
+    private void LogHeaderDiagnostics(HttpRequest req, string? correlationId)
+    {
+        if (!DebugLogHeadersEnabled())
+            return;
+
+        var ipHeaders = string.Join("; ", req.Headers
+            .Where(h =>
+            {
+                var k = h.Key.ToLowerInvariant();
+                return k.Contains("for") || k.Contains("ip") || k.Contains("client")
+                       || k.Contains("addr") || k.Contains("forwarded");
+            })
+            .Select(h => $"{h.Key}={h.Value}"));
+        var names = string.Join(",", req.Headers.Keys);
+
+        _logger.LogWarning(
+            "updown ingest header dump (debug F8). CorrelationId={CorrelationId}, RemoteIp={RemoteIp}, IpHeaders=[{IpHeaders}], AllHeaderNames=[{Names}]",
+            correlationId,
+            Sanitize(req.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "null"),
+            Sanitize(ipHeaders),
+            Sanitize(names));
+    }
 
     /// <summary>Source-IP filter mode: "off" | "log-only" | "enforce". Defaults to "log-only".</summary>
     private static string GetIpFilterMode()
