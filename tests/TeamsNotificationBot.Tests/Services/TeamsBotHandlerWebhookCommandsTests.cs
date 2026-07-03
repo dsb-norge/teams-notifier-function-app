@@ -64,21 +64,60 @@ public class TeamsBotHandlerWebhookCommandsTests
         ((IAgent)handler).OnTurnAsync(ctx.Object);
 
     [Fact]
-    public async Task CreateWebhook_ReturnsSecretUrlAndId()
+    public async Task CreateWebhook_RequiresAccountAndDescription_PassesThemThrough()
     {
         _webhook.Setup(s => s.CreateAsync("updown", "personal",
                 It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                "Prod uptime + SSL", "ops@dsb.no",
                 It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(new WebhookCreateResult("abc12345", "SECRETTOKEN99",
                 new WebhookTokenEntity { Id = "abc12345" }));
 
-        var ctx = Context("create-webhook");
+        var ctx = Context("create-webhook account ops@dsb.no description Prod uptime + SSL");
+        await Run(NewHandler(), ctx);
+
+        // F3: account + description are captured at creation and forwarded to the service
+        // (description, then updownAccount — note the parameter order).
+        _webhook.Verify(s => s.CreateAsync("updown", "personal",
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            "Prod uptime + SSL", "ops@dsb.no",
+            It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        // ...and the confirmation surfaces the id, the one-time secret URL, and the labels.
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a,
+                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99", "ops@dsb.no", "Prod uptime + SSL")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWebhook_ExplicitUpdownSource_Works()
+    {
+        _webhook.Setup(s => s.CreateAsync("updown", "personal",
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new WebhookCreateResult("def67890", "TOKzz",
+                new WebhookTokenEntity { Id = "def67890" }));
+
+        var ctx = Context("create-webhook updown account a@b.no description hello world");
         await Run(NewHandler(), ctx);
 
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a,
-                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99")),
+            It.Is<IActivity>(a => TextContains(a, "def67890", "/api/v1/ingest/updown/TOKzz")),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWebhook_MissingDescription_Rejected()
+    {
+        var ctx = Context("create-webhook account ops@dsb.no");   // no description
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "required")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _webhook.Verify(s => s.CreateAsync(It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -92,7 +131,7 @@ public class TeamsBotHandlerWebhookCommandsTests
             It.IsAny<CancellationToken>()), Times.Once);
         _webhook.Verify(s => s.CreateAsync(It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
-            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

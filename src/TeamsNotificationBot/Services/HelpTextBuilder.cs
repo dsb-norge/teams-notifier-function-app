@@ -53,7 +53,8 @@ public static class HelpTextBuilder
         "Cards carry **no clickable buttons** and are labelled *unverified sender*. Only the updown.io " +
         "downtime link is clickable.\n\n" +
         "**Commands** (run in the target channel/chat):\n" +
-        "- **create-webhook** `[updown]` — create a webhook for this conversation; returns the secret URL once\n" +
+        "- **create-webhook** `account <updown account> description <description>` — create a webhook for " +
+        "this conversation; account + description are required (they help humans track it); returns the secret URL once\n" +
         "- **list-webhooks** — show configured webhooks (id, target, events, last received) — never the secret\n" +
         "- **configure-webhook** `<id>` `<description|account|events>` `<value>` — update settings\n" +
         "  - `events` takes a comma list, e.g. `check.down,check.up,check.ssl_expiration`, or `all`\n" +
