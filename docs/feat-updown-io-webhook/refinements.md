@@ -17,7 +17,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | OPEN |
+| F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | FIXED (worker); host-side `requests` residual |
 | F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | OPEN |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | PROPOSED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | PROPOSED |
@@ -98,7 +98,16 @@ worker, so empirical header discovery is required.
 
 ---
 
-## F9 — Webhook token logged in cleartext in App Insights  **[HIGH, OPEN]**
+## F9 — Webhook token logged in cleartext in App Insights  **[HIGH — worker-side FIXED; host-side residual]**
+
+> **Resolution (this branch):** `TokenRedactingTelemetryInitializer` now scrubs `TraceTelemetry.Message`
+> and any `ISupportProperties` custom properties (e.g. hosting `RequestPath`), in addition to
+> `RequestTelemetry.Url`/`Name` — so all **worker-emitted** telemetry (incl. the ASP.NET Core
+> "Request starting/finished" traces) is redacted. **Residual:** the host-generated `requests`
+> telemetry for an isolated-worker HTTP trigger isn't reachable from a worker initializer; the token
+> may still appear in `requests.url`. Verify post-deploy; if it persists, mitigate host-side (host.json
+> / RBAC on App Insights read) — tracked as an F9 follow-up. Regression tests added
+> (`TokenRedactingTelemetryInitializerTests`).
 
 ### Observation (manual-verification §6)
 The plan requires the ingest URL's token segment to be redacted to `/api/v1/ingest/updown/***`
