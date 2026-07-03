@@ -13,7 +13,7 @@
 >
 > Kept as the audit trail of what was found (F1–F12), why, and how it was verified live.
 
-Living backlog of refinements discovered **after** the 1.6.0 release, during operational
+Archived record of refinements discovered **after** the 1.6.0 release, during operational
 verification of the feature in the **dev** environment (`func-ikt-ops-teams-notifier-dev`,
 sub `ss12-IKT-DEV`). Sources: operator (Peder) manual testing in Teams, Claude's live
 Azure/App-Insights verification, and a GitHub Advanced Security / code-quality scan.
