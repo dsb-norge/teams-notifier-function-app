@@ -23,7 +23,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
-| F5 | `help <command>` doesn't work for individual commands | Low | PROPOSED |
+| F5 | `help <command>` doesn't work for individual commands | Low | FIXED |
 | F4 | No `show-webhook <id>` command | Low | FIXED |
 | F6 | `configure-webhook` doesn't show before/after values | Low | FIXED |
 | F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | OPEN |
@@ -334,7 +334,14 @@ of the three repos' code.
 
 ---
 
-## F5 — `help <command>` doesn't work per-command  **[Low, PROPOSED]**
+## F5 — `help <command>` doesn't work per-command  **[Low — FIXED]**
+
+> **Resolution (this branch):** added `HelpTextBuilder.CommandHelp(command)` with detailed per-command
+> help for every routed command, and `HandleHelpAsync` now consults it before the "unknown topic"
+> fallback — so `help configure-webhook`, `help create-webhook`, etc. work. Webhook help spells out
+> each argument; the event list + default set are sourced from `UpdownEventTypes` (no drift).
+> `Overview()` and the fallback advertise `help <command>`. Tests: per-command help content, a
+> completeness guard asserting every routed command has an entry, unknown→null, and handler dispatch.
 
 ### Current state
 `HandleHelpAsync` (`TeamsBotHandler.cs:186-204`) dispatches only **section topics** (`aliases`,

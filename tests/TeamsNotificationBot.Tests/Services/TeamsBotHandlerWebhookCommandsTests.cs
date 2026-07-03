@@ -201,6 +201,29 @@ public class TeamsBotHandlerWebhookCommandsTests
     }
 
     [Fact]
+    public async Task Help_PerCommand_ReturnsDetailedHelp()
+    {
+        var ctx = Context("help configure-webhook");
+        await Run(NewHandler(), ctx);
+
+        // F5: `help <command>` resolves per-command help (fields + full event list).
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "configure-webhook", "check.performance_drop", "before")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Help_UnknownTopic_HintsPerCommandHelp()
+    {
+        var ctx = Context("help totally-bogus");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "Unknown help topic", "help <command>")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ShowWebhook_Found_SendsSingleCard()
     {
         _webhook.Setup(s => s.GetByIdAsync("abc12345")).ReturnsAsync(new WebhookTokenEntity
