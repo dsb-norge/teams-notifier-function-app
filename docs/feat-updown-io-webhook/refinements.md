@@ -25,7 +25,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
 | F5 | `help <command>` doesn't work for individual commands | Low | PROPOSED |
 | F4 | No `show-webhook <id>` command | Low | FIXED |
-| F6 | `configure-webhook` doesn't show before/after values | Low | PROPOSED |
+| F6 | `configure-webhook` doesn't show before/after values | Low | FIXED |
 | F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | OPEN |
 | G* | GHAS / CodeQL / AI scan findings | mostly noise | see §G |
 
@@ -378,7 +378,13 @@ card. Refactor the per-webhook FactSet out of `WebhookListCardBuilder` into a sh
 
 ---
 
-## F6 — `configure-webhook` shows no before/after  **[Low, PROPOSED]**
+## F6 — `configure-webhook` shows no before/after  **[Low — FIXED]**
+
+> **Resolution (this branch):** `configure-webhook` now reads the entity up front (reporting
+> not-found early), captures the old value of the changed field, and confirms
+> `✅ Webhook <id> — <field>: before … → after …`, or `ℹ️ … <field> unchanged (…)` when identical.
+> Tests: before/after shown, unchanged reported, not-found reported (+ existing configure tests
+> updated for the up-front read).
 
 ### Current state
 Confirmation is one flat line reporting only the field name

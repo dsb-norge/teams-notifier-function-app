@@ -595,17 +595,32 @@ public class TeamsBotHandler : TeamsActivityHandler
         var origParts = originalText.TrimStart('/').Split(' ', 4, StringSplitOptions.RemoveEmptyEntries);
         var value = origParts.Length > 3 ? origParts[3].Trim() : string.Empty;
 
-        bool ok;
+        // Read current state up front so we can report not-found early and show before → after (F6).
+        var existing = await _webhookService!.GetByIdAsync(id);
+        if (existing is null)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text($"Webhook **{id}** not found."), ct);
+            return;
+        }
+
+        string displayField, oldValue, newValue;
         switch (field)
         {
             case "description":
             case "desc":
-                ok = await _webhookService!.ConfigureAsync(id, value, null, null);
+                displayField = "description";
+                oldValue = existing.Description ?? string.Empty;
+                newValue = value;
+                await _webhookService.ConfigureAsync(id, value, null, null);
                 break;
             case "account":
-                ok = await _webhookService!.ConfigureAsync(id, null, value, null);
+                displayField = "account";
+                oldValue = existing.UpdownAccount ?? string.Empty;
+                newValue = value;
+                await _webhookService.ConfigureAsync(id, null, value, null);
                 break;
             case "events":
+                displayField = "events";
                 var requested = value
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .Select(e => e.ToLowerInvariant())
@@ -630,7 +645,9 @@ public class TeamsBotHandler : TeamsActivityHandler
                     events = requested;
                 }
 
-                ok = await _webhookService!.ConfigureAsync(id, null, null, events);
+                oldValue = string.Join(", ", existing.GetEnabledEvents());
+                newValue = string.Join(", ", events);
+                await _webhookService.ConfigureAsync(id, null, null, events);
                 break;
             default:
                 await turnContext.SendActivityAsync(MessageFactory.Text(
@@ -638,9 +655,17 @@ public class TeamsBotHandler : TeamsActivityHandler
                 return;
         }
 
-        await turnContext.SendActivityAsync(MessageFactory.Text(
-            ok ? $"✅ Webhook **{id}** updated ({field})."
-               : $"Webhook **{id}** not found."), ct);
+        await turnContext.SendActivityAsync(
+            MessageFactory.Text(BuildConfigureConfirmation(id, displayField, oldValue, newValue)), ct);
+    }
+
+    // Shows before → after for the changed field, or an explicit "unchanged" when the value is identical (F6).
+    private static string BuildConfigureConfirmation(string id, string field, string oldValue, string newValue)
+    {
+        static string Fmt(string v) => string.IsNullOrEmpty(v) ? "_(empty)_" : $"`{v}`";
+        return string.Equals(oldValue, newValue, StringComparison.Ordinal)
+            ? $"ℹ️ Webhook **{id}** — {field} unchanged ({Fmt(oldValue)})."
+            : $"✅ Webhook **{id}** — {field}:\n\n- before: {Fmt(oldValue)}\n- after: {Fmt(newValue)}";
     }
 
     private async Task HandleListWebhooksAsync(ITurnContext turnContext, CancellationToken ct)
