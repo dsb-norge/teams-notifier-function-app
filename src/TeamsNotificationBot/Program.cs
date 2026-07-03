@@ -287,6 +287,10 @@ var host = new HostBuilder()
 
         // Bot service (uses CloudAdapter + TableClient for proactive messaging)
         services.AddSingleton<IBotService, BotService>();
+
+        // Warm the updown source-IP allowlist at startup so it's populated before the first webhook
+        // (refinements.md F1) — best-effort, staleness-gated, detached from worker readiness.
+        services.AddHostedService<UpdownIpAllowlistWarmupService>();
     })
     .Build();
 

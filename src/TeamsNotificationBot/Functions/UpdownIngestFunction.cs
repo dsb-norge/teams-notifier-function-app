@@ -73,7 +73,7 @@ public class UpdownIngestFunction
         var ipMode = GetIpFilterMode();
         if (ipMode != "off")
         {
-            var allowlist = await _ipAllowlist.GetOrRefreshAsync(TimeSpan.FromHours(GetAllowlistMaxAgeHours()), "lazy");
+            var allowlist = await _ipAllowlist.GetOrRefreshAsync(UpdownWebhookConfig.AllowlistMaxAge, "lazy");
             var entries = allowlist?.GetCidrs() ?? [];
 
             if (!IpMatcher.IsAllowed(sourceIp, entries))
@@ -263,11 +263,6 @@ public class UpdownIngestFunction
         var mode = Environment.GetEnvironmentVariable("UpdownWebhook__IpFilterMode")?.Trim().ToLowerInvariant();
         return mode is "off" or "log-only" or "enforce" ? mode : "log-only";
     }
-
-    private static int GetAllowlistMaxAgeHours() =>
-        int.TryParse(Environment.GetEnvironmentVariable("UpdownWebhook__IpAllowlistMaxAgeHours"), out var v) && v > 0
-            ? Math.Min(v, 8760)   // clamp to 1 year — guards TimeSpan.FromHours against a misconfigured overflow
-            : 48;
 
     /// <summary>Reads the body with a hard cap. Returns (tooLarge, body); body is "" when tooLarge.</summary>
     private static async Task<(bool tooLarge, string body)> ReadBodyAsync(HttpRequest req, int maxBytes)
