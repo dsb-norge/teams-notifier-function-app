@@ -44,4 +44,44 @@ public class UpdownWebhookConfigTests
             Environment.SetEnvironmentVariable(EnvVar, prev);
         }
     }
+
+    private const string ModeVar = "UpdownWebhook__IpFilterMode";
+
+    [Fact]
+    public void IpFilterMode_DefaultsToEnforce_WhenUnset()
+    {
+        var prev = Environment.GetEnvironmentVariable(ModeVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(ModeVar, null);
+            // Secure by default — a deployment enforces the source-IP allowlist unless deliberately loosened.
+            Assert.Equal("enforce", UpdownWebhookConfig.IpFilterMode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ModeVar, prev);
+        }
+    }
+
+    [Theory]
+    [InlineData("off", "off")]
+    [InlineData("log-only", "log-only")]
+    [InlineData("enforce", "enforce")]
+    [InlineData("ENFORCE", "enforce")]     // case-insensitive
+    [InlineData("  off  ", "off")]         // trimmed
+    [InlineData("bogus", "enforce")]       // invalid → secure default
+    [InlineData("", "enforce")]            // empty → secure default
+    public void IpFilterMode_HonorsValidValues_ElseSecureDefault(string envValue, string expected)
+    {
+        var prev = Environment.GetEnvironmentVariable(ModeVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(ModeVar, envValue);
+            Assert.Equal(expected, UpdownWebhookConfig.IpFilterMode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ModeVar, prev);
+        }
+    }
 }

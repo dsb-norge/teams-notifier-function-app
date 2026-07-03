@@ -232,8 +232,8 @@ It never shares code with the AAD-gated routes.
   is AllowAnonymous this is defensive/forward-looking — see `easy_auth_excluded_paths`.)
 - **Source-IP allowlist — defense-in-depth, not the primary control.** The ingress optionally
   restricts callers to updown's published IPs (resolved from `ips.updown.io`), with modes
-  `off` / `log-only` (default) / `enforce`. `enforce` returns `403` for a non-updown IP; an
-  empty/unresolved list never blocks (fail-safe). Managed via the `show-ip-allow-list` /
+  `off` / `log-only` / `enforce` (**default — secure by default**). `enforce` returns `403` for a
+  non-updown IP; an empty/unresolved list never blocks (fail-safe). Managed via the `show-ip-allow-list` /
   `update-ip-allow-list` bot commands. The token remains the primary gate.
 - **No secrets in telemetry.** `TokenRedactingTelemetryInitializer` strips the `{token}` segment
   from App Insights request URLs; logged values pass through `LogSanitizer`.
@@ -288,7 +288,7 @@ config appsettings set ...`) only when you need to deviate from the default.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `UpdownWebhook__IpFilterMode` | `log-only` | Source-IP allowlist mode: `off` / `log-only` / `enforce`. |
+| `UpdownWebhook__IpFilterMode` | `enforce` | Source-IP allowlist mode: `off` / `log-only` / `enforce`. Secure by default; loosen (per-deployment via `az`, or `local.settings.json` for local curl testing) only when needed — an `az` override reverts to this default on the next infra apply. |
 | `UpdownWebhook__IpAllowlistHost` | `ips.updown.io` | DNS name resolved for the allowlist. |
 | `UpdownWebhook__IpAllowlistMaxAgeHours` | `48` | Staleness threshold that triggers a lazy allowlist refresh. |
 | `UpdownWebhook__DebugLogPayload` | `false` | When `true`, logs the raw webhook body (sanitized, no token) at Debug. Turn off after troubleshooting. |

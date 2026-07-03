@@ -82,9 +82,10 @@ The message will be queued and processed by the QueueProcessor, but since Teams 
 The updown ingress (`POST /api/v1/ingest/updown/{token}`) is **anonymous** — no EasyAuth headers.
 Two things to know for local testing:
 
-1. **Disable the source-IP filter** so requests from your machine aren't rejected. It defaults to
-   `log-only` (which already lets everything through while logging), but to be explicit set
-   `UpdownWebhook__IpFilterMode=off` in `local.settings.json`. Only `enforce` would return `403`.
+1. **Disable the source-IP filter** so requests from your machine aren't rejected. It now defaults to
+   `enforce` (secure by default), which — once the allowlist resolves `ips.updown.io` — would `403`
+   your machine's IP. Set `UpdownWebhook__IpFilterMode=off` in `local.settings.json` for local curl
+   testing (`log-only` also works — it logs but never blocks).
 2. **You need a webhook token.** Create one via the `create-webhook` bot command (online mode), or
    for a pure-offline test insert a row into the Azurite `webhooktokens` table with
    `RowKey = SHA-256(hex)` of your chosen token (see `WebhookService.Sha256Hex`).

@@ -66,8 +66,8 @@ public static class HelpTextBuilder
         "- **show-ip-allow-list** `updown` — show the source-IP allowlist (mode, entries, last refresh)\n" +
         "- **update-ip-allow-list** `updown` — refresh the allowlist from updown's published IPs\n\n" +
         "The ingress is also protected by a **source-IP allowlist** of updown's published IPs " +
-        "(`ips.updown.io`). It has three modes (app setting `UpdownWebhook__IpFilterMode`): `off`, " +
-        "`log-only` (default — logs but never blocks), and `enforce` (rejects non-updown IPs). " +
+        "(`ips.updown.io`). It has three modes (app setting `UpdownWebhook__IpFilterMode`): `enforce` " +
+        "(default — rejects non-updown IPs), `log-only` (logs but never blocks), and `off`. " +
         "The list refreshes automatically when stale, and on demand via **update-ip-allow-list**.\n\n" +
         "**Events** (default = all except `check.performance_drop`): `check.down`, `check.up`, " +
         "`check.ssl_invalid`, `check.ssl_valid`, `check.ssl_expiration`, `check.ssl_renewed`, " +

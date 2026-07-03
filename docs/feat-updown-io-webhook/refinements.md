@@ -20,6 +20,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | **FIXED** — client IP is in the `CLIENT-IP` header on Flex; verified live (real IP logged) |
 | F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | 1.7.0 verified: worker traces **redacted ✅**; host `requests.url` **still leaks** (residual) |
 | F11 | Outbound Teams send throttled (429) under burst — no Retry-After/backoff | Medium | FIXED (backoff); Retry-After honoring pending deploy-confirm |
+| F12 | Insecure default: IP filter defaulted to `log-only` (observe, never block) | Medium | FIXED — default is now `enforce` (secure by default) |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED (verified live 1.7.0) |
@@ -205,6 +206,43 @@ capped backoff, retry-then-succeed, rethrow-after-max, no-retry-on-non-throttle)
 back off exponentially rather than honoring the exact header. The retry logs `ExceptionType` — a
 deployed build will reveal the SDK's real 429 shape and whether a precise `Retry-After` is available to
 honor (then we can upgrade backoff → Retry-After). End-to-end confirmation rides on the F8 debug deploy.
+
+---
+
+## F12 — Insecure default: IP filter should be `enforce`, not `log-only`  **[Medium — FIXED]**
+
+### Rationale
+The source-IP filter defaulted to `log-only` (observe, never block), so a deployment was **open by
+default** and had to be *opted into* security. The better model is **secure by default in code**:
+default to `enforce`, and let a deployment *loosen* it deliberately (per-deployment `az` override that
+reverts to the secure default on the next infra apply, or `local.settings.json` for local curl
+testing). This became viable only once **F8** (real client IP via `CLIENT-IP`) landed — the two ship
+together.
+
+Safe to default on: the ingest handler's **empty-list fail-safe** still allows when the allowlist
+hasn't populated (no fresh-deploy outage), and the **F1** startup warm-up populates it; once populated,
+non-updown IPs get `403`.
+
+### Resolution (this branch)
+`UpdownWebhookConfig.IpFilterMode` now defaults to `enforce` (was `log-only`); the mode read moved out
+of `UpdownIngestFunction` into the shared config and is unit-tested (default + off/log-only/enforce +
+invalid→enforce). Local dev templates (`local.settings.json.example`, `setup-local.sh`) set
+`IpFilterMode=off` so `func host start` doesn't enforce. Docs updated (authentication, deployment-guide,
+troubleshooting, bot-commands, local-development, in-app help).
+
+### Secure-defaults audit (per operator ask — "look for other similar debug/loose settings")
+Checked every env toggle; **`IpFilterMode` was the only insecure default.** The rest are already
+opt-in / secure by default:
+
+| Setting | Default | Secure? |
+|---|---|---|
+| `UpdownWebhook__IpFilterMode` | ~~`log-only`~~ → **`enforce`** | now ✅ |
+| `UpdownWebhook__DebugLogPayload` | off | ✅ (debug opt-in) |
+| `UpdownWebhook__DebugLogHeaders` | off | ✅ (debug opt-in) |
+| `DEBUG_MODE` (alias-list endpoint) | off | ✅ (opt-in) |
+| `TEAMS_INTEGRATION_DISABLED` | false (integration **on**) | ✅ (functional default) |
+| `UpdownWebhook__MaxBodyBytes` | 28 KB cap | ✅ (cap present) |
+| rate limits (`RateLimit__*`) | on (60/60, 100/60) | ✅ (limits on) |
 
 ---
 
