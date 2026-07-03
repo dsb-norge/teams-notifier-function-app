@@ -410,6 +410,15 @@ Azure Functions Flex Consumption uses **per-function scaling**: each queue trigg
 | `maxPollingInterval` | 2 seconds | Polling frequency |
 | `visibilityTimeout` | 30 seconds | Retry delay after failed processing |
 
+**Outbound throttling (429) resilience:** Bot Framework throttles a bot's outbound sends under burst
+(e.g. many updown events at once), surfacing as `ReplyToActivity … '(429) TooManyRequests'`. `BotService`
+wraps each send in `ThrottleRetry`, which retries the whole send with **capped exponential backoff**
+on a detected 429, then rethrows so the queue can still retry. At the defaults (4 attempts, 20 s cap)
+that is 3 waits between attempts — 1 s, 2 s, 4 s — each `Math.Min(2^(n-1), cap)` so the cap only
+binds once the attempt count is raised.
+This smooths short bursts without burning the queue's dequeue budget (a persistent throttle would
+otherwise reach `maxDequeueCount` and poison the card).
+
 **Poison queue monitoring:**
 
 When a message exceeds `maxDequeueCount`, it moves to the corresponding `-poison` queue. The `PoisonQueueMonitorFunction` triggers on poison queue messages and sends an Adaptive Card alert to the channel configured by the `PoisonAlertAlias` environment variable. To prevent cascading failures (creating `-poison-poison` queues), the monitor function catches all exceptions internally.

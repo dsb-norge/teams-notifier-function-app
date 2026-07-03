@@ -31,15 +31,18 @@ Commands are case-insensitive. Arguments are separated by spaces.
 
 ### help
 
-Displays a help overview with links to specific topics. Use `help <topic>` for detailed guidance
-on a specific area.
+Displays a help overview with links to specific topics. Use `help <topic>` for a section, or
+`help <command>` for detailed, per-argument help on any single command (e.g. `help configure-webhook`
+explains each field and lists all event types + defaults).
 
 ```
 help              — overview and topic list
 help aliases      — alias management commands
 help endpoints    — API endpoint reference
+help webhooks     — updown.io webhook ingress
 help queues       — poison queue management
 help diagnostics  — health checks and troubleshooting
+help <command>    — full usage + arguments for one command (e.g. help create-webhook)
 ```
 
 **Example response:**
@@ -50,10 +53,11 @@ Teams Notification Bot — Help
 Available topics:
   help aliases      Alias management commands
   help endpoints    API endpoint reference
+  help webhooks     updown.io webhook ingress
   help queues       Poison queue management
   help diagnostics  Health checks and troubleshooting
 
-Type "help <topic>" for details.
+Type "help <topic>" for a section, or "help <command>" for one command.
 ```
 
 ---
@@ -275,26 +279,33 @@ is stored. See the [API Reference](api-reference.md) for the endpoint and payloa
 
 Webhook management commands require a valid Entra ID identity (same as queue commands).
 
-### create-webhook `[updown]`
+### create-webhook `[updown]` `account <account>` `description <description>`
 
-Creates a webhook bound to the **current** conversation and returns its secret URL **once**. The
-source defaults to `updown` (the only supported source today). The default event filter is all
-events **except** `check.performance_drop`.
+Creates a webhook bound to the **current** conversation and returns its secret URL **once**. Both
+**account** and **description** are **required** — they help humans track which updown account a
+webhook belongs to and what it's for (both are free text; `account` may contain `@`/`/`, and must
+come before `description`). An optional leading `updown` source token is accepted (`updown` is the
+only supported source today). The default event filter is all events **except**
+`check.performance_drop`.
 
 **Example:**
 
 ```
-@<bot-display-name> create-webhook
+@<bot-display-name> create-webhook account ops@dsb.no description Prod uptime + SSL
 ```
 
 **Response (the URL is shown only once — paste it into updown.io):**
 
 ```
 ✅ Webhook a1b2c3d4 created for this channel.
+- Account: ops@dsb.no
+- Description: Prod uptime + SSL
 Paste this URL into updown.io — it is a secret and is shown only once:
 https://<function-app-name>.azurewebsites.net/api/v1/ingest/updown/<token>
 Enabled events: check.down, check.up, check.ssl_invalid, check.ssl_valid, check.ssl_expiration, check.ssl_renewed.
 ```
+
+Both fields remain editable later via **configure-webhook**.
 
 ---
 
@@ -302,6 +313,14 @@ Enabled events: check.down, check.up, check.ssl_invalid, check.ssl_valid, check.
 
 Displays configured webhooks as an Adaptive Card — id, source, target, description, updown account
 label, enabled events, creator, created time, and last-received time. **Never** shows the token/URL.
+
+---
+
+### show-webhook `<id>`
+
+Displays a **single** webhook's details — the same facts as **list-webhooks** but for one id (handy
+when the list is long). Replies *Webhook `<id>` not found.* if the id is unknown. **Never** shows the
+token/URL.
 
 ---
 
@@ -324,6 +343,9 @@ Updates one setting of a webhook. `field` is one of:
 
 Valid event types: `check.down`, `check.up`, `check.ssl_invalid`, `check.ssl_valid`,
 `check.ssl_expiration`, `check.ssl_renewed`, `check.performance_drop`.
+
+The confirmation shows the value **before → after** for the changed field, or reports it
+**unchanged** when the new value is identical.
 
 ---
 
@@ -377,14 +399,16 @@ This is a convenient reference for platform engineers onboarding to the notifica
 
 ### delete-post
 
-Delete a message previously sent by the bot. To use this command, reply to the bot's message in a
-team channel thread and type `delete-post`.
+Delete a message previously sent by the bot. To target the message, either **reply to** it or
+**quote** it (Teams' quote gesture) and type `delete-post`. Quoting is the natural way to delete an
+**older** card that isn't the latest in the thread — the bot reads the quoted message id, the reply
+id, or the thread-root id, in that order.
 
 **Constraints:**
 
 - Only works in **team channels** (not personal or group chat)
 - Only deletes messages **sent by the bot** — cannot delete user messages
-- Must be sent as a **reply** in the thread containing the target message
+- Must **reference** the target message (reply to it, or quote it)
 
 **Example:**
 
@@ -423,6 +447,7 @@ data are restricted to team channels and personal chat where administrative acce
 | delete-post | Yes | -- | -- |
 | create-webhook | Yes | Yes | Yes |
 | list-webhooks | Yes | Yes | Yes |
+| show-webhook | Yes | Yes | Yes |
 | configure-webhook | Yes | Yes | Yes |
 | rotate-webhook | Yes | Yes | Yes |
 | remove-webhook | Yes | Yes | Yes |

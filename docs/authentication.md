@@ -235,8 +235,20 @@ It never shares code with the AAD-gated routes.
   `off` / `log-only` / `enforce` (**default — secure by default**). `enforce` returns `403` for a
   non-updown IP; an empty/unresolved list never blocks (fail-safe). Managed via the `show-ip-allow-list` /
   `update-ip-allow-list` bot commands. The token remains the primary gate.
-- **No secrets in telemetry.** `TokenRedactingTelemetryInitializer` strips the `{token}` segment
-  from App Insights request URLs; logged values pass through `LogSanitizer`.
+  - **Client IP source (Flex):** the real caller IP is read from the `CLIENT-IP` request header (the
+    ARR front end sets it; `X-Forwarded-For`/`X-Azure-*` are absent on Flex Consumption + isolated
+    worker, where the connection is loopback). See `IpMatcher.ClientIpHeaders`.
+  - **Allowlist lifecycle:** populated automatically — a startup warm-up (`IHostedService`) plus a
+    lazy refresh on ingest when the cached list is stale (default 48 h). No bot command or deploy step
+    needed; `update-ip-allow-list` forces an immediate refresh.
+- **Token redaction in telemetry — partial.** The token must never reach App Insights. Worker-emitted
+  telemetry is scrubbed: `TokenRedactingTelemetryInitializer` rewrites `.../ingest/updown/<token>` →
+  `/***` in `RequestTelemetry` **and** `TraceTelemetry`, and all logged values pass through
+  `LogSanitizer`. **Residual:** the HTTP `requests` telemetry for an isolated-worker trigger is emitted
+  by the **Functions host**, which a worker-registered initializer can't reach, so `requests.url` may
+  still contain the raw token. Mitigate by restricting **App Insights read access**; rotate a webhook
+  (`rotate-webhook <id>`) if its URL may have been exposed. (Tracked in
+  `docs/feat-updown-io-webhook/refinements.md` F9.)
 - Cards are rendered by the app (validator-safe, no actionable content), labelled *unverified
   sender*, so a leaked token is bounded to benign card text.
 
@@ -250,7 +262,7 @@ across callers. Two disjoint rules apply:
 | Zone | Key | Window / limit |
 |------|-----|----------------|
 | AAD routes (`/api/v1/notify\|alert\|send\|checkin\|aliases`) | `X-MS-CLIENT-PRINCIPAL-ID` (per authenticated caller, set by EasyAuth) | 60 req / 60 s |
-| updown ingress (`/api/v1/ingest/*`) | **source IP** (`X-Forwarded-For` first hop) | 100 req / 60 s (defaults) |
+| updown ingress (`/api/v1/ingest/*`) | **source IP** (resolved via `IpMatcher.ClientIpHeaders` — `CLIENT-IP` on Flex; see §5) | 100 req / 60 s (defaults) |
 
 Counters are stored in the `ThrottlingTrollCounters` Azure Table; exceeding a limit returns
 `429 Too Many Requests` with a `Retry-After` header. The AAD rule uses a negative-lookahead pattern
