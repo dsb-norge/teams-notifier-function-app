@@ -17,16 +17,17 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | FIXED (worker); host-side `requests` residual |
-| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | FIXED (code); needs post-deploy header verify |
+| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | 1.7.0 verified: **still broken** on Flex — header-dump diagnostic added |
+| F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | 1.7.0 verified: worker traces **redacted ✅**; host `requests.url` **still leaks** (residual) |
+| F11 | Outbound Teams send throttled (429) under burst — no Retry-After/backoff | Medium | FIXED (backoff); Retry-After honoring pending deploy-confirm |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
-| F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED |
+| F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED (verified live 1.7.0) |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | cleanup done; origin narrowed (operational) |
 | F5 | `help <command>` doesn't work for individual commands | Low | FIXED |
-| F4 | No `show-webhook <id>` command | Low | FIXED |
+| F4 | No `show-webhook <id>` command | Low | FIXED (verified live 1.7.0) |
 | F6 | `configure-webhook` doesn't show before/after values | Low | FIXED |
-| F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | FIXED |
+| F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | FIXED (verified live 1.7.0) |
 | G* | GHAS / CodeQL / AI scan findings | mostly noise | see §G |
 
 ---
@@ -157,6 +158,36 @@ exposure — arguably the most serious finding, since the token is the *primary*
 ### Verified by
 Claude, App Insights query 2026-07-02 — raw bogus token present in both `requests.url` and hosting
 `traces`. Code inspected: initializer only branches on `RequestTelemetry`.
+
+---
+
+## F11 — Outbound Teams send throttled (429) under burst  **[Medium — backoff FIXED; Retry-After pending deploy-confirm]**
+
+### Observation (manual-verification §5, 1.7.0 on dev)
+During the burst test, App Insights logged `ReplyToActivity operation returned an invalid status code
+'(429) TooManyRequests' - RemoteError: Too many requests., Throttled` (×2). That's **Bot Framework
+throttling the bot's outbound sends**. Cards still arrived and **nothing hit the poison queue**, so the
+queue-retry absorbed it — but only by luck of a brief throttle.
+
+### Root cause
+`SendProactiveAdaptiveCardAsync` / `SendMessageAsync` → `ContinueConversationAsync` → `SendActivityAsync`;
+a 429 throws and propagates to `QueueProcessorFunction`, which logs "Failed to deliver" and **rethrows**
+(`QueueProcessorFunction.cs:116-121`). The queue then re-delivers on its fixed 30 s visibility timeout,
+up to `maxDequeueCount` (5) — **ignoring the BF `Retry-After`**. A sustained throttle (> ~2.5 min) would
+exhaust the dequeue budget and **poison the card**.
+
+### Resolution (this branch)
+`ThrottleRetry.ExecuteAsync` wraps both outbound sends in `BotService`: on a detected 429 it retries the
+whole send (fresh request each attempt — no request-reuse pitfall) with **capped exponential backoff**
+(1 s, 2 s, 4 s … ≤ 20 s, up to 4 attempts), then rethrows on a persistent throttle so the queue still
+retries later. 429 is detected via `HttpRequestException.StatusCode` or the connector's
+"…'(429) TooManyRequests'…" message. Unit-tested (detection incl. inner-exception + message forms,
+capped backoff, retry-then-succeed, rethrow-after-max, no-retry-on-non-throttle).
+
+**Pending deploy-confirm:** the current exception surface doesn't expose a parsed `Retry-After`, so we
+back off exponentially rather than honoring the exact header. The retry logs `ExceptionType` — a
+deployed build will reveal the SDK's real 429 shape and whether a precise `Retry-After` is available to
+honor (then we can upgrade backoff → Retry-After). End-to-end confirmation rides on the F8 debug deploy.
 
 ---
 

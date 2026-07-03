@@ -57,14 +57,14 @@ public class BotService : IBotService
                 $"No conversation reference found for '{partitionKey}'/'{rowKey}'. Ensure the bot is installed.");
         }
 
-        await _adapter.ContinueConversationAsync(
+        await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
                 await turnContext.SendActivityAsync(MessageFactory.Text(message), ct);
             },
-            CancellationToken.None);
+            CancellationToken.None), logger: _logger);
 
         await UpdateLastUpdatedAsync(partitionKey, rowKey);
         _logger.LogInformation("Sent text message to {PK}/{RK}", partitionKey, rowKey);
@@ -88,7 +88,7 @@ public class BotService : IBotService
                 $"No conversation reference found for '{partitionKey}'/'{rowKey}'. Ensure the bot is installed.");
         }
 
-        await _adapter.ContinueConversationAsync(
+        await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
@@ -101,7 +101,7 @@ public class BotService : IBotService
                 var activity = MessageFactory.Attachment(attachment);
                 await turnContext.SendActivityAsync(activity, ct);
             },
-            CancellationToken.None);
+            CancellationToken.None), logger: _logger);
 
         await UpdateLastUpdatedAsync(partitionKey, rowKey);
         _logger.LogInformation("Sent adaptive card to {PK}/{RK}", partitionKey, rowKey);
