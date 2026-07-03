@@ -1,5 +1,18 @@
 # updown.io webhook ingress — refinements & operational-verification findings
 
+> **📦 ARCHIVED — historical record, not maintained.** All FIXED behaviour here is now folded into the
+> permanent docs (this `feat-updown-io-webhook/` folder is slated for deletion):
+> - **Bot commands** (create-webhook required account/description, show-webhook, per-command help,
+>   configure-webhook before/after, delete-post quote) → [bot-commands.md](../bot-commands.md).
+> - **Source-IP allowlist** — `enforce` default, `CLIENT-IP` source on Flex, warm-up/lazy refresh,
+>   token-in-telemetry residual → [authentication.md §5](../authentication.md) / [§7](../authentication.md).
+> - **Outbound 429 backoff** → [architecture.md § Queue Processing](../architecture.md).
+> - **Operational symptoms** (enforce 403s, outbound throttling, token in App Insights) →
+>   [troubleshooting.md](../troubleshooting.md). Module `IpSecurityRestriction` length validation shipped
+>   in the Terraform module (v1.1.1).
+>
+> Kept as the audit trail of what was found (F1–F12), why, and how it was verified live.
+
 Living backlog of refinements discovered **after** the 1.6.0 release, during operational
 verification of the feature in the **dev** environment (`func-ikt-ops-teams-notifier-dev`,
 sub `ss12-IKT-DEV`). Sources: operator (Peder) manual testing in Teams, Claude's live
@@ -7,9 +20,6 @@ Azure/App-Insights verification, and a GitHub Advanced Security / code-quality s
 
 Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awaiting go) ·
 **FIXED** · **WON'T FIX** (with rationale).
-
-> Nothing here is implemented in app code yet unless marked FIXED. The only code change made
-> alongside this doc is the **module hardening** (§M1), which was explicitly greenlit.
 
 ---
 
