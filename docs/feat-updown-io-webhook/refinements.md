@@ -451,17 +451,18 @@ established pattern:
   Correct security posture. **Keep.**
 - `TeamsBotHandler.cs:1252` (delete), `:1647` (auto-refresh ref), `:420` (channel fetch), `:177`
   (nudge); `BotService.cs:296,419` — all best-effort with `LogWarning`/`LogDebug`. **Keep.**
-- `TeamsBotHandler.cs:441` — bare `catch { /* best-effort */ }` (no variable, no log). The one worth
-  a small tidy: catch `Exception ex` + `LogDebug` for symmetry. **Low-priority tidy.**
+- `TeamsBotHandler.cs:441` — bare `catch { /* best-effort */ }`. **FIXED** — narrowed to
+  `catch (JsonException)` (the method is `static`, so there's no logger; narrowing is the right fix and
+  clears the generic-catch finding).
 
 ### G2 — "Constant condition … always not null because of IsNullOrEmpty" (CodeQL, 5) — **WON'T FIX**
 All five are the same pattern: a `channelData?.Team?.Id` null-conditional feeding
 `string.IsNullOrEmpty(...)`. `IsNullOrEmpty` correctly handles null; this is a **CodeQL imprecision**
 around null-conditional + `IsNullOrEmpty`, not a real always-true/false bug. False positives.
 
-### G3 — "Missed opportunity to use Where" (CodeQL, 1) — **optional nit**
-`TeamsBotHandler.cs:414` foreach+if → `.Where(...)`. Pure style, 1 line. Fold in if we touch the
-method; not worth a standalone change.
+### G3 — "Missed opportunity to use Where" (CodeQL, 1) — **FIXED**
+`TeamsBotHandler.cs:414` foreach+if → `foreach (… channels.Where(c => !IsNullOrEmpty(c.Name)))`.
+Behavior-preserving; covered by existing channel-enumeration tests.
 
 ### G4 — AI findings on `TeamsBotHandlerWebhookCommandsTests.cs` (3) — **fold into F3/F6 work**
 1. Unused mock fields — valid minor cleanup; do it when we edit this test file for F3/F6.
