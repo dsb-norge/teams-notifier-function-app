@@ -23,6 +23,46 @@ public static class IpMatcher
     }
 
     /// <summary>
+    /// Client-IP headers to try, in priority order, before falling back to the connection's remote
+    /// address. On Flex Consumption + .NET isolated worker the request is proxied to the worker over
+    /// loopback, so <c>RemoteIpAddress</c> is <c>::1</c>/<c>127.0.0.1</c> and the real client IP must
+    /// come from a forwarding header. <c>X-Forwarded-For</c> is the standard (first hop = client);
+    /// the App Service front end also sets <c>X-Azure-ClientIP</c> (real client) and
+    /// <c>X-Azure-SocketIP</c> (immediate socket). Order matters — first that parses wins.
+    /// </summary>
+    public static readonly string[] ClientIpHeaders =
+    [
+        "X-Forwarded-For",
+        "X-Azure-ClientIP",
+        "X-Azure-SocketIP",
+        "X-Client-IP",
+        "X-Real-IP",
+    ];
+
+    /// <summary>
+    /// Extracts the best client IP from forwarding headers (<see cref="ClientIpHeaders"/>, first hop),
+    /// falling back to <paramref name="remoteIp"/>. Returns a bare, normalised IP (port stripped) or
+    /// null if nothing parses. <paramref name="getHeader"/> returns the raw header value (comma-joined
+    /// if multi-valued) or null when absent — kept as a delegate so the logic is host-agnostic and
+    /// unit-testable without an <c>HttpRequest</c>.
+    /// </summary>
+    public static string? ExtractClientIp(Func<string, string?> getHeader, string? remoteIp)
+    {
+        foreach (var header in ClientIpHeaders)
+        {
+            var raw = getHeader(header);
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            var firstHop = raw.Split(',')[0];
+            if (ParseClientIp(firstHop) is { } ip)
+                return ip;
+        }
+
+        return ParseClientIp(remoteIp);
+    }
+
+    /// <summary>
     /// Normalises a client-IP candidate to a bare IP string, or null if it doesn't parse.
     /// Handles a plain IP ("1.2.3.4", "2001:db8::1") and the "ip:port" / "[ipv6]:port" forms that
     /// Azure's <c>X-Forwarded-For</c> uses — stripping the port so allowlist matching works.

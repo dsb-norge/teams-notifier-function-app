@@ -26,15 +26,16 @@ public static class RateLimitPolicy
         string.IsNullOrEmpty(principalId) ? null : principalId;
 
     /// <summary>
-    /// Source-IP identity for the ingest zone (first X-Forwarded-For hop, else remote IP). The IP is
-    /// normalised via <see cref="Helpers.IpMatcher.ParseClientIp"/> — Azure's X-Forwarded-For carries
-    /// an ephemeral `ip:port`, so without stripping the port every request would get a distinct key
-    /// and the per-source-IP limit would never trigger.
+    /// Source-IP identity for the ingest zone. Resolves the client IP from forwarding headers
+    /// (<see cref="Helpers.IpMatcher.ClientIpHeaders"/> — X-Forwarded-For, then the App Service
+    /// X-Azure-* headers), falling back to <paramref name="remoteIp"/>. Ports are stripped so the
+    /// same client shares one key; without this every request keys distinctly and the per-source-IP
+    /// limit never triggers. See refinements.md (F8): on Flex + isolated worker the connection is
+    /// loopback, so a forwarding header is the only real source.
     /// </summary>
-    public static string SourceIpKey(string? xForwardedFor, string? remoteIp)
+    public static string SourceIpKey(Func<string, string?> getHeader, string? remoteIp)
     {
-        var firstHop = xForwardedFor?.Split(',')[0];
-        var ip = Helpers.IpMatcher.ParseClientIp(firstHop) ?? Helpers.IpMatcher.ParseClientIp(remoteIp);
+        var ip = Helpers.IpMatcher.ExtractClientIp(getHeader, remoteIp);
         return $"ingest-ip:{ip ?? "unknown"}";
     }
 

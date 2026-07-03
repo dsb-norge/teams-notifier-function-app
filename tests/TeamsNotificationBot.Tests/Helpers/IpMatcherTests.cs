@@ -72,4 +72,49 @@ public class IpMatcherTests
     {
         Assert.Null(IpMatcher.ParseClientIp(input));
     }
+
+    // --- ExtractClientIp (F8): header priority + loopback fallback ---
+
+    private static Func<string, string?> Headers(Dictionary<string, string?> map) =>
+        name => map.TryGetValue(name, out var v) ? v : null;
+
+    [Fact]
+    public void ExtractClientIp_PrefersForwardedForFirstHop()
+    {
+        var ip = IpMatcher.ExtractClientIp(
+            Headers(new() { ["X-Forwarded-For"] = "1.2.3.4:5678, 5.6.7.8", ["X-Azure-ClientIP"] = "9.9.9.9" }),
+            "::1");
+        Assert.Equal("1.2.3.4", ip);
+    }
+
+    [Fact]
+    public void ExtractClientIp_FallsThroughToAzureHeaders_WhenForwardedForAbsentOrGarbage()
+    {
+        // XFF present but unparseable → skip to next header (X-Azure-ClientIP).
+        var ip = IpMatcher.ExtractClientIp(
+            Headers(new() { ["X-Forwarded-For"] = "garbage", ["X-Azure-ClientIP"] = "203.0.113.7" }),
+            "::1");
+        Assert.Equal("203.0.113.7", ip);
+    }
+
+    [Fact]
+    public void ExtractClientIp_UsesSocketIp_WhenOnlyThatIsPresent()
+    {
+        var ip = IpMatcher.ExtractClientIp(
+            Headers(new() { ["X-Azure-SocketIP"] = "198.51.100.9" }), "127.0.0.1");
+        Assert.Equal("198.51.100.9", ip);
+    }
+
+    [Fact]
+    public void ExtractClientIp_FallsBackToRemoteIp_WhenNoHeaders()
+    {
+        Assert.Equal("192.0.2.1", IpMatcher.ExtractClientIp(_ => null, "192.0.2.1"));
+    }
+
+    [Fact]
+    public void ExtractClientIp_ReturnsNull_WhenNothingResolvable()
+    {
+        Assert.Null(IpMatcher.ExtractClientIp(_ => null, null));
+        Assert.Null(IpMatcher.ExtractClientIp(_ => "not-an-ip", "also-bad"));
+    }
 }
