@@ -365,6 +365,25 @@ public class TeamsBotHandlerWebhookCommandsTests
     }
 
     [Fact]
+    public async Task ConfigureWebhook_ConcurrentDelete_ReportsNotFound()
+    {
+        // Exists at the pre-read, but ConfigureAsync reports not-found (deleted in between) — the
+        // handler must not send a misleading "updated" confirmation.
+        SetupExisting();
+        var handler = NewHandler();
+        // Override NewHandler's default ConfigureAsync→true (registered last so it wins).
+        _webhook.Setup(s => s.ConfigureAsync("abc12345", It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<IReadOnlyList<string>?>())).ReturnsAsync(false);
+
+        var ctx = Context("configure-webhook abc12345 description whatever");
+        await Run(handler, ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "abc12345", "not found")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task RemoveWebhook_Found_Confirms()
     {
         _webhook.Setup(s => s.RemoveByIdAsync("abc12345")).ReturnsAsync(true);
