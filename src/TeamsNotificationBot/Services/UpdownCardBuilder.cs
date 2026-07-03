@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using TeamsNotificationBot.Models;
 
@@ -48,12 +49,12 @@ public static class UpdownCardBuilder
         {
             case "check.down":
                 Fact("Reason", e.Downtime?.Error ?? e.Check?.Error ?? e.Description);
-                Fact("Down since", e.Downtime?.StartedAt ?? e.Check?.DownSince);
+                Fact("Down since", FormatTimestamp(e.Downtime?.StartedAt ?? e.Check?.DownSince));
                 break;
 
             case "check.up":
                 Fact("Downtime", HumanizeDuration(e.Downtime?.Duration));
-                Fact("Recovered at", e.Downtime?.EndedAt ?? e.Check?.UpSince);
+                Fact("Recovered at", FormatTimestamp(e.Downtime?.EndedAt ?? e.Check?.UpSince));
                 break;
 
             case "check.ssl_invalid":
@@ -63,18 +64,18 @@ public static class UpdownCardBuilder
                 break;
 
             case "check.ssl_valid":
-                Fact("Valid until", e.Ssl?.Cert?.To);
+                Fact("Valid until", FormatTimestamp(e.Ssl?.Cert?.To));
                 break;
 
             case "check.ssl_expiration":
                 if (e.Ssl?.DaysBeforeExpiration is int days)
                     Fact("Days to expiry", days.ToString());
-                Fact("Expires", e.Ssl?.Cert?.To);
+                Fact("Expires", FormatTimestamp(e.Ssl?.Cert?.To));
                 break;
 
             case "check.ssl_renewed":
-                Fact("New cert valid until", e.Ssl?.NewCert?.To);
-                Fact("Previous cert expired", e.Ssl?.OldCert?.To);
+                Fact("New cert valid until", FormatTimestamp(e.Ssl?.NewCert?.To));
+                Fact("Previous cert expired", FormatTimestamp(e.Ssl?.OldCert?.To));
                 break;
 
             case "check.performance_drop":
@@ -82,7 +83,7 @@ public static class UpdownCardBuilder
                 break;
         }
 
-        Fact("Time", e.Time);
+        Fact("Time", FormatTimestamp(e.Time));
 
         body.Add(new { type = "FactSet", facts });
 
@@ -130,6 +131,24 @@ public static class UpdownCardBuilder
         "check.performance_drop" => ("📉", "Warning", "Performance drop"),
         _ => ("ℹ️", "Default", eventType ?? "event")
     };
+
+    /// <summary>
+    /// Formats an updown ISO-8601 timestamp as an explicit, unambiguous UTC string
+    /// (<c>yyyy-MM-dd HH:mm:ss UTC</c>). Bare ISO strings are auto-localized by the Teams client —
+    /// rendering ambiguous <c>MM/DD/YYYY</c> with no timezone (refinements.md F10) — so we pre-format
+    /// to a non-ISO string the client leaves alone. Unparseable input is returned unchanged so an
+    /// unexpected format degrades gracefully rather than being dropped.
+    /// </summary>
+    internal static string? FormatTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+
+        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dto)
+            ? dto.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)
+            : value;
+    }
 
     /// <summary>Only https://updown.io/ URLs are treated as safe to linkify.</summary>
     internal static bool IsUpdownUrl(string? url) =>

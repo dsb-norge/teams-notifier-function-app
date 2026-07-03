@@ -26,7 +26,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F5 | `help <command>` doesn't work for individual commands | Low | FIXED |
 | F4 | No `show-webhook <id>` command | Low | FIXED |
 | F6 | `configure-webhook` doesn't show before/after values | Low | FIXED |
-| F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | OPEN |
+| F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | FIXED |
 | G* | GHAS / CodeQL / AI scan findings | mostly noise | see §G |
 
 ---
@@ -406,7 +406,15 @@ value, no "unchanged" case. `ConfigureAsync` returns only a `bool`.
 
 ---
 
-## F10 — Card dates render US-format; times lack a timezone  **[Low, OPEN]**
+## F10 — Card dates render US-format; times lack a timezone  **[Low — FIXED]**
+
+> **Resolution (this branch):** the card passed raw ISO-8601 timestamps, which the Teams client
+> auto-localizes (ambiguous `MM/DD/YYYY`, no timezone). `UpdownCardBuilder.FormatTimestamp` now
+> pre-formats every timestamp (Time, Down since, Recovered at, cert dates) to an explicit
+> `yyyy-MM-dd HH:mm:ss UTC` (InvariantCulture, normalized to UTC) — a non-ISO string the client leaves
+> alone; unparseable values pass through unchanged. Tests: ISO→UTC (incl. offset normalization),
+> invalid/empty passthrough, and the per-event card assertions updated. The minor duration truncation
+> (585 s → "9 minutes") is left as-is — defensible ("at least N minutes") and matches existing tests.
 
 ### Observation (manual-verification §4, real cards delivered to a Teams PM)
 All six event cards rendered correctly (colour, facts, downtime link gated to `updown.io`, "unverified
