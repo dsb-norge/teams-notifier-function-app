@@ -56,6 +56,7 @@ public static class HelpTextBuilder
         "- **create-webhook** `account <updown account> description <description>` — create a webhook for " +
         "this conversation; account + description are required (they help humans track it); returns the secret URL once\n" +
         "- **list-webhooks** — show configured webhooks (id, target, events, last received) — never the secret\n" +
+        "- **show-webhook** `<id>` — show one webhook's details (same info as the list, for a single id)\n" +
         "- **configure-webhook** `<id>` `<description|account|events>` `<value>` — update settings\n" +
         "  - `events` takes a comma list, e.g. `check.down,check.up,check.ssl_expiration`, or `all`\n" +
         "- **rotate-webhook** `<id>` — issue a new URL, invalidating the old token\n" +

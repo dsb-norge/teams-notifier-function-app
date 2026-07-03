@@ -192,6 +192,49 @@ public class TeamsBotHandlerWebhookCommandsTests
     }
 
     [Fact]
+    public async Task ShowWebhook_Found_SendsSingleCard()
+    {
+        _webhook.Setup(s => s.GetByIdAsync("abc12345")).ReturnsAsync(new WebhookTokenEntity
+        {
+            Id = "abc12345", RowKey = "hash", Source = "updown", TargetType = "personal",
+            Description = "prod site", UpdownAccount = "ops@dsb.no", EnabledEvents = "",
+            CreatedByName = "Tester", CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        var ctx = Context("show-webhook abc12345");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => ((Activity)a).Attachments != null &&
+                ((Activity)a).Attachments!.Any(att => att.ContentType == "application/vnd.microsoft.card.adaptive")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ShowWebhook_NotFound_Reported()
+    {
+        _webhook.Setup(s => s.GetByIdAsync("missing1")).ReturnsAsync((WebhookTokenEntity?)null);
+
+        var ctx = Context("show-webhook missing1");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "missing1", "not found")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ShowWebhook_NoId_ShowsUsage()
+    {
+        var ctx = Context("show-webhook");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "Usage", "show-webhook")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ConfigureWebhook_Events_Valid_UpdatesFilter()
     {
         var ctx = Context("configure-webhook abc12345 events check.down,check.up,check.ssl_expiration");
