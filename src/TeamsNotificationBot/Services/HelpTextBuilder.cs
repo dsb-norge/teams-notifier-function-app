@@ -15,7 +15,9 @@ public static class HelpTextBuilder
         "- **help endpoints** \u2014 API endpoints for sending notifications\n" +
         "- **help webhooks** \u2014 updown.io monitoring webhook ingress\n" +
         "- **help queues** \u2014 poison queue monitoring and retry\n" +
-        "- **help diagnostics** \u2014 health checks and troubleshooting";
+        "- **help diagnostics** \u2014 health checks and troubleshooting\n\n" +
+        "For any single command, run **help <command>** \u2014 e.g. **help configure-webhook** \u2014 for its " +
+        "full usage and arguments.";
 
     public static string Aliases() =>
         "**Aliases** are named routing targets. Each alias points to a specific " +
@@ -90,6 +92,120 @@ public static class HelpTextBuilder
         "- **setup-guide** \u2014 Entra ID authentication setup for API callers\n" +
         "- **delete-post** \u2014 reply to a bot message in a channel to delete it\n" +
         "- **help** `[topic]` \u2014 this help system";
+
+    /// <summary>
+    /// Detailed help for a single command (<c>help &lt;command&gt;</c>), or null if the name isn't a
+    /// known command. Event lists are sourced from <see cref="Models.UpdownEventTypes"/> so they can't
+    /// drift from the code.
+    /// </summary>
+    public static string? CommandHelp(string command)
+    {
+        var allEvents = string.Join(", ", Models.UpdownEventTypes.All);
+        var defaultEvents = string.Join(", ", Models.UpdownEventTypes.DefaultEnabled);
+
+        return command switch
+        {
+            // --- Aliases ---
+            "set-alias" =>
+                "**set-alias** `<name>` `[description]`\n\n" +
+                "Create or update an alias that points at **this** conversation. External systems then " +
+                "deliver to it via `POST /api/v1/notify/<name>`.\n\n" +
+                "- `name` — the alias (letters, digits, `-`, `_`); used as the URL path segment.\n" +
+                "- `description` — optional free text shown in **list-aliases**.",
+            "create-alias" =>
+                "**create-alias**\n\nOpens an interactive card to create an alias for this conversation " +
+                "(an alternative to **set-alias**). Fill in the name + description and submit.",
+            "remove-alias" =>
+                "**remove-alias** `<name>`\n\nDelete an alias. External calls to that alias stop resolving. " +
+                "Does not affect other aliases pointing at the same conversation.",
+            "list-aliases" =>
+                "**list-aliases**\n\nShow every alias with its target conversation, description, and who " +
+                "created it. Read-only.",
+
+            // --- Webhooks (updown.io ingress) ---
+            "create-webhook" =>
+                "**create-webhook** `[updown]` `account <account>` `description <description>`\n\n" +
+                "Create an updown.io webhook for **this** conversation and return its secret ingest URL " +
+                "**once**. Both fields are required — they help humans manage multiple updown accounts:\n" +
+                "- `account` — the updown account this webhook belongs to (free text, e.g. an email like " +
+                "`ops@dsb.no`; may contain `/` and `@`).\n" +
+                "- `description` — what it's for (free text). Must come after `account`.\n\n" +
+                $"Newly created webhooks enable these events by default: {defaultEvents} " +
+                "(i.e. all except `check.performance_drop`). Change them later with **configure-webhook**.\n\n" +
+                "Example: `create-webhook account ops@dsb.no description Prod uptime + SSL`",
+            "configure-webhook" =>
+                "**configure-webhook** `<id>` `<field>` `<value>` — update one field of an existing webhook. " +
+                "The confirmation shows the value **before → after** (or reports it unchanged).\n\n" +
+                "Fields:\n" +
+                "- `description` (alias `desc`) `<text>` — human note.\n" +
+                "- `account` `<label>` — the updown account label (free text; may contain `/`, `@`).\n" +
+                "- `events` `<list|all>` — comma-separated event filter, or `all`.\n\n" +
+                $"Valid events: {allEvents}.\n" +
+                $"Default when a webhook is created: {defaultEvents} (all except `check.performance_drop`).\n\n" +
+                "Examples:\n" +
+                "- `configure-webhook <id> description Production site health`\n" +
+                "- `configure-webhook <id> account prod-monitoring / ops@dsb.no`\n" +
+                "- `configure-webhook <id> events check.down,check.up,check.ssl_expiration` (or `all`)",
+            "list-webhooks" or "list-webhook" =>
+                "**list-webhooks**\n\nShow all configured webhooks — id, target, account, description, " +
+                "enabled events, created-by, and last-received. Never shows the secret URL/token. Use " +
+                "**show-webhook** `<id>` for a single one.",
+            "show-webhook" =>
+                "**show-webhook** `<id>`\n\nShow one webhook's details — the same facts as **list-webhooks** " +
+                "but for a single id (handy when the list is long). Never shows the secret.",
+            "remove-webhook" =>
+                "**remove-webhook** `<id>`\n\nDelete a webhook. Its token stops working immediately and " +
+                "updown deliveries to that URL start failing. Irreversible — create a new one to replace it.",
+            "rotate-webhook" =>
+                "**rotate-webhook** `<id>`\n\nIssue a **new** secret URL for an existing webhook and " +
+                "invalidate the old token. Use if a URL may have leaked. Paste the new URL into updown; " +
+                "the id, target, and event filter are unchanged.",
+
+            // --- Source-IP allowlist ---
+            "show-ip-allow-list" or "show-ip-allowlist" =>
+                "**show-ip-allow-list** `updown`\n\nShow the updown source-IP allowlist: mode " +
+                "(`off` / `log-only` / `enforce`), entry count, when it last refreshed, and the CIDRs. " +
+                "The list is populated automatically (at startup and on ingest) and refreshed when stale.",
+            "update-ip-allow-list" or "update-ip-allowlist" =>
+                "**update-ip-allow-list** `updown`\n\nForce an immediate refresh of the source-IP allowlist " +
+                "from updown's published IPs (`ips.updown.io`), reporting added/removed entries. Normally " +
+                "unnecessary — the list refreshes on its own — but useful right after updown changes IPs.",
+
+            // --- Queues ---
+            "queue-status" =>
+                "**queue-status**\n\nShow message counts across all work and poison queues " +
+                "(`notifications`, `botoperations`, and their `-poison` companions). First stop when " +
+                "something looks stuck.",
+            "queue-peek" =>
+                "**queue-peek** `<queue>` `[N]`\n\nPreview up to `N` messages (default a small batch) from a " +
+                "queue **without** removing them. Use on a `-poison` queue to see why messages failed.",
+            "queue-retry" =>
+                "**queue-retry** `<queue>` `[N]`\n\nMove up to `N` messages from a poison queue back to its " +
+                "work queue for reprocessing. Use **queue-retry-all** to retry everything.",
+            "queue-retry-all" =>
+                "**queue-retry-all** `<queue>`\n\nMove **all** messages from a poison queue back for " +
+                "reprocessing. Prefer **queue-retry** `<queue>` `[N]` when you only want a few.",
+
+            // --- Diagnostics / misc ---
+            "checkin" =>
+                "**checkin**\n\nVerify the bot is running — replies with the app version and a timestamp. " +
+                "Also usable as an application heartbeat via `POST /api/v1/checkin/<alias>`.",
+            "setup-guide" =>
+                "**setup-guide**\n\nStep-by-step Entra ID setup for API callers (app registration, the " +
+                "`Notifications.Send` app role, and the token request) so external systems can call the " +
+                "`notify`/`alert`/`send`/`checkin` endpoints.",
+            "delete-post" =>
+                "**delete-post**\n\nDelete a bot message in a channel. **Reply to — or quote —** the bot " +
+                "message you want gone and send `delete-post`. The bot can only delete messages it sent.",
+            "help" =>
+                "**help** `[topic|command]`\n\n" +
+                "- `help` — overview.\n" +
+                "- `help <topic>` — a section: **aliases**, **endpoints**, **webhooks**, **queues**, " +
+                "**diagnostics**.\n" +
+                "- `help <command>` — detailed help for a single command, e.g. **help configure-webhook**.",
+            _ => null
+        };
+    }
 
     public static string UnknownCommand(string text) =>
         $"Unknown command: `{text}`\n\nRun **help** to see available topics.";

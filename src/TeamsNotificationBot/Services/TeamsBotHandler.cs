@@ -202,7 +202,10 @@ public class TeamsBotHandler : TeamsActivityHandler
             "queues" or "queue" => HelpTextBuilder.Queues(),
             "diagnostics" or "diagnostic" or "diag" => HelpTextBuilder.Diagnostics(),
             "" => HelpTextBuilder.Overview(),
-            _ => $"Unknown help topic: `{topic}`\n\nAvailable topics: **aliases**, **endpoints**, **webhooks**, **queues**, **diagnostics**"
+            // Per-command help (e.g. `help configure-webhook`) before falling back to "unknown topic".
+            _ => HelpTextBuilder.CommandHelp(topic)
+                 ?? $"Unknown help topic: `{topic}`\n\nTopics: **aliases**, **endpoints**, **webhooks**, " +
+                    "**queues**, **diagnostics**. Or try **help <command>**, e.g. **help configure-webhook**."
         };
 
         await turnContext.SendActivityAsync(MessageFactory.Text(text), cancellationToken);
