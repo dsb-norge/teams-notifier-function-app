@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.0...teams-notifier-function-app-v1.7.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **updown-webhook:** address PR [#97](https://github.com/dsb-norge/teams-notifier-function-app/issues/97) review (Copilot) ([bec2919](https://github.com/dsb-norge/teams-notifier-function-app/commit/bec29191369121bd65ea9cfaf18f44ac5fa7af67))
+* **updown-webhook:** back off on outbound 429 throttling (F11) ([e31a791](https://github.com/dsb-norge/teams-notifier-function-app/commit/e31a7910774434b554b9d8e3fee75d65fe5ff4a1))
+* **updown-webhook:** default IP filter to enforce (secure by default) (F12) ([5d0a6ad](https://github.com/dsb-norge/teams-notifier-function-app/commit/5d0a6adf11c1e2ea69c1d1e817173cad85b27871))
+* **updown-webhook:** read client IP from CLIENT-IP header on Flex (F8) ([5c670bd](https://github.com/dsb-norge/teams-notifier-function-app/commit/5c670bdf33f71c2ac16ba95bea8f530bba05b68f))
+
 ## [1.7.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.6.0...teams-notifier-function-app-v1.7.0) (2026-07-03)
 
 
