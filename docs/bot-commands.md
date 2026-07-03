@@ -53,10 +53,11 @@ Teams Notification Bot — Help
 Available topics:
   help aliases      Alias management commands
   help endpoints    API endpoint reference
+  help webhooks     updown.io webhook ingress
   help queues       Poison queue management
   help diagnostics  Health checks and troubleshooting
 
-Type "help <topic>" for details.
+Type "help <topic>" for a section, or "help <command>" for one command.
 ```
 
 ---
@@ -278,7 +279,7 @@ is stored. See the [API Reference](api-reference.md) for the endpoint and payloa
 
 Webhook management commands require a valid Entra ID identity (same as queue commands).
 
-### create-webhook `account <account>` `description <description>`
+### create-webhook `[updown]` `account <account>` `description <description>`
 
 Creates a webhook bound to the **current** conversation and returns its secret URL **once**. Both
 **account** and **description** are **required** — they help humans track which updown account a
