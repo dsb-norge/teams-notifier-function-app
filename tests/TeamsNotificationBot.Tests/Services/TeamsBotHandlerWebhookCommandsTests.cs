@@ -63,6 +63,15 @@ public class TeamsBotHandlerWebhookCommandsTests
     private Task Run(TeamsBotHandler handler, Mock<ITurnContext<IMessageActivity>> ctx) =>
         ((IAgent)handler).OnTurnAsync(ctx.Object);
 
+    // configure-webhook now reads the entity up front (F6 before/after), so it must exist.
+    private void SetupExisting(
+        string id = "abc12345", string desc = "old desc", string account = "old@acct", string events = "check.down")
+        => _webhook.Setup(s => s.GetByIdAsync(id)).ReturnsAsync(new WebhookTokenEntity
+        {
+            Id = id, RowKey = "hash", Source = "updown", TargetType = "personal",
+            Description = desc, UpdownAccount = account, EnabledEvents = events
+        });
+
     [Fact]
     public async Task CreateWebhook_RequiresAccountAndDescription_PassesThemThrough()
     {
@@ -237,6 +246,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_Events_Valid_UpdatesFilter()
     {
+        SetupExisting();
         var ctx = Context("configure-webhook abc12345 events check.down,check.up,check.ssl_expiration");
         await Run(NewHandler(), ctx);
 
@@ -249,6 +259,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_Events_All_ExpandsToAll()
     {
+        SetupExisting();
         var ctx = Context("configure-webhook abc12345 events all");
         await Run(NewHandler(), ctx);
 
@@ -260,6 +271,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_Events_Invalid_Rejected()
     {
+        SetupExisting();
         var ctx = Context("configure-webhook abc12345 events not-a-real-event");
         await Run(NewHandler(), ctx);
 
@@ -273,6 +285,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_Description_PreservesCasing()
     {
+        SetupExisting();
         var ctx = Context("configure-webhook abc12345 description Production Site Health");
         await Run(NewHandler(), ctx);
 
@@ -282,10 +295,50 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_Account_PreservesCasing()
     {
+        SetupExisting();
         var ctx = Context("configure-webhook abc12345 account Prod-Monitoring / Ops@dsb.no");
         await Run(NewHandler(), ctx);
 
         _webhook.Verify(s => s.ConfigureAsync("abc12345", null, "Prod-Monitoring / Ops@dsb.no", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfigureWebhook_ShowsBeforeAndAfter()
+    {
+        SetupExisting(desc: "old desc");
+        var ctx = Context("configure-webhook abc12345 description New shiny description");
+        await Run(NewHandler(), ctx);
+
+        // F6: confirmation shows both the previous and the new value.
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "before", "old desc", "after", "New shiny description")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfigureWebhook_NoChange_ReportedAsUnchanged()
+    {
+        SetupExisting(account: "ops@dsb.no");
+        var ctx = Context("configure-webhook abc12345 account ops@dsb.no");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "unchanged", "ops@dsb.no")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfigureWebhook_NotFound_Reported()
+    {
+        // No SetupExisting → GetByIdAsync returns null.
+        var ctx = Context("configure-webhook missing1 description whatever");
+        await Run(NewHandler(), ctx);
+
+        ctx.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => TextContains(a, "missing1", "not found")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _webhook.Verify(s => s.ConfigureAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<IReadOnlyList<string>?>()), Times.Never);
     }
 
     [Fact]
