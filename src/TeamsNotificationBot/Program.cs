@@ -74,7 +74,7 @@ var host = new HostBuilder()
                         },
                         IdentityIdExtractor = request =>
                             RateLimitPolicy.SourceIpKey(
-                                request.Headers.TryGetValue("X-Forwarded-For", out var xff) ? xff.ToString() : null,
+                                name => request.Headers.TryGetValue(name, out var v) ? v.ToString() : null,
                                 null),
                         UriPattern = RateLimitPolicy.IngestUriPattern
                     }

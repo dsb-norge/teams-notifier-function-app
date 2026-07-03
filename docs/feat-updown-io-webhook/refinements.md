@@ -18,7 +18,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
 | F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | FIXED (worker); host-side `requests` residual |
-| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | OPEN |
+| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | FIXED (code); needs post-deploy header verify |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | PROPOSED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | PROPOSED |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | PROPOSED |
@@ -31,7 +31,17 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 ---
 
-## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH, OPEN]**
+## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH — code FIXED; needs post-deploy header verify]**
+
+> **Resolution (this branch):** source-IP extraction is centralized in `IpMatcher.ExtractClientIp`,
+> which tries forwarding headers in priority order — `X-Forwarded-For` (first hop), then the App
+> Service `X-Azure-ClientIP` / `X-Azure-SocketIP` (and `X-Client-IP`/`X-Real-IP`) — before falling
+> back to `RemoteIpAddress`. Used by both the ingest handler and `RateLimitPolicy.SourceIpKey`.
+> **Still required:** deploy to dev and re-run an external POST to confirm which header actually
+> carries the client IP on Flex (log it), then re-verify enforce-mode + per-IP rate limiting. If
+> *no* header reaches the worker, fall back to the plan below (per-token rate limiting; token as the
+> primary control). Unit tests cover the header priority + fallthrough (`IpMatcherTests`,
+> `RateLimitPolicyTests`).
 
 ### Observation
 Operator's ingest tests logged `SourceIp=127.0.0.1` and `SourceIp=::1`. Claude then sent a
