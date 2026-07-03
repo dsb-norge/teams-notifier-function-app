@@ -17,7 +17,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | 1.7.0 verified: **still broken** on Flex — header-dump diagnostic added |
+| F8 | Source IP is always `::1`/`127.0.0.1` — real client IP never seen | **HIGH** | **FIXED** — client IP is in the `CLIENT-IP` header on Flex; verified live (real IP logged) |
 | F9 | Webhook token logged in **cleartext** in App Insights (redaction ineffective) | **HIGH** | 1.7.0 verified: worker traces **redacted ✅**; host `requests.url` **still leaks** (residual) |
 | F11 | Outbound Teams send throttled (429) under burst — no Retry-After/backoff | Medium | FIXED (backoff); Retry-After honoring pending deploy-confirm |
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
@@ -32,7 +32,17 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 ---
 
-## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH — still broken on Flex; discovery in progress]**
+## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH — FIXED, verified live]**
+
+> **Resolved (2026-07-03, debug build on dev):** the header-dump diagnostic revealed the client IP
+> arrives in the **`CLIENT-IP`** header (ARR front end), as `ip:port` —
+> `CLIENT-IP=91.229.21.100:10404`. `X-Forwarded-For` and `X-Azure-*` are **absent** on Flex; the `::1`
+> we kept seeing is `X-Original-For`/the loopback connection. Fix: `CLIENT-IP` is now first in
+> `IpMatcher.ClientIpHeaders` (port stripped by `ParseClientIp`); it's platform-set so it's the
+> trustworthy source for the allowlist. **Verified live:** an external POST from `91.229.21.100` now
+> logs `SourceIp=91.229.21.100` (was `::1`). Enforce-mode IP filtering and per-source-IP rate limiting
+> are therefore now viable. Unit test added (`ExtractClientIp_UsesClientIpHeader_OnFlex`); the
+> header-dump diagnostic is kept (off by default) for future header changes.
 
 > **1.7.0 live re-verification (2026-07-03):** the multi-header fix is deployed, but an external POST
 > from `91.229.21.100` **still logs `127.0.0.1`/`::1`** — so none of `X-Forwarded-For` /
