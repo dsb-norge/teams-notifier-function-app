@@ -329,10 +329,12 @@ public class UpdownIngestFunctionTests
             Environment.SetEnvironmentVariable("UpdownWebhook__DebugLogPayload", prev);
         }
 
+        // Assert the Debug entry actually contains the raw body (a distinctive substring from the
+        // CheckDown fixture), not merely that *some* Debug log was emitted.
         logger.Verify(l => l.Log(
             LogLevel.Debug,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((v, t) => true),
+            It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("teapot")),
             It.IsAny<Exception?>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
