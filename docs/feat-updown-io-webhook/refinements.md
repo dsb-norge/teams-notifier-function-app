@@ -22,7 +22,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F1 | IP allowlist not populated automatically at boot/deploy | Medium | FIXED |
 | F7 | `delete-post` does nothing on quoted / older cards | Medium | FIXED (quote parse); activity-id persistence not done |
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED |
-| F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
+| F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | cleanup done; origin narrowed (operational) |
 | F5 | `help <command>` doesn't work for individual commands | Low | FIXED |
 | F4 | No `show-webhook <id>` command | Low | FIXED |
 | F6 | `configure-webhook` doesn't show before/after values | Low | FIXED |
@@ -319,18 +319,27 @@ derived from conversation context; alias not part of the command).
 - The pre-1.6.0 dev app (1.5.1) didn't have this feature, so they can't predate today's deploy;
   yet 1.6.0 logs every bot-driven creation and these aren't logged.
 
-### Conclusion / hypotheses
-They were **not created through this app's bot handler**. Most likely something wrote directly to
-the `webhooktokens` table using an identity named `AppValidation-<date>-<guid>` — candidates: the
-module's `integration-test-example-02` (which "doubles as an integration test") or another
-validation harness, possibly misconfigured to touch dev storage. `AppValidation` appears in **none**
-of the three repos' code.
+### Conclusion (investigated — operational, no code change)
+Follow-up evidence narrows it down:
+- **`AppValidation-…` is not an Azure identity** — `az ad sp/app show` on the GUID returns "does not
+  exist", and no `AppValidation*` service principal exists. So it's a **synthetic Bot Framework sender
+  name** (`from.name`) minted by some tool; the GUID is a run-id, the `20260626` a mint date.
+- **The only data-plane writer on the dev storage is the app's own Managed Identity**
+  (`5f0ca180-…`, the sole `Storage Table Data Contributor`). So the rows were written **through the
+  app** (`WebhookService.CreateAsync`), i.e. by `create-webhook` **bot activities** posted to
+  `/api/messages` — not by a direct table write and not by Claude.
+- The missing "created" traces are consistent with **App Insights adaptive sampling** (host.json caps
+  at 20 items/s) dropping them during a burst.
+
+**Most likely origin:** an automated bot-validation / integration harness that posts synthetic
+`create-webhook` activities to the **dev** bot (the name pattern + burst timing fit). `AppValidation`
+is in none of the three repos, so it's an external tool/runner.
 
 ### Action
-- **Clean up:** remove the four `AppValidation-…` webhooks from dev (`remove-webhook <id>`) — they
-  are not real and their tokens are unaccounted-for (security hygiene: unknown live ingest tokens).
-- **Investigate origin:** confirm whether `integration-test-example-02` or any CI job authenticates
-  to / writes into the dev bot or dev storage. If so, isolate it to ephemeral infra.
+- **Clean up:** ✅ done — operator removed the `AppValidation-…` webhooks (and the F9 test webhook).
+- **Investigate origin (open, operational):** find the harness posting synthetic activities to the
+  dev bot's `/api/messages` and point it at ephemeral infra instead. Watch for recurrence; if it
+  reappears, the create is now captured with source IP + correlation (F8/F9 fixes) for tracing.
 
 ---
 
