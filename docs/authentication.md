@@ -262,7 +262,7 @@ across callers. Two disjoint rules apply:
 | Zone | Key | Window / limit |
 |------|-----|----------------|
 | AAD routes (`/api/v1/notify\|alert\|send\|checkin\|aliases`) | `X-MS-CLIENT-PRINCIPAL-ID` (per authenticated caller, set by EasyAuth) | 60 req / 60 s |
-| updown ingress (`/api/v1/ingest/*`) | **source IP** (`X-Forwarded-For` first hop) | 100 req / 60 s (defaults) |
+| updown ingress (`/api/v1/ingest/*`) | **source IP** (resolved via `IpMatcher.ClientIpHeaders` — `CLIENT-IP` on Flex; see §5) | 100 req / 60 s (defaults) |
 
 Counters are stored in the `ThrottlingTrollCounters` Azure Table; exceeding a limit returns
 `429 Too Many Requests` with a `Retry-After` header. The AAD rule uses a negative-lookahead pattern
