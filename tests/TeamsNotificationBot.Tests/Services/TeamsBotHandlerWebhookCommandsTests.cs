@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Data.Tables;
 using Azure.Storage.Queues;
 using Microsoft.Agents.Builder;
@@ -60,6 +61,24 @@ public class TeamsBotHandlerWebhookCommandsTests
         return needles.All(text.Contains);
     }
 
+    // Serializes the first Adaptive Card attachment and checks it contains all `needles`.
+    private static bool CardContains(IActivity a, params string[] needles)
+    {
+        var att = ((Activity)a).Attachments?.FirstOrDefault(x => x.ContentType == "application/vnd.microsoft.card.adaptive");
+        if (att is null) return false;
+        var json = JsonSerializer.Serialize(att.Content);
+        return needles.All(n => json.Contains(n, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // Same, but asserts none of `forbidden` appear (e.g. the token hash must never render).
+    private static bool CardLacks(IActivity a, params string[] forbidden)
+    {
+        var att = ((Activity)a).Attachments?.FirstOrDefault(x => x.ContentType == "application/vnd.microsoft.card.adaptive");
+        if (att is null) return false;
+        var json = JsonSerializer.Serialize(att.Content);
+        return forbidden.All(n => !json.Contains(n, StringComparison.OrdinalIgnoreCase));
+    }
+
     private Task Run(TeamsBotHandler handler, Mock<ITurnContext<IMessageActivity>> ctx) =>
         ((IAgent)handler).OnTurnAsync(ctx.Object);
 
@@ -91,10 +110,13 @@ public class TeamsBotHandlerWebhookCommandsTests
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
             "Prod uptime + SSL", "ops@dsb.no",
             It.IsAny<string>(), It.IsAny<string>()), Times.Once);
-        // ...and the confirmation surfaces the id, the one-time secret URL, and the labels.
+        // ...and the confirmation surfaces the id, the one-time secret URL, the labels, and the
+        // default enabled-events line — the events string is sourced from UpdownEventTypes.DefaultEnabled
+        // (a display path reading a source of truth; hardcoding it here could mask drift).
         ctx.Verify(t => t.SendActivityAsync(
             It.Is<IActivity>(a => TextContains(a,
-                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99", "ops@dsb.no", "Prod uptime + SSL")),
+                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99", "ops@dsb.no", "Prod uptime + SSL",
+                string.Join(", ", UpdownEventTypes.DefaultEnabled))),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -194,9 +216,12 @@ public class TeamsBotHandlerWebhookCommandsTests
         var ctx = Context("list-webhooks");
         await Run(NewHandler(), ctx);
 
+        // Assert the rendered card content (ToDisplayInfo mapping), not just that a card was sent —
+        // and that the SHA-256 RowKey (the token hash) never leaks into the card ("WithoutSecret").
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => ((Activity)a).Attachments != null &&
-                ((Activity)a).Attachments!.Any(att => att.ContentType == "application/vnd.microsoft.card.adaptive")),
+            It.Is<IActivity>(a =>
+                CardContains(a, "abc12345", "prod site", "prod / ops@dsb.no") &&
+                CardLacks(a, "hashvalue")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -206,9 +231,11 @@ public class TeamsBotHandlerWebhookCommandsTests
         var ctx = Context("help configure-webhook");
         await Run(NewHandler(), ctx);
 
-        // F5: `help <command>` resolves per-command help (fields + full event list).
+        // F5: `help <command>` routes to per-command help. Assert routing/structure markers (the
+        // field names + the before/after note) rather than duplicating the canonical event list —
+        // that list is covered against UpdownEventTypes in HelpTextBuilderTests.
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a, "configure-webhook", "check.performance_drop", "before")),
+            It.Is<IActivity>(a => TextContains(a, "configure-webhook", "description", "account", "events", "before")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -236,9 +263,10 @@ public class TeamsBotHandlerWebhookCommandsTests
         var ctx = Context("show-webhook abc12345");
         await Run(NewHandler(), ctx);
 
+        // Assert the card renders the requested webhook's facts (guards against returning the wrong
+        // entity or dropping fields), not merely that a card was sent.
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => ((Activity)a).Attachments != null &&
-                ((Activity)a).Attachments!.Any(att => att.ContentType == "application/vnd.microsoft.card.adaptive")),
+            It.Is<IActivity>(a => CardContains(a, "abc12345", "prod site", "ops@dsb.no")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -286,8 +314,11 @@ public class TeamsBotHandlerWebhookCommandsTests
         var ctx = Context("configure-webhook abc12345 events all");
         await Run(NewHandler(), ctx);
 
+        // Assert set-equality with the source of truth, not just matching Count — a same-length but
+        // wrong list (e.g. a duplicate replacing a missing event) would otherwise pass.
         _webhook.Verify(s => s.ConfigureAsync("abc12345", null, null,
-            It.Is<IReadOnlyList<string>>(l => l.Count == UpdownEventTypes.All.Count)),
+            It.Is<IReadOnlyList<string>>(l =>
+                l.Count == UpdownEventTypes.All.Count && UpdownEventTypes.All.All(l.Contains))),
             Times.Once);
     }
 
@@ -463,8 +494,10 @@ public class TeamsBotHandlerWebhookCommandsTests
 
         // Mode display must reflect the single source of truth (UpdownWebhookConfig.IpFilterMode,
         // secure default "enforce") — guards against a duplicate read drifting from actual enforcement.
+        // Also assert the entry count + both CIDRs render (this is the exact command from the incident).
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a, "allowlist", "10.0.0.0/8",
+            It.Is<IActivity>(a => TextContains(a, "allowlist", "1.2.3.4", "10.0.0.0/8",
+                "Entries: **2**",
                 $"Mode: **{TeamsNotificationBot.Helpers.UpdownWebhookConfig.IpFilterMode}**")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -493,8 +526,10 @@ public class TeamsBotHandlerWebhookCommandsTests
         await Run(NewHandler(), ctx);
 
         _ipAllowlist.Verify(s => s.RefreshAsync(It.IsAny<string>()), Times.Once);
+        // Assert all three counts from the AllowlistRefreshResult (Current=2, Added=1, Removed=0),
+        // not just the loose "2" — a swap of Added/Removed or a miscount would otherwise pass.
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a, "refreshed", "2")),
+            It.Is<IActivity>(a => TextContains(a, "refreshed", "**2**", "added 1", "removed 0")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
