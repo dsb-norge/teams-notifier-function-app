@@ -47,7 +47,8 @@ public class UpdownCardBuilderTests
         Assert.Contains("DOWN", raw);
         Assert.Contains("418", raw);                    // reason (apostrophe is JSON-escaped)
         Assert.Contains("teapot", raw);
-        Assert.Contains("2026-07-01T10:38:48Z", raw);   // down since
+        Assert.Contains("2026-07-01 10:38:48 UTC", raw); // down since (F10: explicit UTC, not raw ISO)
+        Assert.DoesNotContain("2026-07-01T10:38:48Z", raw); // raw ISO is reformatted, not passed through
         Assert.Contains("https://updown.io", raw);      // check url as text
     }
 
@@ -74,7 +75,7 @@ public class UpdownCardBuilderTests
         var (_, raw) = BuildCard(UpdownPayloads.SslExpiration);
         Assert.Contains("Warning", raw);
         Assert.Contains("Days to expiry", raw);
-        Assert.Contains("2018-12-07T21:00:18Z", raw);
+        Assert.Contains("2018-12-07 21:00:18 UTC", raw); // F10: explicit UTC, not raw ISO
     }
 
     [Fact]
@@ -89,7 +90,25 @@ public class UpdownCardBuilderTests
     public void SslRenewed_ShowsNewCertExpiry()
     {
         var (_, raw) = BuildCard(UpdownPayloads.SslRenewed);
-        Assert.Contains("2019-03-07T21:00:18Z", raw);
+        Assert.Contains("2019-03-07 21:00:18 UTC", raw); // F10: explicit UTC, not raw ISO
+    }
+
+    [Theory]
+    // F10: ISO-8601 → explicit, unambiguous UTC (Teams would otherwise auto-localize the bare ISO).
+    [InlineData("2026-07-02T10:48:48Z", "2026-07-02 10:48:48 UTC")]
+    [InlineData("2026-07-02T12:48:48+02:00", "2026-07-02 10:48:48 UTC")] // normalized to UTC
+    public void FormatTimestamp_IsoBecomesExplicitUtc(string input, string expected)
+    {
+        Assert.Equal(expected, UpdownCardBuilder.FormatTimestamp(input));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    [InlineData("not a date", "not a date")] // unparseable → passthrough (graceful)
+    public void FormatTimestamp_InvalidOrEmpty_ReturnsInput(string? input, string? expected)
+    {
+        Assert.Equal(expected, UpdownCardBuilder.FormatTimestamp(input));
     }
 
     [Fact]
