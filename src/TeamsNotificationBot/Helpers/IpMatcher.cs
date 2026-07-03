@@ -26,12 +26,19 @@ public static class IpMatcher
     /// Client-IP headers to try, in priority order, before falling back to the connection's remote
     /// address. On Flex Consumption + .NET isolated worker the request is proxied to the worker over
     /// loopback, so <c>RemoteIpAddress</c> is <c>::1</c>/<c>127.0.0.1</c> and the real client IP must
-    /// come from a forwarding header. <c>X-Forwarded-For</c> is the standard (first hop = client);
-    /// the App Service front end also sets <c>X-Azure-ClientIP</c> (real client) and
-    /// <c>X-Azure-SocketIP</c> (immediate socket). Order matters — first that parses wins.
+    /// come from a forwarding header.
+    ///
+    /// <c>CLIENT-IP</c> is first because that is the header the Azure App Service / Functions ARR
+    /// front end actually populates on Flex (confirmed empirically for this app, F8) — as
+    /// <c>ip:port</c>, which <see cref="ParseClientIp"/> normalises. It is set by the platform (not
+    /// forwarded from the caller), so it is also the more trustworthy source for the source-IP
+    /// allowlist. <c>X-Forwarded-For</c> and the <c>X-Azure-*</c> variants are kept as fallbacks for
+    /// portability to other hosting models (they were absent on Flex). Order matters — first that
+    /// parses wins.
     /// </summary>
     public static readonly string[] ClientIpHeaders =
     [
+        "CLIENT-IP",
         "X-Forwarded-For",
         "X-Azure-ClientIP",
         "X-Azure-SocketIP",

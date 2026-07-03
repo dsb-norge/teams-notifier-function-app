@@ -98,6 +98,27 @@ public class IpMatcherTests
     }
 
     [Fact]
+    public void ExtractClientIp_UsesClientIpHeader_OnFlex()
+    {
+        // F8: on Flex the ARR front end sets CLIENT-IP=<ip:port> (X-Forwarded-For is absent);
+        // the port must be stripped. This is the case confirmed live on dev.
+        var ip = IpMatcher.ExtractClientIp(
+            Headers(new() { ["CLIENT-IP"] = "91.229.21.100:10404", ["X-Original-For"] = "[::1]:49140" }),
+            "::1");
+        Assert.Equal("91.229.21.100", ip);
+    }
+
+    [Fact]
+    public void ExtractClientIp_PrefersClientIp_OverForwardedFor()
+    {
+        // CLIENT-IP is platform-set (trustworthy) and takes priority over a (client-suppliable) XFF.
+        var ip = IpMatcher.ExtractClientIp(
+            Headers(new() { ["CLIENT-IP"] = "203.0.113.9:5555", ["X-Forwarded-For"] = "1.2.3.4" }),
+            "::1");
+        Assert.Equal("203.0.113.9", ip);
+    }
+
+    [Fact]
     public void ExtractClientIp_UsesSocketIp_WhenOnlyThatIsPresent()
     {
         var ip = IpMatcher.ExtractClientIp(
