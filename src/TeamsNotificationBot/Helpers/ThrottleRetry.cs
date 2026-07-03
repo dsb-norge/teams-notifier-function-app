@@ -9,9 +9,12 @@ namespace TeamsNotificationBot.Helpers;
 /// send surfaces as an exception (`ReplyToActivity … '(429) TooManyRequests' … Throttled`). Without
 /// this, a 429 propagates to the queue trigger and burns the queue's limited dequeue budget
 /// (30 s × maxDequeueCount) — a sustained throttle could poison a card. This smooths short bursts by
-/// retrying the whole send operation with capped backoff (respecting a Retry-After when the
-/// exception exposes one), and rethrows on a persistent throttle so the queue can still retry later.
-/// See refinements.md F11.
+/// retrying the whole send operation with **capped exponential backoff**, and rethrows on a persistent
+/// throttle so the queue can still retry later. See refinements.md F11.
+///
+/// NOTE: the current exception surface does not expose a parsed <c>Retry-After</c>, so backoff is
+/// used (not the exact header). The retry logs the exception type; honoring an exact <c>Retry-After</c>
+/// is a future enhancement if a deployed build shows the SDK exposes one.
 ///
 /// Retries the whole operation (which builds a fresh request each attempt), not an HttpRequestMessage,
 /// so there is no "request already sent" reuse problem.
@@ -55,10 +58,17 @@ public static class ThrottleRetry
         if (!IsThrottling(ex, out var retryAfter))
             return false;
 
-        // Honor Retry-After when present; otherwise capped exponential backoff (1s, 2s, 4s, …).
-        var d = retryAfter ?? TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-        if (d < TimeSpan.Zero) d = TimeSpan.Zero;
-        delay = d > cap ? cap : d;
+        if (retryAfter is { } ra)
+        {
+            delay = ra < TimeSpan.Zero ? TimeSpan.Zero : (ra > cap ? cap : ra);
+            return true;
+        }
+
+        // Capped exponential backoff (1s, 2s, 4s, …). Clamp the SECONDS to the cap before building the
+        // TimeSpan — Math.Pow overflows to +Infinity for large attempt counts, and
+        // TimeSpan.FromSeconds(Infinity) throws, which would turn a throttle into a hard failure.
+        var backoffSeconds = Math.Min(Math.Pow(2, attempt - 1), cap.TotalSeconds);
+        delay = TimeSpan.FromSeconds(backoffSeconds);
         return true;
     }
 

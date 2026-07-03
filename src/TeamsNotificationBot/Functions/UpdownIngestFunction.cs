@@ -263,12 +263,22 @@ public class UpdownIngestFunction
         string.Equals(Environment.GetEnvironmentVariable("UpdownWebhook__DebugLogHeaders"),
             "true", StringComparison.OrdinalIgnoreCase);
 
+    // Explicit allowlist of IP-carrying headers whose VALUES are safe to log for the F8 diagnostic.
+    // Deliberately not a substring match (e.g. "client"/"for") — that would also dump sensitive headers
+    // like X-MS-CLIENT-PRINCIPAL. On Flex the real client IP is in CLIENT-IP (see IpMatcher).
+    private static readonly HashSet<string> DiagnosticIpHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CLIENT-IP", "X-Forwarded-For", "X-Azure-ClientIP", "X-Azure-SocketIP",
+        "X-Client-IP", "X-Real-IP", "X-Original-For", "Forwarded",
+    };
+
     /// <summary>
-    /// Diagnostic for F8: on Flex + isolated worker the real client IP wasn't seen in any header we
-    /// tried (X-Forwarded-For / X-Azure-*), so this logs the IP-carrying headers + names to discover
-    /// which header (if any) actually carries it. Off by default; enable via
-    /// <c>UpdownWebhook__DebugLogHeaders=true</c>. Logs only IP-ish header values (names matching
-    /// for/ip/client/addr/forwarded) plus all header names — never Authorization/Cookie values.
+    /// Diagnostic that discovered the F8 fix: on Flex + isolated worker the real client IP is in the
+    /// <c>CLIENT-IP</c> header (not <c>X-Forwarded-For</c>/<c>X-Azure-*</c>, which are absent). Kept
+    /// (off by default; enable via <c>UpdownWebhook__DebugLogHeaders=true</c>) for future header
+    /// changes. Logs the VALUES of an explicit IP-header allowlist only (<see cref="DiagnosticIpHeaders"/>)
+    /// plus all header NAMES — never the values of sensitive headers (Authorization, Cookie,
+    /// X-MS-CLIENT-PRINCIPAL, …).
     /// </summary>
     private void LogHeaderDiagnostics(HttpRequest req, string? correlationId)
     {
@@ -276,12 +286,7 @@ public class UpdownIngestFunction
             return;
 
         var ipHeaders = string.Join("; ", req.Headers
-            .Where(h =>
-            {
-                var k = h.Key.ToLowerInvariant();
-                return k.Contains("for") || k.Contains("ip") || k.Contains("client")
-                       || k.Contains("addr") || k.Contains("forwarded");
-            })
+            .Where(h => DiagnosticIpHeaders.Contains(h.Key))
             .Select(h => $"{h.Key}={h.Value}"));
         var names = string.Join(",", req.Headers.Keys);
 

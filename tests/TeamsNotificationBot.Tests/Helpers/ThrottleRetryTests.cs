@@ -66,6 +66,22 @@ public class ThrottleRetryTests
     }
 
     [Fact]
+    public void TryGetThrottleDelay_HugeAttempt_DoesNotOverflow()
+    {
+        // Math.Pow(2, 100) is +Infinity; clamping seconds before TimeSpan.FromSeconds must avoid the
+        // OverflowException that would otherwise turn a throttle into a hard failure.
+        var cap = TimeSpan.FromSeconds(20);
+        var result = false;
+        TimeSpan delay = default;
+        var ex = Record.Exception(() =>
+            result = ThrottleRetry.TryGetThrottleDelay(new Exception(ThrottleMessage), attempt: 100, cap, out delay));
+
+        Assert.Null(ex);            // no overflow throw
+        Assert.True(result);
+        Assert.Equal(cap, delay);   // clamped to cap
+    }
+
+    [Fact]
     public void TryGetThrottleDelay_FalseForNonThrottle()
     {
         Assert.False(ThrottleRetry.TryGetThrottleDelay(new Exception("nope"), attempt: 1, TimeSpan.FromSeconds(5), out _));

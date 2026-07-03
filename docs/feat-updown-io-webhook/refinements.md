@@ -45,24 +45,12 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 > are therefore now viable. Unit test added (`ExtractClientIp_UsesClientIpHeader_OnFlex`); the
 > header-dump diagnostic is kept (off by default) for future header changes.
 
-> **1.7.0 live re-verification (2026-07-03):** the multi-header fix is deployed, but an external POST
-> from `91.229.21.100` **still logs `127.0.0.1`/`::1`** — so none of `X-Forwarded-For` /
-> `X-Azure-ClientIP` / `X-Azure-SocketIP` reach the isolated worker on Flex. The real client IP is
-> simply not available to the worker in any header we tried. Enforce-mode IP filtering and per-source-IP
-> rate limiting therefore **cannot work** (everything keys to one loopback bucket).
->
-> **Diagnostic added (this branch):** `LogHeaderDiagnostics` on the ingest handler logs the IP-carrying
-> request headers + all header names, gated by `UpdownWebhook__DebugLogHeaders=true` (off by default,
-> never logs Authorization/Cookie values). A debug build deployed to dev + one external POST will reveal
-> which header (if any) actually carries the client IP.
->
-> **Two outcomes:** (a) a header *does* carry it → point `IpMatcher.ClientIpHeaders` at it, done; or
-> (b) *no* header carries it on Flex → accept the platform limit: keep IP filtering at `log-only`/`off`
-> (don't rely on `enforce`), and **re-key ingest rate-limiting to per-token / webhook-id** instead of
-> per-source-IP, with the token as the primary control. Prior code (multi-header read) is unit-tested
-> (`IpMatcherTests`, `RateLimitPolicyTests`); the final fix + its test land after discovery.
+> **History:** in 1.6.0 → 1.7.0 the source IP was always `::1`/`127.0.0.1`; a first attempt read
+> `X-Forwarded-For` then the `X-Azure-*` headers, but 1.7.0 live re-verification showed **none of
+> those reach the worker on Flex**. A debug header-dump then revealed the client IP is actually in
+> `CLIENT-IP` — see the resolution above. The observation/root-cause below describe that pre-fix state.
 
-### Observation
+### Observation (pre-fix, 1.6.0/1.7.0)
 Operator's ingest tests logged `SourceIp=127.0.0.1` and `SourceIp=::1`. Claude then sent a
 webhook POST **from a genuine external host** (`91.229.21.100`, via DSB egress) with a bogus
 token; App Insights recorded:
