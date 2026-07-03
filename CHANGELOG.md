@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.1...teams-notifier-function-app-v1.7.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **updown-webhook:** show-ip-allow-list mode reads the single source of truth ([21b112c](https://github.com/dsb-norge/teams-notifier-function-app/commit/21b112c1353eeb72bada1310c7c2e52a898c1cab))
+
 ## [1.7.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.0...teams-notifier-function-app-v1.7.1) (2026-07-03)
 
 
