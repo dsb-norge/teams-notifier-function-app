@@ -24,7 +24,7 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 | F3 | `create-webhook` doesn't capture (and require) account + description | Medium | FIXED |
 | F2 | Unexplained webhooks in dev created by `AppValidation-…` identity | Medium (hygiene) | OPEN |
 | F5 | `help <command>` doesn't work for individual commands | Low | PROPOSED |
-| F4 | No `show-webhook <id>` command | Low | PROPOSED |
+| F4 | No `show-webhook <id>` command | Low | FIXED |
 | F6 | `configure-webhook` doesn't show before/after values | Low | PROPOSED |
 | F10 | Card dates render US `MM/DD/YYYY`; times lack a timezone | Low | OPEN |
 | G* | GHAS / CodeQL / AI scan findings | mostly noise | see §G |
@@ -354,7 +354,16 @@ fallback. Include `help help` and `help show-webhook` (F4).
 
 ---
 
-## F4 — No `show-webhook <id>` command  **[Low, PROPOSED]**
+## F4 — No `show-webhook <id>` command  **[Low — FIXED]**
+
+> **Resolution (this branch):** added `show-webhook <id>` (routed via `StartsWith`, uses the existing
+> `GetByIdAsync`, "not found" when absent). Refactored `WebhookListCardBuilder` — extracted the shared
+> per-webhook FactSet into `Facts()` and added `BuildSingle(WebhookDisplayInfo)`; the handler's
+> display-info mapping is now the shared `ToDisplayInfo`. Added to `help webhooks`. Tests: handler
+> (found→card, not-found, no-id usage) + card builder (single-card content, no secret; list plural
+> header). **No app-requirements change** — the Teams manifest command menu is a curated subset
+> (`create-webhook` + `list-webhooks` only); `show-webhook` needs an `<id>` arg that doesn't suit a
+> menu hint, so it stays discoverable via help, consistent with configure/rotate/remove.
 
 ### Current state
 Confirmed absent. `list-webhooks` can get long; there's no single-webhook view. `IWebhookService`

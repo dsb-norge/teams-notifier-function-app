@@ -137,6 +137,11 @@ public class TeamsBotHandler : TeamsActivityHandler
             await HandleListWebhooksAsync(turnContext, cancellationToken);
             showNudge = true;
         }
+        else if (command.StartsWith("show-webhook"))
+        {
+            await HandleShowWebhookAsync(turnContext, command, cancellationToken);
+            showNudge = true;
+        }
         else if (command.StartsWith("remove-webhook"))
         {
             await HandleRemoveWebhookAsync(turnContext, command, cancellationToken);
@@ -650,18 +655,48 @@ public class TeamsBotHandler : TeamsActivityHandler
             return;
         }
 
-        var infos = webhooks.Select(w => new WebhookDisplayInfo(
-            Id: w.Id,
-            Source: w.Source,
-            TargetLabel: DescribeWebhookTarget(w),
-            Description: w.Description,
-            UpdownAccount: w.UpdownAccount,
-            EnabledEvents: string.Join(", ", w.GetEnabledEvents()),
-            CreatedByName: w.CreatedByName,
-            RelativeCreated: FormatRelativeTime(w.CreatedAt),
-            LastReceived: w.LastReceivedAt.HasValue ? FormatRelativeTime(w.LastReceivedAt.Value) : "never")).ToList();
+        var infos = webhooks.Select(ToDisplayInfo).ToList();
 
         var cardJson = WebhookListCardBuilder.Build(infos);
+        var attachment = new Attachment
+        {
+            ContentType = "application/vnd.microsoft.card.adaptive",
+            Content = JsonSerializer.Deserialize<object>(cardJson)
+        };
+        await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), ct);
+    }
+
+    private WebhookDisplayInfo ToDisplayInfo(WebhookTokenEntity w) => new(
+        Id: w.Id,
+        Source: w.Source,
+        TargetLabel: DescribeWebhookTarget(w),
+        Description: w.Description,
+        UpdownAccount: w.UpdownAccount,
+        EnabledEvents: string.Join(", ", w.GetEnabledEvents()),
+        CreatedByName: w.CreatedByName,
+        RelativeCreated: FormatRelativeTime(w.CreatedAt),
+        LastReceived: w.LastReceivedAt.HasValue ? FormatRelativeTime(w.LastReceivedAt.Value) : "never");
+
+    private async Task HandleShowWebhookAsync(ITurnContext turnContext, string command, CancellationToken ct)
+    {
+        if (!await EnsureWebhookAccessAsync(turnContext, ct)) return;
+
+        var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text("Usage: **show-webhook** `<id>`"), ct);
+            return;
+        }
+
+        var id = parts[1];
+        var webhook = await _webhookService!.GetByIdAsync(id);
+        if (webhook is null)
+        {
+            await turnContext.SendActivityAsync(MessageFactory.Text($"Webhook **{id}** not found."), ct);
+            return;
+        }
+
+        var cardJson = WebhookListCardBuilder.BuildSingle(ToDisplayInfo(webhook));
         var attachment = new Attachment
         {
             ContentType = "application/vnd.microsoft.card.adaptive",
