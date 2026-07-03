@@ -515,7 +515,7 @@ public class TeamsBotHandlerTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         turnContext.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => ((Activity)a).Text.Contains("Reply to a bot message")),
+            It.Is<IActivity>(a => ((Activity)a).Text.Contains("quote")),
             It.IsAny<CancellationToken>()), Times.Once);
         turnContext.Verify(t => t.DeleteActivityAsync(
             It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
