@@ -32,17 +32,24 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 ---
 
-## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH — code FIXED; needs post-deploy header verify]**
+## F8 — Source IP is always localhost; real client IP is never seen  **[HIGH — still broken on Flex; discovery in progress]**
 
-> **Resolution (this branch):** source-IP extraction is centralized in `IpMatcher.ExtractClientIp`,
-> which tries forwarding headers in priority order — `X-Forwarded-For` (first hop), then the App
-> Service `X-Azure-ClientIP` / `X-Azure-SocketIP` (and `X-Client-IP`/`X-Real-IP`) — before falling
-> back to `RemoteIpAddress`. Used by both the ingest handler and `RateLimitPolicy.SourceIpKey`.
-> **Still required:** deploy to dev and re-run an external POST to confirm which header actually
-> carries the client IP on Flex (log it), then re-verify enforce-mode + per-IP rate limiting. If
-> *no* header reaches the worker, fall back to the plan below (per-token rate limiting; token as the
-> primary control). Unit tests cover the header priority + fallthrough (`IpMatcherTests`,
-> `RateLimitPolicyTests`).
+> **1.7.0 live re-verification (2026-07-03):** the multi-header fix is deployed, but an external POST
+> from `91.229.21.100` **still logs `127.0.0.1`/`::1`** — so none of `X-Forwarded-For` /
+> `X-Azure-ClientIP` / `X-Azure-SocketIP` reach the isolated worker on Flex. The real client IP is
+> simply not available to the worker in any header we tried. Enforce-mode IP filtering and per-source-IP
+> rate limiting therefore **cannot work** (everything keys to one loopback bucket).
+>
+> **Diagnostic added (this branch):** `LogHeaderDiagnostics` on the ingest handler logs the IP-carrying
+> request headers + all header names, gated by `UpdownWebhook__DebugLogHeaders=true` (off by default,
+> never logs Authorization/Cookie values). A debug build deployed to dev + one external POST will reveal
+> which header (if any) actually carries the client IP.
+>
+> **Two outcomes:** (a) a header *does* carry it → point `IpMatcher.ClientIpHeaders` at it, done; or
+> (b) *no* header carries it on Flex → accept the platform limit: keep IP filtering at `log-only`/`off`
+> (don't rely on `enforce`), and **re-key ingest rate-limiting to per-token / webhook-id** instead of
+> per-source-IP, with the token as the primary control. Prior code (multi-header read) is unit-tested
+> (`IpMatcherTests`, `RateLimitPolicyTests`); the final fix + its test land after discovery.
 
 ### Observation
 Operator's ingest tests logged `SourceIp=127.0.0.1` and `SourceIp=::1`. Claude then sent a
