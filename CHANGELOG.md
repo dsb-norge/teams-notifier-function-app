@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.6.0...teams-notifier-function-app-v1.7.0) (2026-07-03)
+
+
+### Features
+
+* **updown-webhook:** add show-webhook &lt;id&gt; command (F4) ([4a7cb92](https://github.com/dsb-norge/teams-notifier-function-app/commit/4a7cb92a86c32287f212229da7178266d76c6801))
+* **updown-webhook:** configure-webhook shows before/after (F6) ([40d30b2](https://github.com/dsb-norge/teams-notifier-function-app/commit/40d30b2d6295137bb7def83c0da3d64babefa12e))
+* **updown-webhook:** per-command help via help &lt;command&gt; (F5) ([b15bf22](https://github.com/dsb-norge/teams-notifier-function-app/commit/b15bf22ac15b3c8ef38a1c4852640d2fd68fdd16))
+* **updown-webhook:** require account + description on create-webhook (F3) ([d3a80e3](https://github.com/dsb-norge/teams-notifier-function-app/commit/d3a80e34fee65e2dd7f19796bda9e0a0362ce316))
+* **updown-webhook:** warm the source-IP allowlist at startup (F1) ([f6015af](https://github.com/dsb-norge/teams-notifier-function-app/commit/f6015afae8450a8a277b83e0cd85fe3d57f24017))
+
+
+### Bug Fixes
+
+* **updown-webhook:** address PR [#95](https://github.com/dsb-norge/teams-notifier-function-app/issues/95) review (Copilot) ([dbab4f5](https://github.com/dsb-norge/teams-notifier-function-app/commit/dbab4f54b58b77503fcae2207eb564e12e19af1d))
+* **updown-webhook:** delete-post honors quoted messages (F7) ([e896fe1](https://github.com/dsb-norge/teams-notifier-function-app/commit/e896fe162e75ce98e3bf2224c485c4d1f39fbd3f))
+* **updown-webhook:** redact ingest token from trace telemetry (F9) ([4c3fbe5](https://github.com/dsb-norge/teams-notifier-function-app/commit/4c3fbe551c81c125803fb6791a53f3249af9d550))
+* **updown-webhook:** render card timestamps as explicit UTC (F10) ([becab48](https://github.com/dsb-norge/teams-notifier-function-app/commit/becab486f0b6d5eb27310bd5423c4c6d99da5a81))
+* **updown-webhook:** resolve client IP from Azure forwarding headers (F8) ([0c2a211](https://github.com/dsb-norge/teams-notifier-function-app/commit/0c2a211822edb078a8b10a3b2d3afa0a5342774f))
+
 ## [1.6.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.5.1...teams-notifier-function-app-v1.6.0) (2026-07-02)
 
 
