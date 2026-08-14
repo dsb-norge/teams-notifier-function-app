@@ -33,10 +33,14 @@ public class AzuriteFixture : IAsyncLifetime
     // developer's `func host start` emulator is never touched by the test suite.
     private const int BasePort = 11000;
 
-    private readonly int _blobPort;
-    private readonly int _queuePort;
-    private readonly int _tablePort;
-    private readonly string _connectionString;
+    // Number of candidate port triples, spaced 10 apart, starting at BasePort.
+    private const int SlotCount = 20;
+    private const int StartAttempts = 8;
+
+    private int _blobPort;
+    private int _queuePort;
+    private int _tablePort;
+    private string _connectionString = "";
     private readonly string _dataDir;
 
     private Process? _azuriteProcess;
@@ -49,27 +53,59 @@ public class AzuriteFixture : IAsyncLifetime
 
     public AzuriteFixture()
     {
-        // Pick a free port triple so concurrent test runs on one machine don't collide.
-        var offset = FindFreePortTriple();
-        _blobPort = BasePort + offset;
-        _queuePort = BasePort + offset + 1;
-        _tablePort = BasePort + offset + 2;
-
-        _connectionString =
-            "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;" +
-            "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;" +
-            $"BlobEndpoint=http://127.0.0.1:{_blobPort}/devstoreaccount1;" +
-            $"QueueEndpoint=http://127.0.0.1:{_queuePort}/devstoreaccount1;" +
-            $"TableEndpoint=http://127.0.0.1:{_tablePort}/devstoreaccount1";
-
-        _dataDir = Path.Combine(Path.GetTempPath(), $"azurite-tests-{_suffix}");
+        // Path.Join rather than Path.Combine: Join always concatenates, where Combine would
+        // silently discard the temp path if the second segment were ever rooted.
+        _dataDir = Path.Join(Path.GetTempPath(), $"azurite-tests-{_suffix}");
     }
 
     public async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(_dataDir);
 
-        _azuriteProcess = new Process
+        // Probing for a free port and then binding it is inherently racy: two runs starting at
+        // the same moment would both see the same triple free and both try to claim it. So start
+        // from a random slot to spread simultaneous starts out, and treat a failed bind as a
+        // normal outcome to retry on rather than an error.
+        var slot = Random.Shared.Next(SlotCount);
+        var failures = new List<string>();
+
+        for (var attempt = 0; attempt < StartAttempts; attempt++)
+        {
+            var offset = ((slot + attempt) % SlotCount) * 10;
+            _blobPort = BasePort + offset;
+            _queuePort = BasePort + offset + 1;
+            _tablePort = BasePort + offset + 2;
+
+            if (IsPortOpen(_blobPort) || IsPortOpen(_queuePort) || IsPortOpen(_tablePort))
+                continue; // cheap pre-check; the bind below is the real arbiter
+
+            var started = await TryStartAzuriteAsync();
+            if (started is null)
+            {
+                _connectionString =
+                    "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;" +
+                    "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;" +
+                    $"BlobEndpoint=http://127.0.0.1:{_blobPort}/devstoreaccount1;" +
+                    $"QueueEndpoint=http://127.0.0.1:{_queuePort}/devstoreaccount1;" +
+                    $"TableEndpoint=http://127.0.0.1:{_tablePort}/devstoreaccount1";
+                return;
+            }
+
+            failures.Add($"{_blobPort}/{_queuePort}/{_tablePort}: {started}");
+        }
+
+        throw new InvalidOperationException(
+            $"Could not start Azurite after {StartAttempts} attempts. Is it installed " +
+            $"(`npm install -g azurite`)?\n  " + string.Join("\n  ", failures));
+    }
+
+    /// <summary>
+    /// Starts Azurite on the currently selected ports. Returns null on success, or a short
+    /// description of why this attempt failed (port already taken, crashed, never got ready).
+    /// </summary>
+    private async Task<string?> TryStartAzuriteAsync()
+    {
+        var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
@@ -83,28 +119,42 @@ public class AzuriteFixture : IAsyncLifetime
             }
         };
 
-        _azuriteProcess.Start();
+        try
+        {
+            process.Start();
+        }
+        catch (Exception ex)
+        {
+            process.Dispose();
+            return $"could not launch azurite ({ex.Message})";
+        }
 
-        // Wait for table and queue services to become ready
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < TimeSpan.FromSeconds(30))
         {
-            if (_azuriteProcess.HasExited)
+            if (process.HasExited)
             {
-                var stderr = await _azuriteProcess.StandardError.ReadToEndAsync();
-                throw new InvalidOperationException(
-                    $"Azurite exited with code {_azuriteProcess.ExitCode} during startup. " +
-                    $"Is it installed (`npm install -g azurite`)? stderr: {stderr}");
+                // Typically EADDRINUSE — another run claimed this triple between our check and
+                // our bind. Caller retries on the next slot.
+                var stderr = await process.StandardError.ReadToEndAsync();
+                var reason = $"exited with code {process.ExitCode}" +
+                             (string.IsNullOrWhiteSpace(stderr) ? "" : $" ({stderr.Trim()})");
+                process.Dispose();
+                return reason;
             }
 
             if (IsPortOpen(_tablePort) && IsPortOpen(_queuePort))
-                return;
+            {
+                _azuriteProcess = process;
+                return null;
+            }
 
             await Task.Delay(200);
         }
 
-        throw new TimeoutException(
-            $"Azurite did not become ready on ports {_blobPort}/{_queuePort}/{_tablePort} within 30 seconds");
+        try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
+        process.Dispose();
+        return "did not become ready within 30 seconds";
     }
 
     public async ValueTask DisposeAsync()
@@ -127,8 +177,16 @@ public class AzuriteFixture : IAsyncLifetime
         }
         _azuriteProcess?.Dispose();
 
-        // Per-run data directory — nothing should survive to bleed into the next run.
-        try { Directory.Delete(_dataDir, recursive: true); } catch { /* best-effort */ }
+        // Per-run data directory — nothing should survive to bleed into the next run. Best-effort:
+        // a leftover temp directory is not worth failing a green test run over, but only the
+        // filesystem errors that deletion can legitimately hit are swallowed.
+        try
+        {
+            Directory.Delete(_dataDir, recursive: true);
+        }
+        catch (DirectoryNotFoundException) { /* already gone */ }
+        catch (IOException) { /* file still locked by a draining Azurite handle */ }
+        catch (UnauthorizedAccessException) { /* read-only or permission-denied entry */ }
     }
 
     /// <summary>
@@ -175,24 +233,4 @@ public class AzuriteFixture : IAsyncLifetime
         return Guid.NewGuid().ToString("N")[..8];
     }
 
-    /// <summary>
-    /// Finds an offset from <see cref="BasePort"/> where three consecutive ports are free, so
-    /// concurrent test runs on the same machine each get their own Azurite. Steps by 10 to keep
-    /// the triples clearly separated.
-    /// </summary>
-    private static int FindFreePortTriple()
-    {
-        for (var offset = 0; offset <= 200; offset += 10)
-        {
-            if (!IsPortOpen(BasePort + offset) &&
-                !IsPortOpen(BasePort + offset + 1) &&
-                !IsPortOpen(BasePort + offset + 2))
-            {
-                return offset;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"No free Azurite port triple found in {BasePort}-{BasePort + 202}.");
-    }
 }
