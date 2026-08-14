@@ -406,7 +406,8 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         // Resolve the AAD group GUID for the current team. In message activities, AadGroupId is
         // often null — ResolveTeamGuidAsync falls back to the teamlookup table.
-        var currentTeamGroupId = await ResolveTeamGuidAsync(channelData?.Team);
+        // The guard above already proves channelData.Team is non-null.
+        var currentTeamGroupId = await ResolveTeamGuidAsync(channelData!.Team);
 
         // Only resolve channels for the current team (we only have its thread ID)
         var hasAliasInCurrentTeam = aliases.Any(a =>
@@ -1414,8 +1415,9 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         if (string.IsNullOrEmpty(teamGuid) || string.IsNullOrEmpty(channelId)) return;
 
+        // channelId being non-empty already proves channelInfo is non-null.
         _logger.LogInformation("Channel deleted: {ChannelName} ({ChannelId}) in team {TeamGuid}",
-            channelInfo?.Name, channelId, teamGuid);
+            channelInfo.Name, channelId, teamGuid);
 
         await _botService.RemoveConversationReferenceAsync(teamGuid, channelId);
     }
@@ -1555,13 +1557,14 @@ public class TeamsBotHandler : TeamsActivityHandler
                 teamGuid, teamName, channelId);
 
             // Store install channel reference (not necessarily General — user picks channel during install)
+            // teamGuid being non-empty already proves channelData.Team is non-null.
             var reference = activity.GetConversationReference();
             await _botService.StoreConversationReferenceAsync(
                 reference, teamGuid, channelId!,
-                "channel", teamName, channelData?.Channel?.Name);
+                "channel", teamName, channelData!.Channel?.Name);
 
             // Store team thread ID -> GUID lookup for channel events that lack aadGroupId
-            var teamThreadId = channelData?.Team?.Id;
+            var teamThreadId = channelData.Team.Id;
             if (!string.IsNullOrEmpty(teamThreadId))
             {
                 await _teamLookupTable.UpsertEntityAsync(new TeamLookupEntity
@@ -1574,8 +1577,7 @@ public class TeamsBotHandler : TeamsActivityHandler
             }
 
             // Enqueue channel enumeration (offloaded to avoid 15-second activity timeout)
-            var teamThreadId2 = channelData?.Team?.Id;
-            await EnqueueBotOperationAsync("enumerate_channels", teamGuid, teamName, teamThreadId2,
+            await EnqueueBotOperationAsync("enumerate_channels", teamGuid, teamName, teamThreadId,
                 JsonSerializer.Serialize(reference));
 
             await turnContext.SendActivityAsync(MessageFactory.Text(
