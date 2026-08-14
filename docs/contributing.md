@@ -48,7 +48,7 @@ dotnet test --project tests/TeamsNotificationBot.Tests/
 dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 ```
 
-All tests must pass before submitting a pull request. Integration tests require Azurite to be running.
+All tests must pass before submitting a pull request. Integration tests require Azurite to be **installed** (`npm install -g azurite`) but not running — `AzuriteFixture` starts its own instance on a dedicated port triple from 11000 and tears it down afterwards. It deliberately ignores any emulator on the default 10000-10002 ports, so a `func host start` session can keep running while you test, and two concurrent `dotnet test` runs won't fight over one emulator.
 
 The updown webhook ingress is covered by: unit tests for payload parsing (inline fixtures in `UpdownPayloads.cs`), card building (colour/facts/null-safety/validator-clean/link domain-gating), the webhook token store (hash-only persistence, rotate), `IpMatcher` (IPv4/IPv6/CIDR + `ip:port` normalisation), and command routing; Azurite integration tests for the ingest function (token 404, malformed→200, filter modes → 403/allow, dedupe) and the allowlist service (resolve/diff/DNS-failure-keeps-list/lazy refresh).
 
