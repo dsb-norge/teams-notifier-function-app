@@ -42,10 +42,10 @@ The project has a comprehensive test suite covering all functions, services, mid
 
 ```bash
 # Run all tests
-dotnet test tests/TeamsNotificationBot.Tests/
+dotnet test --project tests/TeamsNotificationBot.Tests/
 
 # Run a specific test class
-dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
+dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 ```
 
 All tests must pass before submitting a pull request. Integration tests require Azurite to be running.
@@ -89,7 +89,7 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 ### Before Submitting
 
 1. **Branch from main** with a descriptive branch name.
-2. **All tests pass**: `dotnet test tests/TeamsNotificationBot.Tests/` exits with code 0.
+2. **All tests pass**: `dotnet test --project tests/TeamsNotificationBot.Tests/` exits with code 0.
 3. **Requirements are up to date**: Run `scripts/generate-requirements.sh` if you changed infrastructure dependencies. CI will catch staleness automatically.
 4. **No leaked secrets or identifiers**: Run `scripts/check-sanitization.sh` before publishing.
 5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
@@ -223,7 +223,11 @@ All four revisit conditions are now satisfied, so the test project moved to MTP 
 Two things make this work and are easy to break:
 
 - **`global.json` carries the opt-in.** `"test": { "runner": "Microsoft.Testing.Platform" }` is what switches `dotnet test` off the VSTest path. Without it the build fails with *"Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on .NET 10 SDK and later"*. `dotnet.config` is **not** the opt-in mechanism for this SDK band, despite what some docs suggest.
-- **Bare `dotnet test` flags are forwarded to the test app.** MTP passes unrecognised arguments straight through, so a stray `--nologo` fails the run with `Unknown option '--nologo'` and *"Zero tests ran"*. Put runner arguments after `--`.
+- **Unrecognised `dotnet test` flags are forwarded to the test app.** MTP passes anything it doesn't own straight through, so a stray `--nologo` fails the run with `Unknown option '--nologo'` and *"Zero tests ran"*.
+
+- **Know which side of `--` an argument belongs on.** Options owned by `dotnet test` (`--project`, `--solution`, `--output <Detailed|Normal>`, `--configuration`, `--no-build`, `--list-tests`) go **before** `--`. Options owned by the test app (`--filter-class`, `--filter-method`, `--filter-namespace`, `--report-github*`, `--report-junit`) go **after** it. `dotnet test --help` and `<test-assembly> --help` list the two sets respectively.
+
+- **A bare directory path is no longer accepted.** `dotnet test tests/TeamsNotificationBot.Tests/` now fails with *"Specifying a directory for 'dotnet test' should be via '--project' or '--solution'"*. Use `--project tests/TeamsNotificationBot.Tests/`, or run `dotnet test` with no path at all to use the solution.
 
 ### Handling Dependabot PRs
 

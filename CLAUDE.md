@@ -15,8 +15,8 @@ User-facing docs in `docs/` are the source of truth for architecture, deployment
 dotnet build
 
 # Tests (xUnit + Moq). Integration tests need Azurite running.
-dotnet test tests/TeamsNotificationBot.Tests/
-dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
+dotnet test --project tests/TeamsNotificationBot.Tests/
+dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 
 # Local function host (offline = no Azure access, no real Teams delivery)
 cd src/TeamsNotificationBot
@@ -48,7 +48,7 @@ Storage: 5 tables (`aliases`, `conversationreferences`, `teamlookup`, `idempoten
 
 - **`Microsoft.ApplicationInsights.WorkerService` is held below 3.0.0 on purpose.** 3.0 removed `ITelemetryInitializer`, which `Helpers/TokenRedactingTelemetryInitializer.cs` implements — building against 3.x fails with `CS0246`. Dependabot ignores that major. Re-verified 2026-08-14; see `docs/contributing.md` §9 for the revisit condition, and the "Bumping dependencies" section below for the day-to-day rules.
 
-- **The test project runs on Microsoft Testing Platform, not VSTest.** `global.json` carries the opt-in (`"test": { "runner": "Microsoft.Testing.Platform" }`); the test project references `xunit.v3.mtp-v2` and `GitHubActionsTestLogger` 3.x, with no `Microsoft.NET.Test.Sdk` or `xunit.runner.visualstudio`. Two gotchas: dropping the `global.json` opt-in fails the build with *"Testing with VSTest target is no longer supported"*, and MTP forwards unrecognised `dotnet test` arguments to the test app — so runner flags go after `--` (a stray `--nologo` yields `Unknown option` and "Zero tests ran").
+- **The test project runs on Microsoft Testing Platform, not VSTest.** `global.json` carries the opt-in (`"test": { "runner": "Microsoft.Testing.Platform" }`); the test project references `xunit.v3.mtp-v2` and `GitHubActionsTestLogger` 3.x, with no `Microsoft.NET.Test.Sdk` or `xunit.runner.visualstudio`. Three gotchas: dropping the `global.json` opt-in fails the build with *"Testing with VSTest target is no longer supported"*; a bare directory path is rejected (*"Specifying a directory for 'dotnet test' should be via '--project' or '--solution'"*), so pass `--project tests/TeamsNotificationBot.Tests/` or no path at all; and MTP forwards unrecognised arguments to the test app, so `dotnet test`'s own options (`--project`, `--output <Detailed|Normal>`, `--no-build`, `-c`) go **before** `--` while test-app options (`--filter-class`, `--report-github*`) go **after** it — a stray `--nologo` yields `Unknown option` and "Zero tests ran".
 
 - **Conventional commits drive releases.** release-please reads the squash commit message (not the individual PR commits) to decide patch/minor/major bumps and to update `CHANGELOG.md`, `AppInfo.cs`, and `app-requirements.json`. Dependabot PRs should be squash-merged with a `fix(deps):` prefix.
 
