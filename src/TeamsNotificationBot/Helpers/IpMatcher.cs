@@ -55,18 +55,14 @@ public static class IpMatcher
     /// </summary>
     public static string? ExtractClientIp(Func<string, string?> getHeader, string? remoteIp)
     {
-        foreach (var header in ClientIpHeaders)
-        {
-            var raw = getHeader(header);
-            if (string.IsNullOrWhiteSpace(raw))
-                continue;
+        // First header, in priority order, whose first hop parses as an IP.
+        var fromHeaders = ClientIpHeaders
+            .Select(getHeader)
+            .Where(raw => !string.IsNullOrWhiteSpace(raw))
+            .Select(raw => ParseClientIp(raw!.Split(',')[0]))
+            .FirstOrDefault(ip => ip is not null);
 
-            var firstHop = raw.Split(',')[0];
-            if (ParseClientIp(firstHop) is { } ip)
-                return ip;
-        }
-
-        return ParseClientIp(remoteIp);
+        return fromHeaders ?? ParseClientIp(remoteIp);
     }
 
     /// <summary>
