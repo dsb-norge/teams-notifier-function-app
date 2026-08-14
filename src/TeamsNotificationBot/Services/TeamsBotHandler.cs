@@ -14,7 +14,13 @@ using TeamsNotificationBot.Models;
 
 namespace TeamsNotificationBot.Services;
 
+// Agents SDK 1.7.x marks TeamsActivityHandler [Obsolete] in favour of the
+// Microsoft.Agents.Extensions.MSTeams package. Staying put is a deliberate, reviewed decision —
+// see docs/contributing.md §9 "Deferred migrations" for the evaluation and revisit conditions.
+// Suppressed here rather than left to warn on every build, so it doesn't become background noise.
+#pragma warning disable CS0618 // Type or member is obsolete
 public class TeamsBotHandler : TeamsActivityHandler
+#pragma warning restore CS0618
 {
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
@@ -1415,9 +1421,10 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         if (string.IsNullOrEmpty(teamGuid) || string.IsNullOrEmpty(channelId)) return;
 
-        // channelId being non-empty already proves channelInfo is non-null.
+        // channelId being non-empty already proves channelInfo is non-null; the SDK type is
+        // un-annotated so the compiler can't infer that from the guard.
         _logger.LogInformation("Channel deleted: {ChannelName} ({ChannelId}) in team {TeamGuid}",
-            channelInfo.Name, channelId, teamGuid);
+            channelInfo!.Name, channelId, teamGuid);
 
         await _botService.RemoveConversationReferenceAsync(teamGuid, channelId);
     }
