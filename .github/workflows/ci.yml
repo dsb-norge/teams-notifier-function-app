@@ -29,7 +29,7 @@ jobs:
       deps: ${{ steps.filter.outputs.deps }}
       requirements: ${{ steps.filter.outputs.requirements }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7 2026-06-17
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3 2026-08-05
         id: filter
         with:
@@ -59,7 +59,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7 2026-06-17
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
 
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5 2026-06-25
         with:
@@ -104,7 +104,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7 2026-06-17
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
 
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5 2026-05-18
@@ -117,7 +117,7 @@ jobs:
     if: needs.changes.outputs.requirements == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7 2026-06-17
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
 
       - name: Regenerate app-requirements.json
         run: bash scripts/generate-requirements.sh
