@@ -158,13 +158,13 @@ The test project uses xUnit and Moq covering all functions, services, middleware
 dotnet test tests/TeamsNotificationBot.Tests/
 
 # Run with verbose output
-dotnet test tests/TeamsNotificationBot.Tests/ --verbosity normal
+dotnet test tests/TeamsNotificationBot.Tests/ -- --output Detailed
 
 # Run a specific test class
-dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~NotifyFunctionTests"
+dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 
 # Run only integration tests
-dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~Integration"
+dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*Integration*"
 ```
 
 ### Test Coverage

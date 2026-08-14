@@ -96,7 +96,9 @@ jobs:
         run: dotnet build --no-restore -c Release -warnAsMessage:xUnit1051
 
       - name: Test
-        run: dotnet test --no-build -c Release --logger GitHubActions
+        # MTP runner: args after `--` go to the test app. `--report-github` is the
+        # MTP equivalent of the old `--logger GitHubActions`.
+        run: dotnet test --no-build -c Release -- --report-github --report-github-summary-include-passed false
 
   dependency-review:
     name: Dependency Review

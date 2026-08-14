@@ -45,7 +45,7 @@ The project has a comprehensive test suite covering all functions, services, mid
 dotnet test tests/TeamsNotificationBot.Tests/
 
 # Run a specific test class
-dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~NotifyFunctionTests"
+dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 ```
 
 All tests must pass before submitting a pull request. Integration tests require Azurite to be running.
@@ -193,7 +193,7 @@ Related packages are grouped so they update together in a single PR:
 | microsoft-agents | `Microsoft.Agents.*` |
 | azure-functions | `Microsoft.Azure.Functions.*`, `Microsoft.Azure.Core.Extensions` |
 | azure-sdk | `Azure.*` |
-| testing | `xunit*`, `Microsoft.NET.Test.*`, `coverlet.*`, `Moq`, `GitHubActionsTestLogger` |
+| testing | `xunit*` (includes `xunit.v3.mtp-v2`), `Microsoft.NET.Test.*`, `coverlet.*`, `Moq`, `GitHubActionsTestLogger` |
 
 ### Known version constraints — revisit checklist
 
@@ -205,16 +205,25 @@ Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `M
 
 **To revisit**: the Functions Worker ApplicationInsights package must ship a release that targets the AI 3.x API.
 
-#### `GitHubActionsTestLogger` (held below 3.0.0)
+**Last checked (2026-08-14)**: still blocking. `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.51.0 still depends on `Microsoft.ApplicationInsights.PerfCounterCollector >= 2.23.0`, and building against `Microsoft.ApplicationInsights.WorkerService` 3.1.2 fails with `CS0246: ITelemetryInitializer could not be found` in `Helpers/TokenRedactingTelemetryInitializer.cs`. Keep the ignore.
 
-Version 3.0 added Microsoft Testing Platform (MTP) support, introducing a transitive dependency on `Microsoft.Testing.Platform` v2. This project uses `xunit.v3`, which depends on MTP v1 — causing assembly version conflicts at build time (`CS1705`). The `PrivateAssets="all"` attribute (required for VSTest mode) additionally breaks MTP's auto-generated registration code (`CS0400`). PRs #31 and #36 both failed CI for this reason. See [GitHubActionsTestLogger#57](https://github.com/Tyrrrz/GitHubActionsTestLogger/issues/57).
+### Lifted constraints
 
-**To revisit**, all of the following must be true:
+#### `GitHubActionsTestLogger` (unpinned 2026-08-14, was held below 3.0.0)
 
-1. `xunit.v3` ships an MTP v2–compatible variant (e.g., a future `xunit.v3.mtp-v2` package, or `xunit.v3` itself upgrades to MTP v2).
-2. `PrivateAssets="all"` is removed from the `GitHubActionsTestLogger` package reference (MTP mode requires the assembly at compile time).
-3. `xunit.runner.visualstudio` is evaluated for removal (MTP replaces the VSTest runner).
-4. The `--logger GitHubActions` argument in `ci.yml` is verified to still work, or updated to use MTP-style arguments (e.g., `--report-github-summary-include-passed false`).
+Version 3.0 added Microsoft Testing Platform (MTP) support with a transitive dependency on `Microsoft.Testing.Platform` v2, which conflicted with `xunit.v3`'s MTP v1 dependency (`CS1705`, plus `CS0400` from `PrivateAssets="all"`). PRs #31 and #36 failed CI for this reason. See [GitHubActionsTestLogger#57](https://github.com/Tyrrrz/GitHubActionsTestLogger/issues/57).
+
+All four revisit conditions are now satisfied, so the test project moved to MTP v2:
+
+1. `xunit.v3.mtp-v2` 3.2.2 ships as the MTP v2 variant of `xunit.v3` — the package the original checklist anticipated.
+2. `PrivateAssets="all"` is gone from the `GitHubActionsTestLogger` reference.
+3. `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` are removed — MTP replaces the VSTest runner, and the test project is already `OutputType=Exe`.
+4. `ci.yml` runs `dotnet test --no-build -c Release -- --report-github --report-github-summary-include-passed false`. Under MTP, arguments after `--` go to the test app, and `--report-github` is the equivalent of the old `--logger GitHubActions`.
+
+Two things make this work and are easy to break:
+
+- **`global.json` carries the opt-in.** `"test": { "runner": "Microsoft.Testing.Platform" }` is what switches `dotnet test` off the VSTest path. Without it the build fails with *"Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on .NET 10 SDK and later"*. `dotnet.config` is **not** the opt-in mechanism for this SDK band, despite what some docs suggest.
+- **Bare `dotnet test` flags are forwarded to the test app.** MTP passes unrecognised arguments straight through, so a stray `--nologo` fails the run with `Unknown option '--nologo'` and *"Zero tests ran"*. Put runner arguments after `--`.
 
 ### Handling Dependabot PRs
 

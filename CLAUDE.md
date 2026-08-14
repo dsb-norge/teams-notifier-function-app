@@ -16,7 +16,7 @@ dotnet build
 
 # Tests (xUnit + Moq). Integration tests need Azurite running.
 dotnet test tests/TeamsNotificationBot.Tests/
-dotnet test tests/TeamsNotificationBot.Tests/ --filter "FullyQualifiedName~NotifyFunctionTests"
+dotnet test tests/TeamsNotificationBot.Tests/ -- --filter-class "*NotifyFunctionTests"
 
 # Local function host (offline = no Azure access, no real Teams delivery)
 cd src/TeamsNotificationBot
@@ -46,7 +46,9 @@ Storage: 5 tables (`aliases`, `conversationreferences`, `teamlookup`, `idempoten
 
 - **`app-requirements.json` is generated, not hand-edited.** It is the contract with the Terraform module and the Teams manifest builder — it declares queues, routes, runtime version, required app settings, auth settings, and command lists. After changing any of those, regenerate it (`scripts/generate-requirements.sh`) and commit. CI's **Validate Requirements** job will fail the PR otherwise.
 
-- **Pinned NuGet versions that look stale are intentional.** `Microsoft.ApplicationInsights.WorkerService` is held below 3.0.0 because 3.0 removed `ITelemetryInitializer`, breaking `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime on Flex Consumption. `GitHubActionsTestLogger` is held below 3.0.0 because 3.0 forces MTP v2 which conflicts with `xunit.v3`'s MTP v1 dependency. Dependabot is configured to ignore those majors. See `docs/contributing.md` §9 for the full revisit checklist before lifting either constraint, and the "Bumping dependencies" section below for the day-to-day rules.
+- **`Microsoft.ApplicationInsights.WorkerService` is held below 3.0.0 on purpose.** 3.0 removed `ITelemetryInitializer`, which `Helpers/TokenRedactingTelemetryInitializer.cs` implements — building against 3.x fails with `CS0246`. Dependabot ignores that major. Re-verified 2026-08-14; see `docs/contributing.md` §9 for the revisit condition, and the "Bumping dependencies" section below for the day-to-day rules.
+
+- **The test project runs on Microsoft Testing Platform, not VSTest.** `global.json` carries the opt-in (`"test": { "runner": "Microsoft.Testing.Platform" }`); the test project references `xunit.v3.mtp-v2` and `GitHubActionsTestLogger` 3.x, with no `Microsoft.NET.Test.Sdk` or `xunit.runner.visualstudio`. Two gotchas: dropping the `global.json` opt-in fails the build with *"Testing with VSTest target is no longer supported"*, and MTP forwards unrecognised `dotnet test` arguments to the test app — so runner flags go after `--` (a stray `--nologo` yields `Unknown option` and "Zero tests ran").
 
 - **Conventional commits drive releases.** release-please reads the squash commit message (not the individual PR commits) to decide patch/minor/major bumps and to update `CHANGELOG.md`, `AppInfo.cs`, and `app-requirements.json`. Dependabot PRs should be squash-merged with a `fix(deps):` prefix.
 
@@ -94,7 +96,7 @@ Never let Dependabot's default subject through unchanged. Use `gh pr merge --squ
 
 ### Known pitfalls
 
-- **The `≥3.0.0` Dependabot ignores for `Microsoft.ApplicationInsights.WorkerService` and `GitHubActionsTestLogger` are load-bearing.** See "Things that bite" for the rationale; `docs/contributing.md` §9 has the full revisit checklist for each.
+- **The `≥3.0.0` Dependabot ignore for `Microsoft.ApplicationInsights.WorkerService` is load-bearing.** See "Things that bite" for the rationale; `docs/contributing.md` §9 has the revisit condition. The matching `GitHubActionsTestLogger` ignore was lifted on 2026-08-14 once `xunit.v3.mtp-v2` shipped — don't reintroduce it.
 - **`actions/checkout` cleans the workspace by default.** If a job downloads a release artifact (or anything else) and *then* runs checkout, the artifact is deleted. Either reorder so checkout runs first, or pass `clean: false`.
 - **`dorny/paths-filter@v4` uses `git diff` on `push` events**, self-deepening from its `initial-fetch-depth: 100` default. The default shallow `actions/checkout` is fine — no need to set `fetch-depth: 2` on the `changes` job.
 - **Azurite is intentionally not version-pinned.** It floats on npm. If a release breaks compatibility (typically: Azurite hasn't caught up to a new storage API version used by the .NET SDK), pin in `ci.yml` *and* `docs/local-development.md` *and* the workflow cache key together.
