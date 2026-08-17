@@ -262,6 +262,16 @@ For human reviewers, the short checklist:
 
 A failing Dependabot PR usually means a breaking API change in a major bump, a transitive conflict, or one of the pitfalls listed in `CLAUDE.md`. Investigate before merging; never bypass CI.
 
+#### Amending a Dependabot PR — add a commit, don't replace one
+
+GitHub Actions bumps routinely need a hand-edit, because Dependabot updates the SHA but leaves the trailing `# vX YYYY-MM-DD` pin comment stale or wrong. When you make that edit, **add a commit on top of Dependabot's** rather than force-pushing a branch rebuilt from `main`.
+
+`dependabot/fetch-metadata` reads the *first* commit on the PR: it checks the author is `dependabot[bot]`, then parses the `Bumps ... from ... to ...` line and YAML trailer out of that commit message. Replace that commit and the metadata is gone — the action reports either *"PR is not from Dependabot"* or *"PR does not contain metadata"*. Neither `skip-verification` nor `skip-commit-verification` recovers it; the data genuinely isn't there any more. The auto-merge workflow now treats that as "nothing to do" instead of failing, but you also lose the automatic `fix(deps):` subject and have to merge by hand.
+
+Keeping Dependabot's commit as the first one preserves the metadata, the Copilot review, and the auto-merge arming. The squash subject comes from the PR title regardless, so extra commits don't reach `main`.
+
+When a Dependabot PR falls behind `main`, prefer commenting `@dependabot rebase` over rebasing it yourself — Dependabot re-authors its own commit and the metadata survives.
+
 ---
 
 ## See Also

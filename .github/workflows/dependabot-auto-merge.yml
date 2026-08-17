@@ -22,14 +22,34 @@ jobs:
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
+      # continue-on-error, because "no Dependabot metadata" is a legitimate state, not a
+      # failure. Amending a Dependabot PR — which GitHub Actions bumps routinely need, since
+      # Dependabot leaves the `# vX <date>` pin comment stale — replaces its commit, and the
+      # action then bails with either "PR is not from Dependabot" or "PR does not contain
+      # metadata". Neither skip-verification nor skip-commit-verification helps: once the
+      # commit is replaced the `Bumps ... from ... to ...` line and YAML trailer that
+      # update_metadata.parse() reads are simply gone. Failing here painted a red X on exactly
+      # the PRs a maintainer had already hand-checked.
       - name: Fetch Dependabot metadata
         id: meta
+        continue-on-error: true
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0 2026-04-20
+      - name: Skip — no Dependabot metadata
+        if: steps.meta.outcome != 'success'
+        run: |
+          echo "No Dependabot metadata on this PR (its commit was most likely amended)."
+          echo "Not arming auto-merge; merge it by hand after review."
       - name: Skip major bumps
-        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        if: steps.meta.outcome == 'success' && steps.meta.outputs.update-type == 'version-update:semver-major'
         run: echo "Major bump — merge decision stays fully manual (read the changelog first)."
+      # Fail closed: arm only for an update-type we positively recognise as patch or minor.
+      # The previous `!= semver-major` test also passed when update-type was empty, so a PR
+      # whose metadata failed to parse would have been armed regardless of how big the bump was.
       - name: Arm auto-merge with a conventional squash subject
-        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        if: >-
+          steps.meta.outcome == 'success' &&
+          (steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+           steps.meta.outputs.update-type == 'version-update:semver-minor')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
