@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # PR titles become the squash commit subject (squash_merge_commit_title: PR_TITLE),
+    # and release-please needs a conventional prefix to produce a patch release.
+    commit-message:
+      prefix: "fix(deps)"
     groups:
       microsoft-agents:
         patterns:
@@ -35,4 +39,6 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    commit-message:
+      prefix: "fix(deps)"
     open-pull-requests-limit: 5
