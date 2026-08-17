@@ -155,6 +155,65 @@ public class BotService : IBotService
             _logger.LogDebug("No existing reference for {PK}/{RK} to update, skipping", partitionKey, rowKey);
             return false;
         }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 412)
+        {
+            // Lost an optimistic-concurrency race with another writer (e.g. a ChannelName
+            // backfill). The next inbound message refreshes the reference anyway.
+            _logger.LogDebug(ex, "Concurrency conflict refreshing reference for {PK}/{RK}, skipping", partitionKey, rowKey);
+            return false;
+        }
+    }
+
+    public async Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName)
+    {
+        if (_teamsDisabled)
+            return false;
+        if (string.IsNullOrEmpty(channelName))
+            return false;
+
+        // Best-effort bookkeeping, same optimistic-concurrency pattern as UpdateLastUpdatedAsync:
+        // retry a few times on 412 so a transient race doesn't silently drop the write.
+        const int maxRetries = 3;
+        try
+        {
+            for (var attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var response = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(partitionKey, rowKey);
+                    var entity = response.Value;
+                    if (!string.IsNullOrEmpty(entity.ChannelName))
+                        return false; // an earlier run or a concurrent writer already set it — never overwrite
+
+                    entity.ChannelName = channelName;
+                    entity.LastUpdated = DateTimeOffset.UtcNow;
+                    await _tableClient.UpdateEntityAsync(entity, entity.ETag);
+                    _logger.LogInformation("Backfilled ChannelName for {PK}/{RK}", partitionKey, rowKey);
+                    return true;
+                }
+                catch (RequestFailedException ex) when (ex.Status == 412)
+                {
+                    if (attempt < maxRetries)
+                    {
+                        _logger.LogDebug(
+                            ex,
+                            "Concurrency conflict backfilling ChannelName for {PK}/{RK}; retry {Next}/{MaxRetries}",
+                            partitionKey, rowKey, attempt + 1, maxRetries);
+                        continue;
+                    }
+                    _logger.LogWarning(
+                        ex,
+                        "Gave up backfilling ChannelName for {PK}/{RK} after {MaxRetries} concurrency conflicts",
+                        partitionKey, rowKey, maxRetries);
+                    return false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to backfill ChannelName for {PK}/{RK}", partitionKey, rowKey);
+        }
+        return false;
     }
 
     public async Task RemoveConversationReferenceAsync(string partitionKey, string rowKey)
@@ -271,9 +330,19 @@ public class BotService : IBotService
                     var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, teamThreadId, ct);
                     _logger.LogInformation("Enumerated {Count} channels in team {TeamGuid}", channels.Count, teamGuid);
 
-                    // Install channel was already stored by the handler — skip it here.
-                    foreach (var channel in channels.Where(c => c.Id != installChannelId))
+                    foreach (var channel in channels)
                     {
+                        var channelName = ChannelNameResolver.Resolve(channel.Name, channel.Id, teamThreadId);
+
+                        if (channel.Id == installChannelId)
+                        {
+                            // The handler already stored this row with the real activity-derived
+                            // reference — never overwrite it. Just fill in the name the
+                            // conversationUpdate payload lacked.
+                            await TryUpdateChannelNameAsync(teamGuid, channel.Id, channelName ?? string.Empty);
+                            continue;
+                        }
+
                         var channelRef = new ConversationReference
                         {
                             ServiceUrl = reference.ServiceUrl,
@@ -290,7 +359,7 @@ public class BotService : IBotService
 
                         await StoreConversationReferenceAsync(
                             channelRef, teamGuid, channel.Id,
-                            "channel", teamName, channel.Name);
+                            "channel", teamName, channelName);
                     }
                 }
                 catch (Exception ex)
