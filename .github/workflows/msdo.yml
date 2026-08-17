@@ -59,7 +59,7 @@ jobs:
           tools: trivy
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4 2026-08-04
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4 2026-08-13
         if: always()
         with:
           sarif_file: ${{ steps.msdo.outputs.sarifFile }}
@@ -108,7 +108,7 @@ jobs:
           ' "${{ steps.msdo.outputs.sarifFile }}" > /tmp/merged-binskim.sarif
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4 2026-08-04
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4 2026-08-13
         if: always()
         with:
           sarif_file: /tmp/merged-binskim.sarif
