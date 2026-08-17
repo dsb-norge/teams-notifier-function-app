@@ -91,7 +91,7 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 1. **Branch from main** with a descriptive branch name.
 2. **All tests pass**: `dotnet test --project tests/TeamsNotificationBot.Tests/` exits with code 0.
 3. **Requirements are up to date**: Run `scripts/generate-requirements.sh` if you changed infrastructure dependencies. CI will catch staleness automatically.
-4. **No leaked secrets or identifiers**: Run `scripts/check-sanitization.sh` before publishing.
+4. **No leaked secrets or identifiers**: Wrap user-controlled values in `LogSanitizer.Sanitize()` when logging (see §5); secret scanning push protection blocks pushed credentials.
 5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 
 ### PR Description
@@ -249,11 +249,16 @@ Two things make this work and are easy to break:
 
 ### Handling Dependabot PRs
 
-The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). For human reviewers, the short checklist:
+The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). Two workflows automate the mechanics:
+
+- **`dependabot-copilot-review.yml`** requests a Copilot code review on every Dependabot PR (the automatic-review ruleset skips bot-authored PRs, so without this they'd get no review).
+- **`dependabot-auto-merge.yml`** arms GitHub auto-merge with a conventional `fix(deps):` squash subject for **patch/minor** bumps. It bypasses nothing — the merge still waits for the required human approval, CI Conclusion, CodeQL, and up-to-date-with-main. Major bumps are never armed and stay fully manual.
+
+For human reviewers, the short checklist:
 
 1. Read the package changelog for the bumped major/minor — most regressions are advertised there.
-2. Wait for **CI Conclusion** to pass (Build and Test, Source & Dependency Scan, Dependency Review, Validate Requirements).
-3. Squash-merge with a `fix(deps):` prefix (or `feat(deps):` if the bump enables a shipped feature) using `gh pr merge --squash --subject "..."` — don't let Dependabot's default subject through.
+2. Approve. For patch/minor the PR then merges itself once **CI Conclusion** passes (Build and Test, Source & Dependency Scan, Dependency Review, Validate Requirements) and the branch is up to date.
+3. For major bumps, squash-merge manually with a `fix(deps):` prefix (or `feat(deps):` if the bump enables a shipped feature) using `gh pr merge --squash --subject "..."` — don't let a non-conventional subject through.
 
 A failing Dependabot PR usually means a breaking API change in a major bump, a transitive conflict, or one of the pitfalls listed in `CLAUDE.md`. Investigate before merging; never bypass CI.
 

@@ -88,7 +88,7 @@ release-please reads the squash message:
 - `feat(deps):` → minor bump (only when the bump enables a feature you're shipping in the same PR).
 - `chore(deps):` or no conventional-commit prefix → no release.
 
-Never let Dependabot's default subject through unchanged. Use `gh pr merge --squash --subject "fix(deps): ..."`.
+Dependabot titles carry the `fix(deps)` prefix via `commit-message.prefix` in `dependabot.yml`, and `dependabot-auto-merge.yml` arms auto-merge with a guaranteed-conventional subject for patch/minor bumps (human approval still gates the merge). Only major bumps are merged by hand: use `gh pr merge --squash --subject "fix(deps): ..."` and never let a non-conventional subject through.
 
 ### After a bump
 

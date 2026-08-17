@@ -1,0 +1,53 @@
+# Arms GitHub auto-merge on Dependabot PRs (patch/minor only) with a conventional
+# squash subject so release-please produces a patch release. This bypasses nothing:
+# the merge still waits for the required human approval, CI Conclusion, CodeQL, and
+# up-to-date-with-main — auto-merge just removes the "come back after CI" round-trip.
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  arm:
+    name: Arm auto-merge
+    runs-on: ubuntu-latest
+    # user.login, not github.actor — the actor can be spoofed into dependabot[bot]
+    # via `@dependabot recreate` on a fork PR.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0 2026-04-20
+      - name: Skip major bumps
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: echo "Major bump — merge decision stays fully manual (read the changelog first)."
+      - name: Arm auto-merge with a conventional squash subject
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          # Title flows through an env var, never shell interpolation — it contains
+          # upstream-controlled text.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The repo squashes with PR_TITLE and release-please reads the squash subject;
+          # guarantee a fix(deps): prefix whatever the title says.
+          if [[ "$PR_TITLE" == "fix(deps):"* ]]; then
+            subject="$PR_TITLE"
+          else
+            subject="fix(deps): ${PR_TITLE,}"
+          fi
+          if [[ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" == "true" ]]; then
+            echo "Auto-merge already armed."
+            exit 0
+          fi
+          # --auto errors if every requirement is already satisfied; fall back to a direct merge.
+          gh pr merge "$PR_URL" --squash --auto --subject "$subject" \
+            || gh pr merge "$PR_URL" --squash --subject "$subject"
