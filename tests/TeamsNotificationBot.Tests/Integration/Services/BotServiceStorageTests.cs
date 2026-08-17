@@ -208,6 +208,65 @@ public class BotServiceStorageTests
     }
 
     [Fact]
+    public async Task ChannelNameBackfill_SetsName_LeavesReferenceAndInstalledAtUntouched()
+    {
+        // Mirrors BotService.TryUpdateChannelNameAsync against real storage. The byte-identical
+        // ConversationReference assertion is what proves the backfill cannot break proactive
+        // delivery (invariant 3).
+        var seeded = MakeEntity("team-backfill", "channel-nameless", channelId: "19:nameless@thread.tacv2");
+        seeded.ChannelName = null;
+        await _tableClient.UpsertEntityAsync(seeded);
+
+        var before = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-backfill", "channel-nameless");
+        var originalReference = before.Value.ConversationReference;
+        var originalInstalledAt = before.Value.InstalledAt;
+
+        var entity = before.Value;
+        Assert.True(string.IsNullOrEmpty(entity.ChannelName));
+        entity.ChannelName = "utvikling - testkanal";
+        entity.LastUpdated = DateTimeOffset.UtcNow;
+        await _tableClient.UpdateEntityAsync(entity, entity.ETag);
+
+        var after = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-backfill", "channel-nameless");
+        Assert.Equal("utvikling - testkanal", after.Value.ChannelName);
+        Assert.Equal(originalReference, after.Value.ConversationReference);
+        Assert.Equal(originalInstalledAt, after.Value.InstalledAt);
+    }
+
+    [Fact]
+    public async Task ChannelNameBackfill_StaleETag_Returns412()
+    {
+        // The optimistic-concurrency failure the retry loop is built around: a second writer
+        // touched the row between our read and our write.
+        var seeded = MakeEntity("team-backfill-412", "channel-412", channelId: "19:conflict@thread.tacv2");
+        seeded.ChannelName = null;
+        await _tableClient.UpsertEntityAsync(seeded);
+
+        var first = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-backfill-412", "channel-412");
+        var staleEntity = first.Value;
+
+        // Another writer commits first, invalidating the ETag we are holding.
+        var second = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-backfill-412", "channel-412");
+        second.Value.ChannelName = "winner";
+        await _tableClient.UpdateEntityAsync(second.Value, second.Value.ETag);
+
+        staleEntity.ChannelName = "loser";
+        var ex = await Assert.ThrowsAsync<Azure.RequestFailedException>(
+            () => _tableClient.UpdateEntityAsync(staleEntity, staleEntity.ETag));
+
+        Assert.Equal(412, ex.Status);
+
+        // The winner's value survives; a re-read is what lets the retry loop bail out.
+        var after = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-backfill-412", "channel-412");
+        Assert.Equal("winner", after.Value.ChannelName);
+    }
+
+    [Fact]
     public async Task BatchUpdateTeamName_UpdatesAll()
     {
         for (int i = 0; i < 3; i++)

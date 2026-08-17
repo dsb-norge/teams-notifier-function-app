@@ -20,4 +20,11 @@ public interface IBotService
     Task BatchRemoveTeamReferencesAsync(string teamId);
     Task BatchUpdateTeamNameAsync(string teamId, string? newTeamName);
     Task<ConversationReferenceEntity?> GetConversationReferenceEntityAsync(string partitionKey, string rowKey);
+
+    /// <summary>
+    /// Sets ChannelName on an existing conversationreferences row if — and only if — it is
+    /// currently empty. Single-property, ETag-guarded; never touches ConversationReference,
+    /// InstalledAt, or any other column. Best-effort: never throws.
+    /// </summary>
+    Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName);
 }

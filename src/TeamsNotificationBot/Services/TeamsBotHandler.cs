@@ -371,6 +371,15 @@ public class TeamsBotHandler : TeamsActivityHandler
                 if (string.IsNullOrEmpty(channelName))
                     channelNameCache.TryGetValue(alias.ChannelId!, out channelName);
 
+                // Opportunistic backfill: the row exists but stores no name and the API cache
+                // resolved one — persist it so surfaces without team context (1:1 chat: no cache,
+                // no API) render correctly next time. Best-effort by contract; cannot fail the command.
+                if (entity != null && string.IsNullOrEmpty(entity.ChannelName)
+                    && channelNameCache.TryGetValue(alias.ChannelId!, out var apiName))
+                {
+                    await _botService.TryUpdateChannelNameAsync(alias.TeamId!, alias.ChannelId!, apiName);
+                }
+
                 if (!string.IsNullOrEmpty(channelName) || !string.IsNullOrEmpty(teamName))
                 {
                     var channelDisplay = !string.IsNullOrEmpty(channelName) ? $"#{channelName}" : "channel";
@@ -426,8 +435,12 @@ public class TeamsBotHandler : TeamsActivityHandler
         try
         {
             var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, currentTeamThreadId);
-            foreach (var ch in channels.Where(c => !string.IsNullOrEmpty(c.Name)))
-                cache[ch.Id] = ch.Name;
+            foreach (var ch in channels)
+            {
+                var name = ChannelNameResolver.Resolve(ch.Name, ch.Id, currentTeamThreadId);
+                if (!string.IsNullOrEmpty(name))
+                    cache[ch.Id] = name;
+            }
         }
         catch (Exception ex)
         {
@@ -1568,7 +1581,8 @@ public class TeamsBotHandler : TeamsActivityHandler
             var reference = activity.GetConversationReference();
             await _botService.StoreConversationReferenceAsync(
                 reference, teamGuid, channelId!,
-                "channel", teamName, channelData!.Channel?.Name);
+                "channel", teamName,
+                ChannelNameResolver.Resolve(channelData!.Channel?.Name, channelId, channelData.Team?.Id));
 
             // Store team thread ID -> GUID lookup for channel events that lack aadGroupId
             var teamThreadId = channelData.Team.Id;
