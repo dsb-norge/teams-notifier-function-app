@@ -22,9 +22,10 @@ public interface IBotService
     Task<ConversationReferenceEntity?> GetConversationReferenceEntityAsync(string partitionKey, string rowKey);
 
     /// <summary>
-    /// Sets ChannelName on an existing conversationreferences row if — and only if — it is
-    /// currently empty. Single-property, ETag-guarded; never touches ConversationReference,
-    /// InstalledAt, or any other column. Best-effort: never throws.
+    /// Sets ChannelName on an existing conversationreferences row if — and only if — ChannelName
+    /// is currently empty, refreshing LastUpdated with it. ETag-guarded; touches no other column,
+    /// in particular never ConversationReference or InstalledAt. Best-effort: never throws.
+    /// Returns true only when the name was actually written.
     /// </summary>
     Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName);
 }
