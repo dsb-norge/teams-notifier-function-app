@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.7.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.2...teams-notifier-function-app-v1.7.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* backfill null ChannelName on the bot's install channel ([#126](https://github.com/dsb-norge/teams-notifier-function-app/issues/126)) ([2d0ba25](https://github.com/dsb-norge/teams-notifier-function-app/commit/2d0ba2588b874a10262b8f34a1cc48d214156777))
+* **ci:** stop auto-merge failing on amended Dependabot PRs, and fail closed ([b5538c6](https://github.com/dsb-norge/teams-notifier-function-app/commit/b5538c675182439d40b9f4c12d527936f75d3ee6))
+* clear CodeQL constant-condition alerts and correct updown test fixtures ([65c278b](https://github.com/dsb-norge/teams-notifier-function-app/commit/65c278b72dac70dda0904b4a997d6cc1c1363a10))
+* **deps:** bump actions/attest-build-provenance from 4.1.1 to 4.2.2 ([45b1114](https://github.com/dsb-norge/teams-notifier-function-app/commit/45b1114193a439813496f7bb3569d9bbf9656b7d))
+* **deps:** bump actions/checkout from 7.0.0 to 7.0.1 ([5c159c6](https://github.com/dsb-norge/teams-notifier-function-app/commit/5c159c6609bab350c8ae1687ebbc0afca705d62c))
+* **deps:** bump actions/setup-dotnet from 5.4.0 to 6.0.0 ([2645e40](https://github.com/dsb-norge/teams-notifier-function-app/commit/2645e401e62682af23c69b4fea47857aca621da6))
+* **deps:** bump dorny/paths-filter from 4.0.1 to 4.0.3 ([cc96b89](https://github.com/dsb-norge/teams-notifier-function-app/commit/cc96b890f656a3b135ab3e30e8e8798948f9c7e0))
+* **deps:** bump github/codeql-action/upload-sarif from 4.36.2 to 4.37.6 ([14fe2a9](https://github.com/dsb-norge/teams-notifier-function-app/commit/14fe2a9109a0c96a0c0fc667c1eadff367a59b42))
+* **deps:** bump github/codeql-action/upload-sarif from 4.37.6 to 4.37.7 ([46a3ba6](https://github.com/dsb-norge/teams-notifier-function-app/commit/46a3ba64b08552422e7b4de34ea4a1f2100d7416))
+* **deps:** Bump Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues from 5.5.4 to 5.5.5 ([ed489b1](https://github.com/dsb-norge/teams-notifier-function-app/commit/ed489b1ac8903903502c8d271cd883b70a279d22))
+* **deps:** bump Microsoft.NET.Test.Sdk from 18.7.0 to 18.9.0 ([8c56d44](https://github.com/dsb-norge/teams-notifier-function-app/commit/8c56d4478c64984b15c0158f3e84e9947c72b3ff))
+* **deps:** bump the azure-functions group with 2 updates ([b932b8e](https://github.com/dsb-norge/teams-notifier-function-app/commit/b932b8e9634abab663ec6ef57a5679ce25684d7c))
+* **deps:** bump the microsoft-agents group with 3 updates ([94a005d](https://github.com/dsb-norge/teams-notifier-function-app/commit/94a005d520a3cdb01fc0c90d421bfcd864487b02))
+* **deps:** Bump xunit.v3.mtp-v2 from 3.2.2 to 4.0.0 ([2bb4442](https://github.com/dsb-norge/teams-notifier-function-app/commit/2bb444299c2322b9368457fcaeaab910409f9240))
+* **deps:** raise SDK floor to 10.0.111 and move tests to Microsoft Testing Platform ([346a7a6](https://github.com/dsb-norge/teams-notifier-function-app/commit/346a7a66f414fd163d01ba6f7beeac5970dfca35))
+
 ## [1.7.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.1...teams-notifier-function-app-v1.7.2) (2026-07-03)
 
 
