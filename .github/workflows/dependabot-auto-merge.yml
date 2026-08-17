@@ -37,8 +37,15 @@ jobs:
       - name: Skip — no Dependabot metadata
         if: steps.meta.outcome != 'success'
         run: |
-          echo "No Dependabot metadata on this PR (its commit was most likely amended)."
-          echo "Not arming auto-merge; merge it by hand after review."
+          echo "fetch-metadata returned no usable metadata, so auto-merge was not armed."
+          echo "Merge this PR by hand after review."
+          echo
+          echo "Check the 'Fetch Dependabot metadata' step above for which case this is:"
+          echo "  * 'not created by Dependabot' / 'does not contain metadata'"
+          echo "      -> the PR's first commit was amended. Expected; see the"
+          echo "         'Amending a Dependabot PR' note in docs/contributing.md section 9."
+          echo "  * anything else (API error, rate limit, transient failure)"
+          echo "      -> re-run the job; it should arm normally."
       - name: Skip major bumps
         if: steps.meta.outcome == 'success' && steps.meta.outputs.update-type == 'version-update:semver-major'
         run: echo "Major bump — merge decision stays fully manual (read the changelog first)."
