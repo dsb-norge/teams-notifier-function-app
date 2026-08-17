@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Sockets;
 using Azure.Data.Tables;
@@ -119,13 +120,25 @@ public class AzuriteFixture : IAsyncLifetime
             }
         };
 
+        // Process.Start documents exactly these two for a launch failure: Win32Exception when the
+        // executable can't be opened (azurite not on PATH), InvalidOperationException for bad start
+        // configuration. Anything else is a genuine defect and should surface, not be swallowed.
         try
         {
             process.Start();
         }
-        catch (Exception ex)
+        catch (Win32Exception ex)
         {
-            process.Dispose();
+            return LaunchFailed(process, ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return LaunchFailed(process, ex);
+        }
+
+        static string LaunchFailed(Process p, Exception ex)
+        {
+            p.Dispose();
             return $"could not launch azurite ({ex.Message})";
         }
 
