@@ -71,6 +71,7 @@ The deps surface is: NuGet packages (csproj), the .NET SDK (`global.json`), GitH
 ### Pin format rules
 
 - **GitHub Action `uses:` lines are SHA-pinned with a trailing version + date comment.** Example: `uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 2026-01-09`. Tag refs (`@v4`) are not accepted; resolve to a commit SHA before pinning (annotated tags need two `gh api` hops via the `.object` chain).
+- **Dependabot updates the SHA but not the pin comment**, so Actions bumps almost always need a hand-edit (it leaves the old version/date, or mangles it — `# v6.0.0 2026-06-26.0.0`). Verify the SHA against the tag, then correct the comment. **Add that as a commit on top of Dependabot's — never force-push a branch rebuilt from `main`.** `dependabot/fetch-metadata` parses the *first* commit; replacing it discards the metadata and the auto-merge workflow can no longer arm (no flag recovers it). When a Dependabot PR falls behind `main`, comment `@dependabot rebase` rather than rebasing it yourself.
 - **NuGet `<PackageReference>` always carries an exact `Version="X.Y.Z"`.** Wildcards or ranges are not used.
 - **`global.json` keeps `rollForward: latestFeature`** so a newer feature-band SDK on the runner image is acceptable, but `major.minor` stays explicit.
 
