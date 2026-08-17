@@ -207,6 +207,24 @@ Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `M
 
 **Last checked (2026-08-14)**: still blocking. `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.51.0 still depends on `Microsoft.ApplicationInsights.PerfCounterCollector >= 2.23.0`, and building against `Microsoft.ApplicationInsights.WorkerService` 3.1.2 fails with `CS0246: ITelemetryInitializer could not be found` in `Helpers/TokenRedactingTelemetryInitializer.cs`. Keep the ignore.
 
+### Deferred migrations
+
+#### `TeamsActivityHandler` → `Microsoft.Agents.Extensions.MSTeams` (deferred 2026-08-14)
+
+Agents SDK 1.7.x marks `TeamsActivityHandler` `[Obsolete]`, pointing at the new `Microsoft.Agents.Extensions.MSTeams` package. `TeamsBotHandler` suppresses that warning with a `#pragma` referencing this section. Evaluated and deliberately deferred — it is not a package swap:
+
+**It is a different programming model, not a rename.** The new package has no `TeamsActivityHandler` base class to inherit from. It replaces the inheritance model with delegate/route registration (`TeamsAgentExtension`, `TeamsActivityRouteAttribute`, `ChannelUpdateHandler` and friends), and exposes channel data as `Microsoft.Teams.Api.ChannelData` rather than `TeamsChannelData`. `TeamInfo` and `ChannelInfo` have no like-for-like replacements in the same shape. Swapping the package reference produces ~20 compile errors across `TeamsBotHandler` and `BotService`, and fixing them means rewriting the eight `OnTeams*` overrides against a new architecture — on a production bot whose install/channel-event and proactive-send paths can only be verified against real Teams.
+
+**It would currently introduce a high-severity advisory.** `Microsoft.Agents.Extensions.MSTeams` 1.7.4 pulls in `Microsoft.Graph` 5.99.0 → `Microsoft.Graph.Core` 3.2.4 → the Kiota stack at 1.17.1. `Microsoft.Kiota.Abstractions` < 1.22.0 is affected by [GHSA-7j59-v9qr-6fq9](https://github.com/advisories/GHSA-7j59-v9qr-6fq9) (HIGH — `RedirectHandler` leaks `Cookie`/`Proxy-Authorization` headers across hosts). The CI **Dependency Review** job blocks PRs introducing vulnerable dependencies, so the migration would need explicit transitive pins to Kiota ≥ 1.22.x purely to stay green.
+
+**There is no deadline pressure.** Only the *class* carries `[Obsolete]`. `Microsoft.Agents.Extensions.Teams` is **not** marked deprecated on NuGet and is still shipping (1.7.129 stable, 1.8.x in preview), so it continues to receive fixes alongside the rest of the `Microsoft.Agents.*` triplet.
+
+**To revisit**, ideally all of:
+
+1. `Microsoft.Agents.Extensions.MSTeams` resolves a Kiota stack ≥ 1.22.0 (or `Microsoft.Graph` ≥ 6.x, whose `Graph.Core` 4.x depends on Kiota 2.x) without hand-pinned transitives.
+2. The old `Microsoft.Agents.Extensions.Teams` package is actually deprecated or stops receiving updates in step with the triplet — that is the real forcing function.
+3. The work is scoped as its own change with time budgeted for manual verification on dev: bot install into a team, channel create/rename/delete events, and proactive send via an alias.
+
 ### Lifted constraints
 
 #### `GitHubActionsTestLogger` (unpinned 2026-08-14, was held below 3.0.0)
