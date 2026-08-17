@@ -153,6 +153,8 @@ Start the function app with `func host start`, then send a test message using th
 
 The test project uses xUnit and Moq covering all functions, services, middleware, and models.
 
+Integration tests need Azurite **installed** (`npm install -g azurite`) but not running. `AzuriteFixture` starts its own emulator on a dedicated port triple from 11000 and deletes its data directory afterwards, so it never touches the `func host start` emulator on the default 10000-10002 ports. You can keep a local function host running while you test, and two `dotnet test` runs can execute side by side.
+
 ```bash
 # Run all tests
 dotnet test --project tests/TeamsNotificationBot.Tests/
@@ -175,7 +177,7 @@ dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*Inte
 | `Models/` | Request validation (NotificationRequest) and Adaptive Card security (AdaptiveCardValidator) |
 | `Services/` | Alias CRUD, queue management, idempotency, bot handler command routing, and all card builders (Alert, Poison, SetupGuide, CreateAlias) |
 | `Middleware/` | EasyAuth header parsing, role-based authorization, and rate limiting |
-| `Integration/` | End-to-end notify flow, queue serialization round-trip, and service integration tests with Azurite |
+| `Integration/` | End-to-end notify flow, queue serialization round-trip, and service integration tests against a fixture-owned Azurite (see `Integration/Fixtures/AzuriteFixture.cs`) |
 
 ---
 
