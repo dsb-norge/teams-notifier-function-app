@@ -102,6 +102,12 @@ az ad app federated-credential list --id "<bot-app-id>" --query '[].name'
 > authenticate as the Bot App Registration without a client secret. This
 > eliminates secret rotation overhead in production. A client secret is only
 > needed for local Dev Tunnels testing.
+>
+> **Note:** This credential uses the Entra ID issuer with the UAMI principal
+> ID as its subject. It is unrelated to GitHub Actions OIDC and is **not**
+> affected by GitHub's subject-claim format change -- that applies to the
+> deploy UAMI FICs only, see
+> [GitHub OIDC subject-claim formats](#github-oidc-subject-claim-formats).
 
 ---
 
@@ -425,8 +431,67 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexisten
 | `subnet_function_app_prefix` | `string` | no | `"10.0.0.0/24"` | CIDR for the Function App VNet integration subnet. Must be at least /24. |
 | `subnet_private_endpoints_prefix` | `string` | no | `"10.0.1.0/24"` | CIDR for the private endpoints subnet. |
 | `tags` | `map(string)` | no | `{}` | Additional tags merged with module-managed tags. Module tags take precedence on conflict. |
-| `deploy_github_actions_from` | `map(object)` | no | `{}` | GitHub repos for CI/CD OIDC. Creates a deploy UAMI with FICs when non-empty. |
+| `deploy_github_actions_from` | `map(object)` | no | `{}` | GitHub repos for CI/CD OIDC. Creates a deploy UAMI with FICs when non-empty. See [GitHub OIDC subject-claim formats](#github-oidc-subject-claim-formats). |
 | `github_org` | `string` | no | `""` | GitHub organization name for OIDC subject claims in deploy UAMI FICs. |
+| `github_org_id` | `string` | no | `""` | Permanent numeric GitHub ID of `github_org` (module `v1.2.0`+). Required when any repo in `deploy_github_actions_from` sets `repository_id`. |
+
+### GitHub OIDC subject-claim formats
+
+The FICs created by `deploy_github_actions_from` match the `sub` claim of the
+GitHub Actions OIDC token **exactly**. Since 2026-07-15 GitHub issues two
+subject-claim formats:
+
+| Format | Subject | Issued by |
+|--------|---------|-----------|
+| Classic | `repo:<org>/<repo>:<trigger>` | Repos created before 2026-07-15 |
+| Immutable | `repo:<org>@<org-id>/<repo>@<repo-id>:<trigger>` | Repos created, renamed, or transferred after 2026-07-15, and repos that opt in |
+
+`<trigger>` is the same in both formats (e.g. `ref:refs/heads/main`,
+`environment:prod`, `pull_request`). `<org-id>` and `<repo-id>` are permanent
+numeric IDs that survive renames and transfers and are never reused. Look
+them up with:
+
+```bash
+gh api /orgs/<org> --jq .id             # organization ID (dsb-norge = 29656362)
+gh api /repos/<org>/<repo> --jq .id     # repository ID
+```
+
+A classic-subject FIC silently stops matching the moment its repo starts
+issuing immutable subjects (rename, transfer, or opt-in), and for a repo
+created after 2026-07-15 it never matches at all. Because the deploy identity
+is a user-assigned managed identity, flexible FICs
+(`claimsMatchingExpression`) are not an option -- Entra ID supports those on
+app registrations only. The fix is to create **both** FICs per subject: the
+classic one and an immutable-format twin.
+
+Module `v1.2.0` and later create the twins natively: set `github_org_id` and
+a `repository_id` per repository, and every FIC for that repo gets an
+immutable-format twin alongside the classic one. Repos that omit
+`repository_id` keep classic-only FICs (backwards compatible).
+
+```hcl
+module "teams_notification_bot" {
+  source  = "dsb-norge/teams-notification-bot-lz/azurerm"
+  version = "1.2.0"   # or later — required for github_org_id / repository_id
+  # ...
+
+  github_org    = "dsb-norge"
+  github_org_id = "29656362"      # gh api /orgs/dsb-norge --jq .id
+
+  deploy_github_actions_from = {
+    "my-app-repo" = {
+      environments  = ["prod"]
+      repository_id = "123456789" # gh api /repos/dsb-norge/my-app-repo --jq .id
+    }
+  }
+}
+```
+
+For repos created after 2026-07-15, the immutable-format FIC is the one that
+actually matches -- the classic one is inert but harmless. See GitHub's
+[changelog entry](https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/)
+and the [OIDC reference](https://docs.github.com/en/actions/reference/security/oidc)
+for details.
 
 ### Outputs
 
