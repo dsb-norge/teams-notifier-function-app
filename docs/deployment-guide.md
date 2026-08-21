@@ -433,6 +433,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexisten
 | `tags` | `map(string)` | no | `{}` | Additional tags merged with module-managed tags. Module tags take precedence on conflict. |
 | `deploy_github_actions_from` | `map(object)` | no | `{}` | GitHub repos for CI/CD OIDC. Creates a deploy UAMI with FICs when non-empty. See [GitHub OIDC subject-claim formats](#github-oidc-subject-claim-formats). |
 | `github_org` | `string` | no | `""` | GitHub organization name for OIDC subject claims in deploy UAMI FICs. |
+| `github_org_id` | `string` | no | `""` | Permanent numeric GitHub ID of `github_org` (module `v1.2.0`+). Required when any repo in `deploy_github_actions_from` sets `repository_id`. |
 
 ### GitHub OIDC subject-claim formats
 
@@ -455,27 +456,35 @@ gh api /orgs/<org> --jq .id             # organization ID (dsb-norge = 29656362)
 gh api /repos/<org>/<repo> --jq .id     # repository ID
 ```
 
-As of module `v1.1.1` the deploy UAMI FICs use classic-format subjects only.
 A classic-subject FIC silently stops matching the moment its repo starts
 issuing immutable subjects (rename, transfer, or opt-in), and for a repo
 created after 2026-07-15 it never matches at all. Because the deploy identity
 is a user-assigned managed identity, flexible FICs
 (`claimsMatchingExpression`) are not an option -- Entra ID supports those on
 app registrations only. The fix is to create **both** FICs per subject: the
-classic one (from the module) and an immutable-format twin.
+classic one and an immutable-format twin.
 
-Until the module creates the twins itself, add one manually next to each
-module-created FIC -- same trigger, with `@<id>` inserted after the org and
-repo names:
+Module `v1.2.0` and later create the twins natively: set `github_org_id` and
+a `repository_id` per repository, and every FIC for that repo gets an
+immutable-format twin alongside the classic one. Repos that omit
+`repository_id` keep classic-only FICs (backwards compatible).
 
-```bash
-az identity federated-credential create \
-  --identity-name "<deploy-uami-name>" \
-  --resource-group "<resource-group>" \
-  --name "branch-main-in-<org>__<repo>-immutable" \
-  --issuer "https://token.actions.githubusercontent.com" \
-  --subject "repo:<org>@<org-id>/<repo>@<repo-id>:ref:refs/heads/main" \
-  --audiences "api://AzureADTokenExchange"
+```hcl
+module "teams_notification_bot" {
+  source  = "dsb-norge/teams-notification-bot-lz/azurerm"
+  version = "1.2.0"   # or later — required for github_org_id / repository_id
+  # ...
+
+  github_org    = "dsb-norge"
+  github_org_id = "29656362"      # gh api /orgs/dsb-norge --jq .id
+
+  deploy_github_actions_from = {
+    "my-app-repo" = {
+      environments  = ["prod"]
+      repository_id = "123456789" # gh api /repos/dsb-norge/my-app-repo --jq .id
+    }
+  }
+}
 ```
 
 For repos created after 2026-07-15, the immutable-format FIC is the one that
