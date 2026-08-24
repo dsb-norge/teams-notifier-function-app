@@ -180,6 +180,22 @@ var host = new HostBuilder()
         // M365 Agents SDK: CloudAdapter as IAgentHttpAdapter + dependencies
         services.AddCloudAdapter();
 
+        // M365 Agents SDK: AgentApplication turn options for the route-based TeamsBotHandler.
+        // The DI ctor wires IConnections + IHttpClientFactory (needed by TeamsAgentExtension's
+        // per-turn Teams ApiClient) and defaults TurnStateFactory to MemoryStorage — this bot
+        // keeps no turn state. Mention stripping stays inside the handler (pre-migration parity),
+        // so the SDK-side mention processing is switched off explicitly.
+        services.AddSingleton(sp => new Microsoft.Agents.Builder.App.AgentApplicationOptions(
+            sp,
+            context.Configuration,
+            sp.GetRequiredService<CloudAdapter>(),
+            loggerFactory: sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
+        {
+            RemoveRecipientMention = false,
+            NormalizeMentions = false,
+            StartTypingTimer = false,
+        });
+
         // M365 Agents SDK: register the bot handler as the agent
         services.AddTransient<IAgent, TeamsBotHandler>();
 

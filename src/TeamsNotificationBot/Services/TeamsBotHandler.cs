@@ -3,24 +3,23 @@ using System.Text.RegularExpressions;
 using Azure.Data.Tables;
 using Azure.Storage.Queues;
 using Microsoft.Agents.Builder;
+using Microsoft.Agents.Builder.App;
+using Microsoft.Agents.Builder.State;
 using Microsoft.Agents.Core.Models;
-using Microsoft.Agents.Extensions.Teams.Compat;
-using Microsoft.Agents.Extensions.Teams.Connector;
-using Microsoft.Agents.Extensions.Teams.Models;
+using Microsoft.Agents.Extensions.MSTeams;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Models;
+using TeamsApi = Microsoft.Teams.Api;
 
 namespace TeamsNotificationBot.Services;
 
-// Agents SDK 1.7.x marks TeamsActivityHandler [Obsolete] in favour of the
-// Microsoft.Agents.Extensions.MSTeams package. Staying put is a deliberate, reviewed decision —
-// see docs/contributing.md §9 "Deferred migrations" for the evaluation and revisit conditions.
-// Suppressed here rather than left to warn on every build, so it doesn't become background noise.
-#pragma warning disable CS0618 // Type or member is obsolete
-public class TeamsBotHandler : TeamsActivityHandler
-#pragma warning restore CS0618
+// Migrated from the [Obsolete] TeamsActivityHandler inheritance model to AgentApplication +
+// TeamsAgentExtension route registration (docs/contributing.md §9 "Deferred migrations" records
+// the evaluation and the Kiota transitive pin that ships with it). AgentApplication implements
+// the same IAgent contract, so CloudAdapter hosting and BotMessagesFunction are unchanged.
+public class TeamsBotHandler : AgentApplication
 {
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
@@ -30,6 +29,7 @@ public class TeamsBotHandler : TeamsActivityHandler
     private readonly TableClient _teamLookupTable;
     private readonly QueueClient _botOpsQueue;
     private readonly ILogger<TeamsBotHandler> _logger;
+    private readonly TeamsAgentExtension _teams;
 
     private static readonly Regex AliasNameRegex = new(@"^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$", RegexOptions.Compiled);
     private static readonly HashSet<string> ValidPoisonQueues = ["notifications-poison", "botoperations-poison"];
@@ -39,6 +39,7 @@ public class TeamsBotHandler : TeamsActivityHandler
     private DateTimeOffset _poisonAliasNudgeCacheExpiry;
 
     public TeamsBotHandler(
+        AgentApplicationOptions options,
         IBotService botService,
         IAliasService aliasService,
         [FromKeyedServices("teamlookup")] TableClient teamLookupTable,
@@ -47,6 +48,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         IQueueManagementService? queueService = null,
         IWebhookService? webhookService = null,
         IUpdownIpAllowlistService? ipAllowlistService = null)
+        : base(options)
     {
         _botService = botService;
         _aliasService = aliasService;
@@ -56,10 +58,41 @@ public class TeamsBotHandler : TeamsActivityHandler
         _queueService = queueService;
         _webhookService = webhookService;
         _ipAllowlistService = ipAllowlistService;
+
+        // Teams-specific lifecycle events. The extension's before-turn hook also converts
+        // Activity.ChannelData to the typed Microsoft.Teams.Api.ChannelData and stashes an
+        // authenticated Teams ApiClient in turnContext.Services for GetTeamsClient().
+        _teams = new TeamsAgentExtension(this);
+        RegisterExtension(_teams, ext =>
+        {
+            ext.Channels.OnCreated(OnChannelCreatedAsync);
+            ext.Channels.OnRenamed(OnChannelRenamedAsync);
+            ext.Channels.OnRestored(OnChannelRestoredAsync);
+            ext.Channels.OnDeleted(OnChannelDeletedAsync);
+            ext.Teams.OnRenamed(OnTeamRenamedAsync);
+            ext.Teams.OnDeleted(OnTeamDeletedAsync);
+            // Member added/removed events: deliberately NOT registered. The old
+            // TeamsActivityHandler base dispatched them with per-member HTTP lookups; the
+            // no-op overrides that suppressed that are replaced by simply having no route.
+        });
+
+        // Install/uninstall handled on the raw installationUpdate activity (action add/remove).
+        OnActivity(ActivityTypes.InstallationUpdate, OnInstallationUpdateAsync);
+
+        // Single catch-all message route: the command dispatch below preserves the exact
+        // pre-migration if/else chain rather than splitting into per-command SDK routes.
+        OnActivity(ActivityTypes.Message, OnMessageAsync);
+
+        // adaptiveCard/action invokes (Action.Execute). The SDK validates the invoke value and
+        // wraps the returned AdaptiveCardInvokeResponse in the invokeResponse activity.
+        AdaptiveCards.OnActionExecute(
+            (RouteSelector)((_, _) => Task.FromResult(true)),
+            OnAdaptiveCardActionAsync);
     }
 
-    protected override async Task OnMessageActivityAsync(
-        ITurnContext<IMessageActivity> turnContext,
+    private async Task OnMessageAsync(
+        ITurnContext turnContext,
+        ITurnState turnState,
         CancellationToken cancellationToken)
     {
         // Handle Adaptive Card Action.Submit (arrives as message with Value, not invoke)
@@ -411,9 +444,10 @@ public class TeamsBotHandler : TeamsActivityHandler
     {
         var cache = new Dictionary<string, string>();
 
-        // GetTeamChannelsAsync requires the team thread ID (19:xxx@thread.tacv2), not the AAD group GUID.
-        // We can only resolve this from the current turn context when the command is sent from a team channel.
-        var channelData = turnContext.Activity.GetChannelData<TeamsChannelData>();
+        // The channel-list API requires the team thread ID (19:xxx@thread.tacv2), not the AAD group
+        // GUID. We can only resolve this from the current turn context when the command is sent
+        // from a team channel.
+        var channelData = turnContext.Activity.GetChannelData<TeamsApi.ChannelData>();
         var currentTeamThreadId = channelData?.Team?.Id;
 
         if (string.IsNullOrEmpty(currentTeamThreadId))
@@ -434,7 +468,11 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         try
         {
-            var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, currentTeamThreadId);
+            // The authenticated ApiClient is stashed in turnContext.Services by the
+            // TeamsAgentExtension before-turn hook. TeamsChannelList wraps the REST call —
+            // see its doc comment for why TeamClient.GetConversationsAsync can't be used.
+            var channels = await TeamsChannelList.GetTeamChannelsAsync(
+                _teams.GetTeamsClient(turnContext), currentTeamThreadId);
             foreach (var ch in channels)
             {
                 var name = ChannelNameResolver.Resolve(ch.Name, ch.Id, currentTeamThreadId);
@@ -1099,7 +1137,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         ITurnContext turnContext, CancellationToken cancellationToken)
     {
         var conversationType = turnContext.Activity.Conversation?.ConversationType;
-        var channelData = turnContext.Activity.GetChannelData<TeamsChannelData>();
+        var channelData = turnContext.Activity.GetChannelData<TeamsApi.ChannelData>();
         var channelName = channelData?.Channel?.Name;
         var userName = turnContext.Activity.From?.Name;
 
@@ -1202,12 +1240,12 @@ public class TeamsBotHandler : TeamsActivityHandler
             cancellationToken);
     }
 
-    protected override async Task<AdaptiveCardInvokeResponse> OnAdaptiveCardInvokeAsync(
-        ITurnContext<IInvokeActivity> turnContext,
-        AdaptiveCardInvokeValue invokeValue,
+    private async Task<AdaptiveCardInvokeResponse> OnAdaptiveCardActionAsync(
+        ITurnContext turnContext,
+        ITurnState turnState,
+        object? actionData,
         CancellationToken cancellationToken)
     {
-        var actionData = invokeValue?.Action?.Data;
         if (actionData == null)
         {
             return CreateAdaptiveCardResponse(400, "No action data provided.");
@@ -1226,7 +1264,10 @@ public class TeamsBotHandler : TeamsActivityHandler
 
         if (action != "createAlias")
         {
-            return await base.OnAdaptiveCardInvokeAsync(turnContext, invokeValue!, cancellationToken);
+            // Pre-migration this fell through to the TeamsActivityHandler base, which produced
+            // the SDK's 400 "NotSupported" error body. Same status, explicit message.
+            _logger.LogWarning("Unsupported adaptive card action: {Action}", LogSanitizer.Sanitize(action));
+            return CreateAdaptiveCardResponse(400, $"The action '{action ?? "(none)"}' is not supported.");
         }
 
         // Validate alias name
@@ -1363,12 +1404,15 @@ public class TeamsBotHandler : TeamsActivityHandler
 
     // --- Installation update (primary install/uninstall handler per MS docs) ---
 
-    protected override async Task OnInstallationUpdateActivityAsync(
-        ITurnContext<IInstallationUpdateActivity> turnContext,
+    private async Task OnInstallationUpdateAsync(
+        ITurnContext turnContext,
+        ITurnState turnState,
         CancellationToken cancellationToken)
     {
         var action = turnContext.Activity.Action;
-        var channelData = turnContext.Activity.GetChannelData<TeamsChannelData>();
+        var channelData = turnContext.Activity.GetChannelData<TeamsApi.ChannelData>();
+        _logger.LogDebug("installationUpdate received: action={Action}, conversationType={Type}",
+            LogSanitizer.Sanitize(action), turnContext.Activity.Conversation?.ConversationType);
 
         if (string.Equals(action, "add", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(action, "add-upgrade", StringComparison.OrdinalIgnoreCase))
@@ -1382,26 +1426,14 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
     }
 
-    // --- Conversation update: delegate to SDK overrides, suppress member dispatch ---
+    // --- Channel events (routed by TeamsAgentExtension on channelData.eventType) ---
 
-    // Install/uninstall handled via OnInstallationUpdateActivityAsync.
-    // Suppress base member dispatch to prevent unnecessary HTTP calls for non-bot member events.
-    protected override Task OnTeamsMembersAddedDispatchAsync(
-        IList<ChannelAccount> membersAdded, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
-        => Task.CompletedTask;
-
-    protected override Task OnTeamsMembersRemovedDispatchAsync(
-        IList<ChannelAccount> membersRemoved, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
-        => Task.CompletedTask;
-
-    // --- Channel event overrides (SDK dispatches from base OnConversationUpdateActivityAsync) ---
-
-    protected override async Task OnTeamsChannelCreatedAsync(
-        ChannelInfo channelInfo, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+    private async Task OnChannelCreatedAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
     {
+        var turnContext = (ITurnContext)teamsContext;
+        var teamInfo = teamsContext.Activity.ChannelData?.Team;
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var channelId = channelInfo?.Id;
         var channelName = channelInfo?.Name;
@@ -1425,10 +1457,11 @@ public class TeamsBotHandler : TeamsActivityHandler
             "channel", teamInfo?.Name, channelName);
     }
 
-    protected override async Task OnTeamsChannelDeletedAsync(
-        ChannelInfo channelInfo, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+    private async Task OnChannelDeletedAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
     {
+        var teamInfo = teamsContext.Activity.ChannelData?.Team;
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var channelId = channelInfo?.Id;
 
@@ -1442,10 +1475,12 @@ public class TeamsBotHandler : TeamsActivityHandler
         await _botService.RemoveConversationReferenceAsync(teamGuid, channelId);
     }
 
-    protected override async Task OnTeamsChannelRenamedAsync(
-        ChannelInfo channelInfo, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+    private async Task OnChannelRenamedAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
     {
+        var turnContext = (ITurnContext)teamsContext;
+        var teamInfo = teamsContext.Activity.ChannelData?.Team;
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var channelId = channelInfo?.Id;
         var channelName = channelInfo?.Name;
@@ -1469,10 +1504,12 @@ public class TeamsBotHandler : TeamsActivityHandler
             "channel", teamInfo?.Name, channelName);
     }
 
-    protected override async Task OnTeamsChannelRestoredAsync(
-        ChannelInfo channelInfo, TeamInfo teamInfo,
-        ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+    private async Task OnChannelRestoredAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
     {
+        var turnContext = (ITurnContext)teamsContext;
+        var teamInfo = teamsContext.Activity.ChannelData?.Team;
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var channelId = channelInfo?.Id;
         var channelName = channelInfo?.Name;
@@ -1496,11 +1533,11 @@ public class TeamsBotHandler : TeamsActivityHandler
             "channel", teamInfo?.Name, channelName);
     }
 
-    // --- Team event overrides ---
+    // --- Team events (routed by TeamsAgentExtension on channelData.eventType) ---
 
-    protected override async Task OnTeamsTeamRenamedAsync(
-        TeamInfo teamInfo, ITurnContext<IConversationUpdateActivity> turnContext,
-        CancellationToken cancellationToken)
+    private async Task OnTeamRenamedAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Team teamInfo, CancellationToken cancellationToken)
     {
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var newTeamName = teamInfo?.Name;
@@ -1534,9 +1571,9 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
     }
 
-    protected override async Task OnTeamsTeamDeletedAsync(
-        TeamInfo teamInfo, ITurnContext<IConversationUpdateActivity> turnContext,
-        CancellationToken cancellationToken)
+    private async Task OnTeamDeletedAsync(
+        ITeamsTurnContext teamsContext, ITurnState turnState,
+        TeamsApi.Team teamInfo, CancellationToken cancellationToken)
     {
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
 
@@ -1554,7 +1591,7 @@ public class TeamsBotHandler : TeamsActivityHandler
     // --- Private helpers: install/uninstall ---
 
     private async Task HandleBotInstalledAsync(
-        ITurnContext turnContext, TeamsChannelData? channelData, CancellationToken cancellationToken)
+        ITurnContext turnContext, TeamsApi.ChannelData? channelData, CancellationToken cancellationToken)
     {
         var activity = turnContext.Activity;
         var conversationType = activity.Conversation?.ConversationType ?? string.Empty;
@@ -1654,7 +1691,7 @@ public class TeamsBotHandler : TeamsActivityHandler
         }
     }
 
-    private async Task HandleBotRemovedAsync(IActivity activity, TeamsChannelData? channelData)
+    private async Task HandleBotRemovedAsync(IActivity activity, TeamsApi.ChannelData? channelData)
     {
         var conversationType = activity.Conversation?.ConversationType ?? string.Empty;
 
@@ -1757,7 +1794,7 @@ public class TeamsBotHandler : TeamsActivityHandler
 
     // --- Private helpers: team GUID resolution ---
 
-    private async Task<string?> ResolveTeamGuidAsync(TeamInfo? teamInfo)
+    private async Task<string?> ResolveTeamGuidAsync(TeamsApi.Team? teamInfo)
     {
         // Prefer aadGroupId if present (reliable in membersAdded / bot install)
         var aadGroupId = teamInfo?.AadGroupId;
@@ -1806,7 +1843,7 @@ public class TeamsBotHandler : TeamsActivityHandler
 
     private async Task<(string? pk, string? rk, string targetType)> ExtractConversationKeysAsync(IActivity activity)
     {
-        var channelData = activity.GetChannelData<TeamsChannelData>();
+        var channelData = activity.GetChannelData<TeamsApi.ChannelData>();
         var conversationType = activity.Conversation?.ConversationType ?? string.Empty;
 
         if (conversationType == "channel" || channelData?.Team != null)

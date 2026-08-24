@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Services;
@@ -42,6 +43,7 @@ public class TeamsBotHandlerLifecycleTests
     public TeamsBotHandlerLifecycleTests()
     {
         _handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
             _botService.Object,
             _aliasService.Object,
             _teamLookupTable.Object,

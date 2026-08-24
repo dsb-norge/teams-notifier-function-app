@@ -10,6 +10,7 @@ using Moq;
 using Moq.Protected;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Services;
@@ -17,10 +18,10 @@ namespace TeamsNotificationBot.Tests.Services;
 /// <summary>
 /// Tests the opportunistic ChannelName backfill on the list-aliases read path.
 ///
-/// These are the only handler tests that let TeamsInfo.GetTeamChannelsAsync actually succeed.
-/// TeamsInfo builds a concrete RestTeamsConnectorClient internally, so the only seam is the
-/// IRestTransport that the IConnectorClient in turn state must also implement — stubbing its
-/// HttpClient lets the real SDK code path run against canned JSON.
+/// These are the only handler tests that let the Teams channel-list API call actually succeed.
+/// The TeamsAgentExtension before-turn hook builds the Teams ApiClient from the options'
+/// IHttpClientFactory, so the seam is a stub HttpClient (handed to TestAgentOptions) whose
+/// message handler answers the real SDK request with canned channel-list JSON.
 /// </summary>
 public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 {
@@ -34,13 +35,30 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
     private readonly Mock<QueueClient> _botOpsQueue = new();
     private readonly TeamsBotHandler _handler;
 
-    // The turn-state collection and the stub HttpClient must outlive the helper that builds them
+    // The canned response the stub HttpClient serves; set per-test via CreateListAliasesContext.
+    private string? _channelListJson;
+
+    // The turn-state collections and the stub HttpClient must outlive the helper that builds them
     // (the handler reads them mid-test), so they are disposed here rather than with `using`.
     private readonly List<IDisposable> _disposables = [];
 
     public TeamsBotHandlerChannelNameBackfillTests()
     {
+        var stubHandler = new Mock<HttpMessageHandler>();
+        stubHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(() => _channelListJson == null
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(_channelListJson, Encoding.UTF8, "application/json")
+                });
+        var stubHttpClient = new HttpClient(stubHandler.Object);
+        _disposables.Add(stubHttpClient);
+
         _handler = new TeamsBotHandler(
+            TestAgentOptions.Create(teamsApiHttpClient: stubHttpClient),
             _botService.Object,
             _aliasService.Object,
             _teamLookupTable.Object,
@@ -81,12 +99,14 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
     /// <summary>
     /// Builds a turn context for a list-aliases message. When <paramref name="inTeamChannel"/> is
-    /// true the activity carries team channel data and turn state carries a connector client whose
-    /// HTTP transport returns <paramref name="channelListJson"/>.
+    /// true the activity carries team channel data, and the class-level stub HttpClient (behind
+    /// the options' IHttpClientFactory) answers the channel-list request with
+    /// <paramref name="channelListJson"/>.
     /// </summary>
     private Mock<ITurnContext<IMessageActivity>> CreateListAliasesContext(
         bool inTeamChannel, string? channelListJson = null)
     {
+        _channelListJson = channelListJson;
         var activity = new Activity
         {
             Type = ActivityTypes.Message,
@@ -120,38 +140,12 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
         var services = new TurnContextStateCollection();
         _disposables.Add(services);
-        if (channelListJson != null)
-            services.Set(CreateConnectorClient(channelListJson));
         turnContext.Setup(t => t.Services).Returns(services);
+        var stackState = new TurnContextStateCollection();
+        _disposables.Add(stackState);
+        turnContext.Setup(t => t.StackState).Returns(stackState);
 
         return turnContext;
-    }
-
-    /// <summary>
-    /// An IConnectorClient that also implements IRestTransport (TeamsInfo casts to it) and hands
-    /// out an HttpClient that answers every request with the supplied channel-list JSON.
-    /// </summary>
-    private IConnectorClient CreateConnectorClient(string channelListJson)
-    {
-        var handler = new Mock<HttpMessageHandler>();
-        handler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(channelListJson, Encoding.UTF8, "application/json")
-            });
-
-        var httpClient = new HttpClient(handler.Object);
-        _disposables.Add(httpClient);
-
-        var connector = new Mock<IConnectorClient>();
-        connector.Setup(c => c.BaseUri).Returns(new Uri("https://smba.trafficmanager.net/emea/"));
-        var transport = connector.As<IRestTransport>();
-        transport.Setup(t => t.Endpoint).Returns(new Uri("https://smba.trafficmanager.net/emea/"));
-        transport.Setup(t => t.GetHttpClientAsync()).ReturnsAsync(httpClient);
-
-        return connector.Object;
     }
 
     [Fact]

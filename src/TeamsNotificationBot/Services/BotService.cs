@@ -4,10 +4,10 @@ using Azure.Data.Tables;
 using Microsoft.Agents.Authentication;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
-using Microsoft.Agents.Extensions.Teams.Connector;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Models;
+using TeamsApi = Microsoft.Teams.Api;
 
 namespace TeamsNotificationBot.Services;
 
@@ -23,14 +23,20 @@ public class BotService : IBotService
     private readonly string _botAppId;
     private readonly bool _teamsDisabled;
     private readonly ILogger<BotService> _logger;
+    private readonly IConnections? _connections;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
     public BotService(
         CloudAdapter adapter,
         TableClient tableClient,
-        ILogger<BotService> logger)
+        ILogger<BotService> logger,
+        IConnections? connections = null,
+        IHttpClientFactory? httpClientFactory = null)
     {
         _adapter = adapter;
         _tableClient = tableClient;
+        _connections = connections;
+        _httpClientFactory = httpClientFactory;
         _botAppId = Environment.GetEnvironmentVariable("BotAppId") ?? string.Empty;
         _teamsDisabled = string.Equals(
             Environment.GetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED"),
@@ -327,7 +333,8 @@ public class BotService : IBotService
             {
                 try
                 {
-                    var channels = await TeamsInfo.GetTeamChannelsAsync(turnContext, teamThreadId, ct);
+                    var channels = await Helpers.TeamsChannelList.GetTeamChannelsAsync(
+                        CreateTeamsApiClient(turnContext), teamThreadId, ct);
                     _logger.LogInformation("Enumerated {Count} channels in team {TeamGuid}", channels.Count, teamGuid);
 
                     foreach (var channel in channels)
@@ -368,6 +375,37 @@ public class BotService : IBotService
                 }
             },
             CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Builds an authenticated Teams ApiClient for a proactive turn. Proactive callbacks from
+    /// ContinueConversationAsync bypass the AgentApplication turn pipeline, so the client the
+    /// TeamsAgentExtension normally stashes in turnContext.Services is absent — this replicates
+    /// the SDK's own construction (token from IConnections against the turn's ServiceUrl).
+    /// </summary>
+    private TeamsApi.Clients.ApiClient CreateTeamsApiClient(ITurnContext turnContext)
+    {
+        if (_connections == null || _httpClientFactory == null)
+        {
+            throw new InvalidOperationException(
+                "Teams channel enumeration requires IConnections and IHttpClientFactory.");
+        }
+
+        Microsoft.Teams.Common.Http.IHttpClientOptions.HttpTokenFactory? tokenFactory =
+            AgentClaims.AllowAnonymous(turnContext.Identity) ? null : () =>
+            {
+                var tokenAccess = _connections.GetTokenProvider(
+                    turnContext.Identity, turnContext.Activity.ServiceUrl);
+                return tokenAccess.GetAccessTokenAsync(
+                        AuthenticationConstants.BotFrameworkAudience,
+                        [AuthenticationConstants.BotFrameworkDefaultScope])
+                    .ConfigureAwait(false).GetAwaiter().GetResult();
+            };
+
+        var httpClient = _httpClientFactory.CreateClient(nameof(BotService));
+        return new TeamsApi.Clients.ApiClient(
+            turnContext.Activity.ServiceUrl,
+            new Microsoft.Teams.Common.Http.HttpClient(httpClient) { Options = { TokenFactory = tokenFactory } });
     }
 
     public async Task BatchRemoveTeamReferencesAsync(string teamId)
