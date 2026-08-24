@@ -209,21 +209,42 @@ Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `M
 
 ### Deferred migrations
 
-#### `TeamsActivityHandler` → `Microsoft.Agents.Extensions.MSTeams` (deferred 2026-08-14)
+#### `TeamsActivityHandler` → `Microsoft.Agents.Extensions.MSTeams` (completed 2026-08-24)
 
-Agents SDK 1.7.x marks `TeamsActivityHandler` `[Obsolete]`, pointing at the new `Microsoft.Agents.Extensions.MSTeams` package. `TeamsBotHandler` suppresses that warning with a `#pragma` referencing this section. Evaluated and deliberately deferred — it is not a package swap:
+Deferred on 2026-08-14, executed on 2026-08-24 (deliberate decision, ahead of the revisit
+conditions — the old package was never deprecated). `TeamsBotHandler` now extends
+`AgentApplication` and registers a `TeamsAgentExtension` for channel/team lifecycle events;
+`AgentApplication` implements the same `IAgent` contract, so CloudAdapter hosting and
+`BotMessagesFunction` were untouched. The command dispatcher stayed a single catch-all message
+route to preserve behavior exactly. Before the rewrite, 30 dispatch-level tests
+(`TeamsBotHandlerLifecycleTests`) were added to pin install/uninstall, channel/team events,
+conversation-reference auto-refresh, mention stripping, and card invokes through the public
+`IAgent.OnTurnAsync` seam — they ran unchanged (bar constructor options) against the new model.
 
-**It is a different programming model, not a rename.** The new package has no `TeamsActivityHandler` base class to inherit from. It replaces the inheritance model with delegate/route registration (`TeamsAgentExtension`, `TeamsActivityRouteAttribute`, `ChannelUpdateHandler` and friends), and exposes channel data as `Microsoft.Teams.Api.ChannelData` rather than `TeamsChannelData`. `TeamInfo` and `ChannelInfo` have no like-for-like replacements in the same shape. Swapping the package reference produces ~20 compile errors across `TeamsBotHandler` and `BotService`, and fixing them means rewriting the eight `OnTeams*` overrides against a new architecture — on a production bot whose install/channel-event and proactive-send paths can only be verified against real Teams.
+Two workarounds shipped with it, each with its own revisit condition:
 
-**It would currently introduce a high-severity advisory.** `Microsoft.Agents.Extensions.MSTeams` 1.7.4 pulls in `Microsoft.Graph` 5.99.0 → `Microsoft.Graph.Core` 3.2.4 → the Kiota stack at 1.17.1. `Microsoft.Kiota.Abstractions` < 1.22.0 is affected by [GHSA-7j59-v9qr-6fq9](https://github.com/advisories/GHSA-7j59-v9qr-6fq9) (HIGH — `RedirectHandler` leaks `Cookie`/`Proxy-Authorization` headers across hosts). The CI **Dependency Review** job blocks PRs introducing vulnerable dependencies, so the migration would need explicit transitive pins to Kiota ≥ 1.22.x purely to stay green.
+1. **`Microsoft.Kiota.Abstractions` is pinned at top level (1.22.1).** MSTeams 1.7.4 resolves
+   `Microsoft.Graph` 5.99.0 → Kiota 1.17.1, which carries
+   [GHSA-7j59-v9qr-6fq9](https://github.com/advisories/GHSA-7j59-v9qr-6fq9) (HIGH); the pin
+   lifts it past the advisory so Dependency Review stays green. **Drop the pin** when a stable
+   `Microsoft.Agents.Extensions.MSTeams` resolves `Microsoft.Graph` ≥ 6.x on its own (the
+   1.8.x-beta line already does).
+2. **`Helpers/TeamsChannelList.cs` wraps the channel-list REST call.** `Microsoft.Teams.Api`
+   2.0.9's `TeamClient.GetConversationsAsync` deserializes the response as a bare array, but the
+   service returns `{"conversations":[...]}` — it throws `JsonException` on every real call
+   (caught by the channel-name backfill tests, which replay captured wire JSON). The helper
+   issues the same request through the same authenticated `IHttpClient` and deserializes the
+   documented wrapper. **Remove it** when bumping `Microsoft.Teams.Api` past 2.0.9 after
+   verifying the fix (teams.net main has since corrected the deserialization).
 
-**There is no deadline pressure.** Only the *class* carries `[Obsolete]`. `Microsoft.Agents.Extensions.Teams` is **not** marked deprecated on NuGet and is still shipping (1.7.129 stable, 1.8.x in preview), so it continues to receive fixes alongside the rest of the `Microsoft.Agents.*` triplet.
+Also note: `Microsoft.Agents.Extensions.MSTeams` versions **separately** from the
+`Hosting.AspNetCore`/`Authentication.Msal` pair (its 1.7.4 depends on their 1.7.129). Dependabot's
+`microsoft-agents` group still covers all three; grouped bumps move each to its own latest, which
+is correct — just don't expect the version numbers to match.
 
-**To revisit**, ideally all of:
-
-1. `Microsoft.Agents.Extensions.MSTeams` resolves a Kiota stack ≥ 1.22.0 (or `Microsoft.Graph` ≥ 6.x, whose `Graph.Core` 4.x depends on Kiota 2.x) without hand-pinned transitives.
-2. The old `Microsoft.Agents.Extensions.Teams` package is actually deprecated or stops receiving updates in step with the triplet — that is the real forcing function.
-3. The work is scoped as its own change with time budgeted for manual verification on dev: bot install into a team, channel create/rename/delete events, and proactive send via an alias.
+Changes touching the bot turn pipeline, the Agents packages, or `BotService`'s proactive paths
+need the manual pass in [manual-verification.md](manual-verification.md) on dev — proactive send
+and channel enumeration have no automated coverage by design.
 
 ### Dropped automation
 
