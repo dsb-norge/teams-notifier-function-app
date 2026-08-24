@@ -9,6 +9,10 @@ using Xunit;
 
 namespace TeamsNotificationBot.Tests.Functions;
 
+// Joins the "Azurite" collection ONLY to serialize with the other classes that read or mutate
+// the process-global TEAMS_INTEGRATION_DISABLED env var — this class sets it mid-test, which
+// races against parallel classes that construct BotService (its ctor captures the var).
+[Collection("Azurite")]
 public class QueueProcessorFunctionTests : IDisposable
 {
     private readonly Mock<IBotService> _botService = new();
