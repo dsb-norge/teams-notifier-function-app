@@ -272,7 +272,7 @@ The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). One workflow
 
 - **`dependabot-auto-merge.yml`** arms GitHub auto-merge with a conventional `fix(deps):` squash subject for **patch/minor** bumps. It bypasses nothing — the merge still waits for the required human approval, CI Conclusion, CodeQL, and up-to-date-with-main. Major bumps are never armed and stay fully manual.
 
-Dependabot PRs get **no Copilot review**, deliberately — see "Copilot review on Dependabot PRs" below.
+Dependabot PRs get **no Copilot review**, deliberately — see [Copilot review on Dependabot PRs](#copilot-review-on-dependabot-prs-dropped-2026-08-24).
 
 For human reviewers, the short checklist:
 
