@@ -225,6 +225,25 @@ Agents SDK 1.7.x marks `TeamsActivityHandler` `[Obsolete]`, pointing at the new 
 2. The old `Microsoft.Agents.Extensions.Teams` package is actually deprecated or stops receiving updates in step with the triplet — that is the real forcing function.
 3. The work is scoped as its own change with time budgeted for manual verification on dev: bot install into a team, channel create/rename/delete events, and proactive send via an alias.
 
+### Dropped automation
+
+#### Copilot review on Dependabot PRs (dropped 2026-08-24)
+
+The "Automatic Copilot Code Review" ruleset only fires when the PR author holds a Copilot seat, so `dependabot[bot]` PRs were never reviewed. `dependabot-copilot-review.yml` requested Copilot explicitly via the GraphQL `requestReviews(botIds:)` mutation. It has been removed.
+
+**It never worked from CI.** The mutation succeeds under `secrets.GITHUB_TOKEN` — it returns `{"data":{"requestReviews":{"clientMutationId":null}}}` — but adds no reviewer. The job went green having done nothing. The mechanism had originally been proven with a *user* token; `GITHUB_TOKEN` cannot request a bot reviewer and GraphQL does not complain.
+
+**Fixing it wasn't worth the cost.** The only remaining route is a PAT: a long-lived, hand-rotated credential with write scope in repo secrets. Weighed against what the review delivers — across #123, #124, #125, #130 and #131, the one Copilot review that did land (requested by hand on #123) produced **zero** comments, just a restatement of the diff. That is the expected result: a dependency bump is a one-line version change, and its risk lives in the changelog, the transitive graph and the breaking-change notes, none of which the reviewer reads. The gates that do catch things here are Dependency Review (it blocked the vulnerable Kiota transitive during the MSTeams evaluation), Build and Test, and a human reading the release notes.
+
+Adding a broadly-scoped standing credential to a repo that SHA-pins its actions specifically to shrink that surface is a poor trade for a reviewer that has so far said nothing.
+
+**Unaffected:** Copilot review on human-authored PRs still runs via the ruleset, and has been genuinely useful there. So has the separate `github-code-quality` bot.
+
+**To revisit**, either of:
+
+1. Dependabot PRs in this repo start carrying more than a version string — a lockfile, a config migration, a vendored patch — so there is real diff surface to review.
+2. GitHub makes `GITHUB_TOKEN` able to request Copilot as a reviewer, removing the PAT requirement entirely. Re-test with the mutation above; a `clientMutationId` response is not proof, so check `reviewRequests` afterwards.
+
 ### Lifted constraints
 
 #### `GitHubActionsTestLogger` (unpinned 2026-08-14, was held below 3.0.0)
@@ -249,10 +268,11 @@ Two things make this work and are easy to break:
 
 ### Handling Dependabot PRs
 
-The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). Two workflows automate the mechanics:
+The rules live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). One workflow automates the mechanics:
 
-- **`dependabot-copilot-review.yml`** requests a Copilot code review on every Dependabot PR (the automatic-review ruleset skips bot-authored PRs, so without this they'd get no review).
 - **`dependabot-auto-merge.yml`** arms GitHub auto-merge with a conventional `fix(deps):` squash subject for **patch/minor** bumps. It bypasses nothing — the merge still waits for the required human approval, CI Conclusion, CodeQL, and up-to-date-with-main. Major bumps are never armed and stay fully manual.
+
+Dependabot PRs get **no Copilot review**, deliberately — see [Copilot review on Dependabot PRs](#copilot-review-on-dependabot-prs-dropped-2026-08-24).
 
 For human reviewers, the short checklist:
 
@@ -268,7 +288,7 @@ GitHub Actions bumps routinely need a hand-edit, because Dependabot updates the 
 
 `dependabot/fetch-metadata` reads the *first* commit on the PR: it checks the author is `dependabot[bot]`, then parses the `Bumps ... from ... to ...` line and YAML trailer out of that commit message. Replace that commit and the metadata is gone — the action reports either *"PR is not from Dependabot"* or *"PR does not contain metadata"*. Neither `skip-verification` nor `skip-commit-verification` recovers it; the data genuinely isn't there any more. The auto-merge workflow now treats that as "nothing to do" instead of failing, but you also lose the automatic `fix(deps):` subject and have to merge by hand.
 
-Keeping Dependabot's commit as the first one preserves the metadata, the Copilot review, and the auto-merge arming. The squash subject comes from the PR title regardless, so extra commits don't reach `main`.
+Keeping Dependabot's commit as the first one preserves the metadata and the auto-merge arming. The squash subject comes from the PR title regardless, so extra commits don't reach `main`.
 
 When a Dependabot PR falls behind `main`, prefer commenting `@dependabot rebase` over rebasing it yourself — Dependabot re-authors its own commit and the metadata survives.
 
