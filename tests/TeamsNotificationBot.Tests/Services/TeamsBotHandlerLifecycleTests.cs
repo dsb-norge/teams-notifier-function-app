@@ -432,8 +432,9 @@ public class TeamsBotHandlerLifecycleTests
     public async Task ForeignInvoke_Returns501()
     {
         // Invokes this bot doesn't route (signin/*, task/fetch, composeExtension/*, …) must get
-        // an explicit 501 like the pre-migration base handler gave — without the catch-all route,
-        // the adapter fabricates a 200-empty and the Teams client treats the invoke as succeeded.
+        // an explicit 501 like the pre-migration base handler gave. The SDK would 501 an
+        // unrouted invoke on its own; the catch-all route pins the status AND logs a warning so
+        // an invoke surface without a route stays observable.
         var activity = BaseActivity(ActivityTypes.Invoke, "personal");
         activity.Name = "signin/verifyState";
         var turnContext = WrapContext<IInvokeActivity>(activity);

@@ -93,9 +93,10 @@ public class TeamsBotHandler : AgentApplication
             OnAdaptiveCardActionAsync);
 
         // Any other invoke (signin/*, task/fetch, composeExtension/*, …) gets an explicit 501,
-        // matching the pre-migration TeamsActivityHandler base. Without this, an unrouted invoke
-        // yields a fabricated 200-empty, which the Teams client treats as success — a missing
-        // route would become invisible. Non-invoke route, so it is evaluated after all invoke
+        // matching the pre-migration TeamsActivityHandler base. The SDK's ProcessTurnResults
+        // also falls back to 501 for an unrouted invoke, so the value here is the WARNING LOG —
+        // an invoke surface added to the manifest without a route stays visible in App Insights
+        // instead of silently 501-ing. Non-invoke route, so it is evaluated after all invoke
         // routes; last rank so any future invoke route registered here wins.
         OnActivity(ActivityTypes.Invoke, OnUnhandledInvokeAsync, rank: RouteRank.Last);
     }
