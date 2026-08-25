@@ -37,8 +37,9 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
     private string? _channelListJson;
     private readonly CapturingStubHandler _stubHandler;
 
-    // The turn-state collections and the stub HttpClient must outlive the helper that builds them
-    // (the handler reads them mid-test), so they are disposed here rather than with `using`.
+    // The stub HttpClient must outlive the constructor that builds it (the handler issues
+    // requests through it mid-test), so it is disposed here rather than with `using`.
+    // (Turn-state collections are owned by TurnContextStub and are not tracked.)
     private readonly List<IDisposable> _disposables = [];
 
     public TeamsBotHandlerChannelNameBackfillTests()
