@@ -34,9 +34,10 @@ public class TeamsBotHandler : AgentApplication
     private static readonly Regex AliasNameRegex = new(@"^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$", RegexOptions.Compiled);
     private static readonly HashSet<string> ValidPoisonQueues = ["notifications-poison", "botoperations-poison"];
 
-    // Poison alias nudge cache (v1.5 §5)
-    private string? _poisonAliasNudgeCache;
-    private DateTimeOffset _poisonAliasNudgeCacheExpiry;
+    // Poison alias nudge cache (v1.5 §5). The handler is registered as a singleton, so concurrent
+    // turns share this — a single volatile reference keeps (value, expiry) reads consistent.
+    private sealed record NudgeCacheEntry(string? Nudge, DateTimeOffset Expiry);
+    private volatile NudgeCacheEntry? _poisonAliasNudgeCache;
 
     public TeamsBotHandler(
         AgentApplicationOptions options,
@@ -65,9 +66,9 @@ public class TeamsBotHandler : AgentApplication
         _teams = new TeamsAgentExtension(this);
         RegisterExtension(_teams, ext =>
         {
-            ext.Channels.OnCreated(OnChannelCreatedAsync);
-            ext.Channels.OnRenamed(OnChannelRenamedAsync);
-            ext.Channels.OnRestored(OnChannelRestoredAsync);
+            ext.Channels.OnCreated((ctx, _, channel, _) => UpsertChannelReferenceAsync(ctx, channel, "created"));
+            ext.Channels.OnRenamed((ctx, _, channel, _) => UpsertChannelReferenceAsync(ctx, channel, "renamed"));
+            ext.Channels.OnRestored((ctx, _, channel, _) => UpsertChannelReferenceAsync(ctx, channel, "restored"));
             ext.Channels.OnDeleted(OnChannelDeletedAsync);
             ext.Teams.OnRenamed(OnTeamRenamedAsync);
             ext.Teams.OnDeleted(OnTeamDeletedAsync);
@@ -84,10 +85,48 @@ public class TeamsBotHandler : AgentApplication
         OnActivity(ActivityTypes.Message, OnMessageAsync);
 
         // adaptiveCard/action invokes (Action.Execute). The SDK validates the invoke value and
-        // wraps the returned AdaptiveCardInvokeResponse in the invokeResponse activity.
+        // wraps the returned AdaptiveCardInvokeResponse in the invokeResponse activity. (The
+        // route builder AND-s this selector with type==invoke && name=="adaptiveCard/action",
+        // so it cannot intercept other activities.)
         AdaptiveCards.OnActionExecute(
             (RouteSelector)((_, _) => Task.FromResult(true)),
             OnAdaptiveCardActionAsync);
+
+        // Any other invoke (signin/*, task/fetch, composeExtension/*, …) gets an explicit 501,
+        // matching the pre-migration TeamsActivityHandler base. Without this, an unrouted invoke
+        // yields a fabricated 200-empty, which the Teams client treats as success — a missing
+        // route would become invisible. Non-invoke route, so it is evaluated after all invoke
+        // routes; last rank so any future invoke route registered here wins.
+        OnActivity(ActivityTypes.Invoke, OnUnhandledInvokeAsync, rank: RouteRank.Last);
+    }
+
+    /// <summary>
+    /// Applies the option invariants TeamsBotHandler's behavior depends on. Both the production
+    /// registration (Program.cs) and the test helper (TestAgentOptions) call this, so the two
+    /// cannot drift: mention stripping is done by the handler itself (SDK-side mention processing
+    /// must stay off, or channel @mentions get double-processed), and the typing timer would send
+    /// unprompted typing activities.
+    /// </summary>
+    public static AgentApplicationOptions ApplyHandlerOptionInvariants(AgentApplicationOptions options)
+    {
+        options.RemoveRecipientMention = false;
+        options.NormalizeMentions = false;
+        options.StartTypingTimer = false;
+        return options;
+    }
+
+    private async Task OnUnhandledInvokeAsync(
+        ITurnContext turnContext, ITurnState turnState, CancellationToken cancellationToken)
+    {
+        _logger.LogWarning("Unhandled invoke activity: {InvokeName}",
+            LogSanitizer.Sanitize(turnContext.Activity.Name));
+        await turnContext.SendActivityAsync(
+            new Activity
+            {
+                Type = ActivityTypes.InvokeResponse,
+                Value = new InvokeResponse { Status = 501 }
+            },
+            cancellationToken);
     }
 
     private async Task OnMessageAsync(
@@ -469,10 +508,21 @@ public class TeamsBotHandler : AgentApplication
         try
         {
             // The authenticated ApiClient is stashed in turnContext.Services by the
-            // TeamsAgentExtension before-turn hook. TeamsChannelList wraps the REST call —
-            // see its doc comment for why TeamClient.GetConversationsAsync can't be used.
-            var channels = await TeamsChannelList.GetTeamChannelsAsync(
-                _teams.GetTeamsClient(turnContext), currentTeamThreadId);
+            // TeamsAgentExtension before-turn hook. GetTeamsClient returns null (never throws)
+            // when the hook didn't run for this turn — warn instead of NRE-ing into the catch
+            // below, which only logs at Debug and would hide the failure in production.
+            var apiClient = _teams.GetTeamsClient(turnContext);
+            if (apiClient == null)
+            {
+                _logger.LogWarning(
+                    "Teams ApiClient missing from turn services; skipping channel-name resolution for team {TeamId}",
+                    currentTeamThreadId);
+                return cache;
+            }
+
+            // TeamsChannelList wraps the REST call — see its doc comment for why
+            // TeamClient.GetConversationsAsync can't be used.
+            var channels = await TeamsChannelList.GetTeamChannelsAsync(apiClient, currentTeamThreadId);
             foreach (var ch in channels)
             {
                 var name = ChannelNameResolver.Resolve(ch.Name, ch.Id, currentTeamThreadId);
@@ -524,8 +574,9 @@ public class TeamsBotHandler : AgentApplication
 
     internal async Task<string?> GetPoisonAliasNudgeAsync()
     {
-        if (DateTimeOffset.UtcNow < _poisonAliasNudgeCacheExpiry)
-            return _poisonAliasNudgeCache;
+        var cached = _poisonAliasNudgeCache;
+        if (cached != null && DateTimeOffset.UtcNow < cached.Expiry)
+            return cached.Nudge;
 
         var aliasName = Environment.GetEnvironmentVariable("PoisonAlertAlias");
         string? nudge;
@@ -543,8 +594,7 @@ public class TeamsBotHandler : AgentApplication
                 : null;
         }
 
-        _poisonAliasNudgeCache = nudge;
-        _poisonAliasNudgeCacheExpiry = DateTimeOffset.UtcNow.AddMinutes(5);
+        _poisonAliasNudgeCache = new NudgeCacheEntry(nudge, DateTimeOffset.UtcNow.AddMinutes(5));
         return nudge;
     }
 
@@ -554,7 +604,7 @@ public class TeamsBotHandler : AgentApplication
         if (!string.IsNullOrEmpty(configured) &&
             string.Equals(aliasName, configured, StringComparison.OrdinalIgnoreCase))
         {
-            _poisonAliasNudgeCacheExpiry = DateTimeOffset.MinValue;
+            _poisonAliasNudgeCache = null;
         }
     }
 
@@ -1264,8 +1314,9 @@ public class TeamsBotHandler : AgentApplication
 
         if (action != "createAlias")
         {
-            // Pre-migration this fell through to the TeamsActivityHandler base, which produced
-            // the SDK's 400 "NotSupported" error body. Same status, explicit message.
+            // Pre-migration this fell through to the TeamsActivityHandler base, which threw
+            // InvokeResponseException(NotImplemented) — a bodyless 501 envelope. An explicit 400
+            // with a readable card is a deliberate (small) improvement, pinned by tests.
             _logger.LogWarning("Unsupported adaptive card action: {Action}", LogSanitizer.Sanitize(action));
             return CreateAdaptiveCardResponse(400, $"The action '{action ?? "(none)"}' is not supported.");
         }
@@ -1412,7 +1463,8 @@ public class TeamsBotHandler : AgentApplication
         var action = turnContext.Activity.Action;
         var channelData = turnContext.Activity.GetChannelData<TeamsApi.ChannelData>();
         _logger.LogDebug("installationUpdate received: action={Action}, conversationType={Type}",
-            LogSanitizer.Sanitize(action), turnContext.Activity.Conversation?.ConversationType);
+            LogSanitizer.Sanitize(action),
+            LogSanitizer.Sanitize(turnContext.Activity.Conversation?.ConversationType));
 
         if (string.Equals(action, "add", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(action, "add-upgrade", StringComparison.OrdinalIgnoreCase))
@@ -1428,11 +1480,14 @@ public class TeamsBotHandler : AgentApplication
 
     // --- Channel events (routed by TeamsAgentExtension on channelData.eventType) ---
 
-    private async Task OnChannelCreatedAsync(
-        ITeamsTurnContext teamsContext, ITurnState turnState,
-        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
+    /// <summary>
+    /// Shared handler for channelCreated/channelRenamed/channelRestored: (re)stores the
+    /// conversation reference rebuilt around the CHANNEL conversation (not the activity's own),
+    /// so proactive sends target the channel top-level.
+    /// </summary>
+    private async Task UpsertChannelReferenceAsync(
+        ITeamsTurnContext teamsContext, TeamsApi.Channel? channelInfo, string channelEvent)
     {
-        var turnContext = (ITurnContext)teamsContext;
         var teamInfo = teamsContext.Activity.ChannelData?.Team;
         var teamGuid = await ResolveTeamGuidAsync(teamInfo);
         var channelId = channelInfo?.Id;
@@ -1440,10 +1495,10 @@ public class TeamsBotHandler : AgentApplication
 
         if (string.IsNullOrEmpty(teamGuid) || string.IsNullOrEmpty(channelId)) return;
 
-        _logger.LogInformation("Channel created: {ChannelName} ({ChannelId}) in team {TeamGuid}",
-            channelName, channelId, teamGuid);
+        _logger.LogInformation("Channel {ChannelEvent}: {ChannelName} ({ChannelId}) in team {TeamGuid}",
+            channelEvent, channelName, channelId, teamGuid);
 
-        var reference = turnContext.Activity.GetConversationReference();
+        var reference = teamsContext.Activity.GetConversationReference();
         reference.Conversation = new ConversationAccount
         {
             Id = channelId,
@@ -1473,64 +1528,6 @@ public class TeamsBotHandler : AgentApplication
             channelInfo!.Name, channelId, teamGuid);
 
         await _botService.RemoveConversationReferenceAsync(teamGuid, channelId);
-    }
-
-    private async Task OnChannelRenamedAsync(
-        ITeamsTurnContext teamsContext, ITurnState turnState,
-        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
-    {
-        var turnContext = (ITurnContext)teamsContext;
-        var teamInfo = teamsContext.Activity.ChannelData?.Team;
-        var teamGuid = await ResolveTeamGuidAsync(teamInfo);
-        var channelId = channelInfo?.Id;
-        var channelName = channelInfo?.Name;
-
-        if (string.IsNullOrEmpty(teamGuid) || string.IsNullOrEmpty(channelId)) return;
-
-        _logger.LogInformation("Channel renamed: {ChannelName} ({ChannelId}) in team {TeamGuid}",
-            channelName, channelId, teamGuid);
-
-        var reference = turnContext.Activity.GetConversationReference();
-        reference.Conversation = new ConversationAccount
-        {
-            Id = channelId,
-            IsGroup = true,
-            ConversationType = "channel",
-            TenantId = reference.Conversation?.TenantId
-        };
-
-        await _botService.StoreConversationReferenceAsync(
-            reference, teamGuid, channelId,
-            "channel", teamInfo?.Name, channelName);
-    }
-
-    private async Task OnChannelRestoredAsync(
-        ITeamsTurnContext teamsContext, ITurnState turnState,
-        TeamsApi.Channel channelInfo, CancellationToken cancellationToken)
-    {
-        var turnContext = (ITurnContext)teamsContext;
-        var teamInfo = teamsContext.Activity.ChannelData?.Team;
-        var teamGuid = await ResolveTeamGuidAsync(teamInfo);
-        var channelId = channelInfo?.Id;
-        var channelName = channelInfo?.Name;
-
-        if (string.IsNullOrEmpty(teamGuid) || string.IsNullOrEmpty(channelId)) return;
-
-        _logger.LogInformation("Channel restored: {ChannelName} ({ChannelId}) in team {TeamGuid}",
-            channelName, channelId, teamGuid);
-
-        var reference = turnContext.Activity.GetConversationReference();
-        reference.Conversation = new ConversationAccount
-        {
-            Id = channelId,
-            IsGroup = true,
-            ConversationType = "channel",
-            TenantId = reference.Conversation?.TenantId
-        };
-
-        await _botService.StoreConversationReferenceAsync(
-            reference, teamGuid, channelId,
-            "channel", teamInfo?.Name, channelName);
     }
 
     // --- Team events (routed by TeamsAgentExtension on channelData.eventType) ---

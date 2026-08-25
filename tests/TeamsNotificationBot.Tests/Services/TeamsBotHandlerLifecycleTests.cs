@@ -396,7 +396,7 @@ public class TeamsBotHandlerLifecycleTests
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        var body = GetInvokeResponseBody(turnContext);
+        var body = TurnContextStub.GetInvokeResponseBody(turnContext);
         _aliasService.Verify(a => a.SetAliasAsync("card-alias",
             It.Is<AliasEntity>(e => e.TargetType == "personal" && e.UserId == "user-aad-oid" && e.Description == "From card")),
             Times.Once);
@@ -411,8 +411,38 @@ public class TeamsBotHandlerLifecycleTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(a => a.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
-        var body = GetInvokeResponseBody(turnContext);
+        var body = TurnContextStub.GetInvokeResponseBody(turnContext);
         Assert.Equal(400, body.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdaptiveCardInvoke_UnknownAction_Returns400AndStoresNothing()
+    {
+        // Pre-migration this fell through to the TeamsActivityHandler base (a bodyless 501);
+        // the explicit 400 is a deliberate behavior choice of the migration — pinned here.
+        var turnContext = InvokeTurn(new { action = "somethingElse" });
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        _aliasService.Verify(a => a.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
+        Assert.Equal(400, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
+    }
+
+    [Fact]
+    public async Task ForeignInvoke_Returns501()
+    {
+        // Invokes this bot doesn't route (signin/*, task/fetch, composeExtension/*, …) must get
+        // an explicit 501 like the pre-migration base handler gave — without the catch-all route,
+        // the adapter fabricates a 200-empty and the Teams client treats the invoke as succeeded.
+        var activity = BaseActivity(ActivityTypes.Invoke, "personal");
+        activity.Name = "signin/verifyState";
+        var turnContext = WrapContext<IInvokeActivity>(activity);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        var sent = TurnContextStub.SentInvokeResponses(turnContext);
+        var invokeResponse = Assert.IsType<InvokeResponse>(((Activity)Assert.Single(sent)).Value);
+        Assert.Equal(501, invokeResponse.Status);
     }
 
     // --- Message-dispatch gaps ---
@@ -550,18 +580,7 @@ public class TeamsBotHandlerLifecycleTests
     };
 
     private static Mock<ITurnContext<T>> WrapContext<T>(Activity activity) where T : class, IActivity
-    {
-        var turnContext = new Mock<ITurnContext<T>>();
-        turnContext.Setup(t => t.Activity).Returns((T)(object)activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        // Real state collections: the SDK's invoke dispatch stashes the invoke response in
-        // StackState before sending it, and NREs on a null collection.
-        turnContext.Setup(t => t.Services).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.StackState).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
-        return turnContext;
-    }
+        => TurnContextStub.Wrap<T>(activity);
 
     // --- Assertion helpers ---
 
@@ -571,18 +590,6 @@ public class TeamsBotHandlerLifecycleTests
         turnContext.Verify(t => t.SendActivityAsync(
             It.Is<IActivity>(a => ((Activity)a).Text != null && ((Activity)a).Text.Contains(fragment)),
             It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    private static AdaptiveCardInvokeResponse GetInvokeResponseBody(Mock<ITurnContext<IInvokeActivity>> turnContext)
-    {
-        var sent = turnContext.Invocations
-            .Where(i => i.Method.Name == nameof(ITurnContext.SendActivityAsync))
-            .Select(i => i.Arguments[0])
-            .OfType<IActivity>()
-            .Where(a => a.Type == ActivityTypes.InvokeResponse)
-            .ToList();
-        var invokeResponse = Assert.IsType<InvokeResponse>(((Activity)Assert.Single(sent)).Value);
-        return Assert.IsType<AdaptiveCardInvokeResponse>(invokeResponse.Body);
     }
 
     private static bool OperationIs(string json, string operation, string teamGuid)

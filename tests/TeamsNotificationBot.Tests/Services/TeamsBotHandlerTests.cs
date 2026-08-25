@@ -4,7 +4,6 @@ using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TeamsNotificationBot.Models;
@@ -621,7 +620,7 @@ public class TeamsBotHandlerTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync("test-alias", It.IsAny<AliasEntity>()), Times.Once);
-        Assert.Equal(200, GetInvokeResponseBody(turnContext).StatusCode);
+        Assert.Equal(200, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     [Fact]
@@ -637,7 +636,7 @@ public class TeamsBotHandlerTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
-        Assert.Equal(400, GetInvokeResponseBody(turnContext).StatusCode);
+        Assert.Equal(400, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     [Fact]
@@ -653,19 +652,7 @@ public class TeamsBotHandlerTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
-        Assert.Equal(400, GetInvokeResponseBody(turnContext).StatusCode);
-    }
-
-    private static AdaptiveCardInvokeResponse GetInvokeResponseBody(Mock<ITurnContext<IInvokeActivity>> turnContext)
-    {
-        var sent = turnContext.Invocations
-            .Where(i => i.Method.Name == nameof(ITurnContext.SendActivityAsync))
-            .Select(i => i.Arguments[0])
-            .OfType<IActivity>()
-            .Where(a => a.Type == ActivityTypes.InvokeResponse)
-            .ToList();
-        var invokeResponse = Assert.IsType<InvokeResponse>(((Activity)Assert.Single(sent)).Value);
-        return Assert.IsType<AdaptiveCardInvokeResponse>(invokeResponse.Body);
+        Assert.Equal(400, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     // --- Card submit via message activity tests (Action.Submit flow) ---
@@ -1569,14 +1556,7 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IMessageActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.Services).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.StackState).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IMessageActivity>(activity);
         turnContext.Setup(t => t.DeleteActivityAsync(
             It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -1613,14 +1593,7 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IInstallationUpdateActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.Services).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.StackState).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IInstallationUpdateActivity>(activity);
 
         return (turnContext, activity);
     }
@@ -1664,14 +1637,7 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IInvokeActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.Services).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.StackState).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IInvokeActivity>(activity);
 
         return turnContext;
     }
@@ -1712,14 +1678,7 @@ public class TeamsBotHandlerTests
                 .Returns(Task.CompletedTask);
         }
 
-        var turnContext = new Mock<ITurnContext<IConversationUpdateActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.Services).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.StackState).Returns(new TurnContextStateCollection());
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IConversationUpdateActivity>(activity);
 
         return (turnContext, activity);
     }

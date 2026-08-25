@@ -28,7 +28,7 @@ public class BotServiceChannelNameTests
 
     public BotServiceChannelNameTests()
     {
-        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance);
+        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
     }
 
     // Fixed timestamps so "was it preserved / was it bumped" assertions are exact.
@@ -226,7 +226,7 @@ public class BotServiceChannelNameTeamsDisabledTests : IDisposable
     public BotServiceChannelNameTeamsDisabledTests()
     {
         Environment.SetEnvironmentVariable(EnvVar, "true");
-        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance);
+        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
     }
 
     public void Dispose() => Environment.SetEnvironmentVariable(EnvVar, _previous);

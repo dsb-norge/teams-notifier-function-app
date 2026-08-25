@@ -23,15 +23,17 @@ public class BotService : IBotService
     private readonly string _botAppId;
     private readonly bool _teamsDisabled;
     private readonly ILogger<BotService> _logger;
-    private readonly IConnections? _connections;
-    private readonly IHttpClientFactory? _httpClientFactory;
+    private readonly IConnections _connections;
+    private readonly IHttpClientFactory _httpClientFactory;
 
+    // Required (not optional) so a missing AddHttpClient()/IConnections registration fails at
+    // startup DI resolution instead of on the first channel-enumeration turn in production.
     public BotService(
         CloudAdapter adapter,
         TableClient tableClient,
         ILogger<BotService> logger,
-        IConnections? connections = null,
-        IHttpClientFactory? httpClientFactory = null)
+        IConnections connections,
+        IHttpClientFactory httpClientFactory)
     {
         _adapter = adapter;
         _tableClient = tableClient;
@@ -333,8 +335,7 @@ public class BotService : IBotService
             {
                 try
                 {
-                    var channels = await Helpers.TeamsChannelList.GetTeamChannelsAsync(
-                        CreateTeamsApiClient(turnContext), teamThreadId, ct);
+                    var channels = await GetTeamChannelsProactiveAsync(turnContext, teamThreadId, ct);
                     _logger.LogInformation("Enumerated {Count} channels in team {TeamGuid}", channels.Count, teamGuid);
 
                     foreach (var channel in channels)
@@ -378,34 +379,35 @@ public class BotService : IBotService
     }
 
     /// <summary>
-    /// Builds an authenticated Teams ApiClient for a proactive turn. Proactive callbacks from
-    /// ContinueConversationAsync bypass the AgentApplication turn pipeline, so the client the
-    /// TeamsAgentExtension normally stashes in turnContext.Services is absent — this replicates
-    /// the SDK's own construction (token from IConnections against the turn's ServiceUrl).
+    /// Builds an authenticated Teams ApiClient for a proactive turn and lists the team's
+    /// channels. Proactive callbacks from ContinueConversationAsync bypass the AgentApplication
+    /// turn pipeline, so the client the TeamsAgentExtension normally stashes in
+    /// turnContext.Services is absent — this replicates the SDK's own construction (token from
+    /// IConnections against the turn's ServiceUrl), but acquires the token asynchronously up
+    /// front instead of sync-over-async per request, and disposes the HTTP wrapper when done.
     /// </summary>
-    private TeamsApi.Clients.ApiClient CreateTeamsApiClient(ITurnContext turnContext)
+    private async Task<IReadOnlyList<TeamsApi.Channel>> GetTeamChannelsProactiveAsync(
+        ITurnContext turnContext, string teamThreadId, CancellationToken cancellationToken)
     {
-        if (_connections == null || _httpClientFactory == null)
+        string? token = null;
+        if (!AgentClaims.AllowAnonymous(turnContext.Identity))
         {
-            throw new InvalidOperationException(
-                "Teams channel enumeration requires IConnections and IHttpClientFactory.");
+            var tokenAccess = _connections.GetTokenProvider(
+                turnContext.Identity, turnContext.Activity.ServiceUrl);
+            token = await tokenAccess.GetAccessTokenAsync(
+                AuthenticationConstants.BotFrameworkAudience,
+                [AuthenticationConstants.BotFrameworkDefaultScope]);
         }
 
-        Microsoft.Teams.Common.Http.IHttpClientOptions.HttpTokenFactory? tokenFactory =
-            AgentClaims.AllowAnonymous(turnContext.Identity) ? null : () =>
-            {
-                var tokenAccess = _connections.GetTokenProvider(
-                    turnContext.Identity, turnContext.Activity.ServiceUrl);
-                return tokenAccess.GetAccessTokenAsync(
-                        AuthenticationConstants.BotFrameworkAudience,
-                        [AuthenticationConstants.BotFrameworkDefaultScope])
-                    .ConfigureAwait(false).GetAwaiter().GetResult();
-            };
+        using var teamsHttpClient = new Microsoft.Teams.Common.Http.HttpClient(
+            _httpClientFactory.CreateClient(nameof(BotService)));
+        if (token != null)
+            teamsHttpClient.Options.TokenFactory = () => token;
 
-        var httpClient = _httpClientFactory.CreateClient(nameof(BotService));
-        return new TeamsApi.Clients.ApiClient(
-            turnContext.Activity.ServiceUrl,
-            new Microsoft.Teams.Common.Http.HttpClient(httpClient) { Options = { TokenFactory = tokenFactory } });
+        var apiClient = new TeamsApi.Clients.ApiClient(
+            turnContext.Activity.ServiceUrl, teamsHttpClient);
+        return await Helpers.TeamsChannelList.GetTeamChannelsAsync(
+            apiClient, teamThreadId, cancellationToken);
     }
 
     public async Task BatchRemoveTeamReferencesAsync(string teamId)

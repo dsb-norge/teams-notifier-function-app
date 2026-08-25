@@ -3,11 +3,9 @@ using System.Text;
 using Azure.Data.Tables;
 using Azure.Storage.Queues;
 using Microsoft.Agents.Builder;
-using Microsoft.Agents.Connector;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Moq.Protected;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
 using TeamsNotificationBot.Tests.Helpers;
@@ -37,6 +35,7 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
     // The canned response the stub HttpClient serves; set per-test via CreateListAliasesContext.
     private string? _channelListJson;
+    private readonly CapturingStubHandler _stubHandler;
 
     // The turn-state collections and the stub HttpClient must outlive the helper that builds them
     // (the handler reads them mid-test), so they are disposed here rather than with `using`.
@@ -44,17 +43,8 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
     public TeamsBotHandlerChannelNameBackfillTests()
     {
-        var stubHandler = new Mock<HttpMessageHandler>();
-        stubHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(() => _channelListJson == null
-                ? new HttpResponseMessage(HttpStatusCode.NotFound)
-                : new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(_channelListJson, Encoding.UTF8, "application/json")
-                });
-        var stubHttpClient = new HttpClient(stubHandler.Object);
+        _stubHandler = new CapturingStubHandler(() => _channelListJson);
+        var stubHttpClient = new HttpClient(_stubHandler);
         _disposables.Add(stubHttpClient);
 
         _handler = new TeamsBotHandler(
@@ -131,21 +121,33 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IMessageActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.SendActivityAsync(
-                It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        return TurnContextStub.Wrap<IMessageActivity>(activity);
+    }
 
-        var services = new TurnContextStateCollection();
-        _disposables.Add(services);
-        turnContext.Setup(t => t.Services).Returns(services);
-        var stackState = new TurnContextStateCollection();
-        _disposables.Add(stackState);
-        turnContext.Setup(t => t.StackState).Returns(stackState);
+    /// <summary>
+    /// Answers the channel-list request with the canned JSON and records the request the SDK
+    /// actually issued, so tests can pin the hand-built URL and the Authorization header in
+    /// Helpers/TeamsChannelList (both moved from SDK code into first-party code in the MSTeams
+    /// migration — a URL typo would otherwise stay green against a production 404).
+    /// </summary>
+    private sealed class CapturingStubHandler(Func<string?> channelListJson) : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+        public string? LastAuthorization { get; private set; }
 
-        return turnContext;
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri;
+            LastAuthorization = request.Headers.Authorization?.ToString();
+            var json = channelListJson();
+            return Task.FromResult(json == null
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                });
+        }
     }
 
     [Fact]
@@ -161,6 +163,13 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
         _botService.Verify(s => s.TryUpdateChannelNameAsync(
             TeamGuid, ChannelId, "utvikling - testkanal"), Times.Once);
+
+        // Pin the request TeamsChannelList hand-builds (URL shape + escaping) and that the
+        // token from the options' IConnections actually reaches the wire.
+        Assert.Equal(
+            $"https://smba.trafficmanager.net/emea/v3/teams/{Uri.EscapeDataString(TeamThreadId)}/conversations",
+            _stubHandler.LastRequestUri!.AbsoluteUri);
+        Assert.Equal("Bearer test-token", _stubHandler.LastAuthorization);
     }
 
     [Fact]
