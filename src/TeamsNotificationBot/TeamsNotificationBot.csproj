@@ -27,10 +27,10 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Queues" Version="5.5.5" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.51.0" />
     <!-- Microsoft.Agents.* pair must move in lockstep. -->
-    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.7.129" />
-    <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.7.129" />
+    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.8.77" />
+    <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.8.77" />
     <!-- Versioned separately from the pair above (its 1.7.4 depends on Agents 1.7.129). -->
-    <PackageReference Include="Microsoft.Agents.Extensions.MSTeams" Version="1.7.4" />
+    <PackageReference Include="Microsoft.Agents.Extensions.MSTeams" Version="1.8.50" />
     <!-- Transitive pin: MSTeams 1.7.4 → Microsoft.Graph 5.99.0 → Kiota 1.17.1, which carries
          GHSA-7j59-v9qr-6fq9 (HIGH). Drop this pin once MSTeams resolves Graph ≥ 6.x on its own.
          See docs/contributing.md §9. -->
