@@ -66,12 +66,14 @@ public class AuthMiddlewareTests
     private static string EncodeRaw(string json) =>
         Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 
+    private const string PrincipalHeader = "X-MS-CLIENT-PRINCIPAL";
+
     /// <summary>Runs the real role check against a request carrying the given header value.</summary>
     private static bool CheckHeader(string? principalHeader, out string? roles)
     {
         var httpContext = new DefaultHttpContext();
         if (principalHeader != null)
-            httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL"] = principalHeader;
+            httpContext.Request.Headers[PrincipalHeader] = principalHeader;
         return AuthMiddleware.HasRequiredRole(httpContext, out roles);
     }
 
@@ -135,10 +137,27 @@ public class AuthMiddlewareTests
         Assert.Null(roles);
     }
 
+    // HasRequiredRole guards with string.IsNullOrEmpty, so both inputs are worth pinning
+    // separately: header absent, and header present but empty.
+
+    [Fact]
+    public void EasyAuth_MissingPrincipalHeader_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(null, out var roles));
+        Assert.Null(roles);
+    }
+
     [Fact]
     public void EasyAuth_EmptyPrincipalHeader_IsNotAuthorized()
     {
-        Assert.False(CheckHeader(null, out var roles));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers[PrincipalHeader] = string.Empty;
+
+        // Guard the guard: HeaderDictionary drops a key assigned an empty StringValues, which
+        // would quietly turn this into a second copy of the missing-header test above.
+        Assert.True(httpContext.Request.Headers.ContainsKey(PrincipalHeader));
+
+        Assert.False(AuthMiddleware.HasRequiredRole(httpContext, out var roles));
         Assert.Null(roles);
     }
 
