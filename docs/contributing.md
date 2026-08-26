@@ -221,14 +221,12 @@ route to preserve behavior exactly. Before the rewrite, 30 dispatch-level tests
 conversation-reference auto-refresh, mention stripping, and card invokes through the public
 `IAgent.OnTurnAsync` seam — they ran unchanged (bar constructor options) against the new model.
 
-Two workarounds shipped with it, each with its own revisit condition:
+Two workarounds shipped with it. The first has since been lifted (see
+[`Microsoft.Kiota.Abstractions`](#microsoftkiotaabstractions-pin-dropped-2026-08-26) under Lifted
+constraints); the second still stands, with its revisit condition:
 
-1. **`Microsoft.Kiota.Abstractions` is pinned at top level (1.22.1).** MSTeams 1.7.4 resolves
-   `Microsoft.Graph` 5.99.0 → Kiota 1.17.1, which carries
-   [GHSA-7j59-v9qr-6fq9](https://github.com/advisories/GHSA-7j59-v9qr-6fq9) (HIGH); the pin
-   lifts it past the advisory so Dependency Review stays green. **Drop the pin** when a stable
-   `Microsoft.Agents.Extensions.MSTeams` resolves `Microsoft.Graph` ≥ 6.x on its own (the
-   1.8.x-beta line already does).
+1. ~~**`Microsoft.Kiota.Abstractions` pinned at top level.**~~ Dropped 2026-08-26 when MSTeams
+   1.8.50 shipped stable — see Lifted constraints below.
 2. **`Helpers/TeamsChannelList.cs` wraps the channel-list REST call.** `Microsoft.Teams.Api`
    2.0.9's `TeamClient.GetConversationsAsync` deserializes the response as a bare array, but the
    service returns `{"conversations":[...]}` — it throws `JsonException` on every real call
@@ -238,7 +236,7 @@ Two workarounds shipped with it, each with its own revisit condition:
    verifying the fix (teams.net main has since corrected the deserialization).
 
 Also note: `Microsoft.Agents.Extensions.MSTeams` versions **separately** from the
-`Hosting.AspNetCore`/`Authentication.Msal` pair (its 1.7.4 depends on their 1.7.129). Dependabot's
+`Hosting.AspNetCore`/`Authentication.Msal` pair (its 1.8.50 depends on their 1.8.77). Dependabot's
 `microsoft-agents` group still covers all three; grouped bumps move each to its own latest, which
 is correct — just don't expect the version numbers to match.
 
@@ -266,6 +264,30 @@ Adding a broadly-scoped standing credential to a repo that SHA-pins its actions 
 2. GitHub makes `GITHUB_TOKEN` able to request Copilot as a reviewer, removing the PAT requirement entirely. Re-test with the mutation above; a `clientMutationId` response is not proof, so check `reviewRequests` afterwards.
 
 ### Lifted constraints
+
+#### `Microsoft.Kiota.Abstractions` (pin dropped 2026-08-26, was pinned at 1.22.x)
+
+The MSTeams migration shipped with a top-level `Microsoft.Kiota.Abstractions` pin because
+`Microsoft.Agents.Extensions.MSTeams` 1.7.4 resolved `Microsoft.Graph` 5.99.0 → Kiota 1.17.1,
+which carries [GHSA-7j59-v9qr-6fq9](https://github.com/advisories/GHSA-7j59-v9qr-6fq9) (HIGH).
+The pin lifted Kiota past the advisory while keeping it on the 1.x line that Graph.Core 3.x
+expected, so Dependency Review stayed green.
+
+The recorded revisit condition — *"a stable `Microsoft.Agents.Extensions.MSTeams` resolves
+`Microsoft.Graph` ≥ 6.x on its own"* — was met by **MSTeams 1.8.50** (stable, 2026-08-26), which
+depends on `Microsoft.Graph` 6.5.0 → `Microsoft.Graph.Core` 4.0.1 → Kiota **2.0.0**. The pin then
+became an active downgrade: restore failed with `NU1605` (*"Detected package downgrade:
+Microsoft.Kiota.Abstractions from 2.0.0 to 1.22.1"*) because the repo builds with warnings as
+errors. Both the `PackageReference` and the `ignore: [">=2.0.0"]` entry in
+`.github/dependabot.yml` were removed together.
+
+The whole Kiota stack now resolves coherently on 2.0.0 alongside Graph.Core 4.0.1, and
+`dotnet list package --vulnerable --include-transitive` reports nothing — the split-across-majors
+risk the ignore comment warned about resolved itself once Graph and Kiota moved as a set.
+
+Note this did **not** clear the second migration workaround: `Microsoft.Teams.Api` is still
+2.0.9 in the MSTeams 1.8.50 graph, so `Helpers/TeamsChannelList.cs` remains load-bearing.
+
 
 #### `GitHubActionsTestLogger` (unpinned 2026-08-14, was held below 3.0.0)
 
