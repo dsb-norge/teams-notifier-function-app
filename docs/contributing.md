@@ -81,6 +81,9 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 - Log at appropriate levels: `Information` for business events, `Warning` for recoverable issues, `Error` for failures.
 - Wrap user-controlled values in `LogSanitizer.Sanitize()` before logging (CWE-117 barrier — see the CI/CD section on CodeQL).
 - Secret/webhook handling: never log a plaintext token (store/compare only its SHA-256); derive the source IP from the `X-Forwarded-For` first hop via `IpMatcher.ParseClientIp` (strips Azure's `ip:port`) with a fallback to `RemoteIpAddress`; wrap DNS resolution in try/catch so a transient failure degrades gracefully rather than throwing.
+- Keep `src/` free of nullable warnings (`CS8602`/`CS8604`). Two lived in `TeamsBotHandler` from the MSTeams migration until 2026-08-26; both were false positives, but while they sat there they surfaced as CI annotations on every PR touching the file and would have masked a real one. Where an invariant is real but invisible to flow analysis, prefer a `?? fallback` over `!` when a sane fallback exists, and comment why.
+
+---
 
 ### Broad `catch (Exception)` is deliberate in side-effect paths
 

@@ -642,7 +642,11 @@ public class TeamsBotHandler : AgentApplication
         var (args, error) = WebhookCommandParser.ParseCreate(afterCommand);
         if (args is null)
         {
-            await turnContext.SendActivityAsync(MessageFactory.Text(error), ct);
+            // Every ParseCreate failure path returns a non-null error, but that invariant isn't
+            // visible to nullable analysis through the tuple. Fall back to the usage text rather
+            // than asserting with `!` — a future parser change then degrades to help, not a null.
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text(error ?? WebhookCommandParser.UsageError), ct);
             return;
         }
 
@@ -1620,7 +1624,8 @@ public class TeamsBotHandler : AgentApplication
                 ChannelNameResolver.Resolve(channelData!.Channel?.Name, channelId, channelData.Team?.Id));
 
             // Store team thread ID -> GUID lookup for channel events that lack aadGroupId
-            var teamThreadId = channelData.Team.Id;
+            // (Team! for the same reason as the channelData! above: teamGuid is non-empty.)
+            var teamThreadId = channelData.Team!.Id;
             if (!string.IsNullOrEmpty(teamThreadId))
             {
                 await _teamLookupTable.UpsertEntityAsync(new TeamLookupEntity
