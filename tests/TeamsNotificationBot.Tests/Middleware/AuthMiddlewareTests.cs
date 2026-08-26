@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using TeamsNotificationBot.Middleware;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Middleware;
@@ -51,8 +52,9 @@ public class AuthMiddlewareTests
     }
 
     // --- Role-Based Authorization Tests ---
-    // These test the X-MS-CLIENT-PRINCIPAL decoding and role extraction logic
-    // that the middleware uses for EasyAuth-authenticated requests.
+    // These call AuthMiddleware.HasRequiredRole directly (internal, via InternalsVisibleTo).
+    // They previously re-implemented the parsing inline, which meant a regression in the real
+    // method was invisible here — the mirror could stay green while production broke.
 
     private static string EncodeEasyAuthPrincipal(object claims)
     {
@@ -61,86 +63,138 @@ public class AuthMiddlewareTests
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
     }
 
-    private static bool ExtractHasRole(string base64Principal, string requiredRole)
-    {
-        var json = Encoding.UTF8.GetString(Convert.FromBase64String(base64Principal));
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("claims", out var claims))
-            return false;
+    private static string EncodeRaw(string json) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 
-        return claims.EnumerateArray()
-            .Where(c => c.TryGetProperty("typ", out var typ) &&
-                        typ.GetString() is "roles" or "http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
-            .Select(c => c.GetProperty("val").GetString())
-            .Contains(requiredRole, StringComparer.OrdinalIgnoreCase);
+    /// <summary>Runs the real role check against a request carrying the given header value.</summary>
+    private static bool CheckHeader(string? principalHeader, out string? roles)
+    {
+        var httpContext = new DefaultHttpContext();
+        if (principalHeader != null)
+            httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL"] = principalHeader;
+        return AuthMiddleware.HasRequiredRole(httpContext, out roles);
     }
+
+    private static bool CheckClaims(object claims) =>
+        CheckHeader(EncodeEasyAuthPrincipal(claims), out _);
 
     [Fact]
     public void EasyAuth_WithRequiredRole_IsAuthorized()
     {
-        var claims = new[] { new { typ = "roles", val = "Notifications.Send" } };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.True(ExtractHasRole(principal, "Notifications.Send"));
+        Assert.True(CheckClaims(new[] { new { typ = "roles", val = "Notifications.Send" } }));
     }
 
     [Fact]
     public void EasyAuth_WithoutRequiredRole_IsNotAuthorized()
     {
-        var claims = new[] { new { typ = "roles", val = "SomeOtherRole" } };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.False(ExtractHasRole(principal, "Notifications.Send"));
+        Assert.False(CheckClaims(new[] { new { typ = "roles", val = "SomeOtherRole" } }));
     }
 
     [Fact]
     public void EasyAuth_WithNoRoles_IsNotAuthorized()
     {
-        var claims = new[] { new { typ = "name", val = "TestUser" } };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.False(ExtractHasRole(principal, "Notifications.Send"));
+        Assert.False(CheckClaims(new[] { new { typ = "name", val = "TestUser" } }));
     }
 
     [Fact]
     public void EasyAuth_WithMultipleRoles_MatchesRequired()
     {
-        var claims = new[]
+        Assert.True(CheckClaims(new[]
         {
             new { typ = "roles", val = "Reader" },
             new { typ = "roles", val = "Notifications.Send" },
             new { typ = "roles", val = "Admin" }
-        };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.True(ExtractHasRole(principal, "Notifications.Send"));
-    }
-
-    [Fact]
-    public void EasyAuth_EmptyPrincipalHeader_IsNotAuthorized()
-    {
-        var httpContext = new DefaultHttpContext();
-        var principalHeader = httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
-        Assert.True(string.IsNullOrEmpty(principalHeader));
-    }
-
-    [Fact]
-    public void EasyAuth_MalformedBase64_IsNotAuthorized()
-    {
-        var result = false;
-        try
-        {
-            result = ExtractHasRole("not-valid-base64!!!", "Notifications.Send");
-        }
-        catch
-        {
-            // Expected — malformed input should not authorize
-        }
-        Assert.False(result);
+        }));
     }
 
     [Fact]
     public void EasyAuth_RoleCheckIsCaseInsensitive()
     {
-        var claims = new[] { new { typ = "roles", val = "notifications.send" } };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.True(ExtractHasRole(principal, "Notifications.Send"));
+        Assert.True(CheckClaims(new[] { new { typ = "roles", val = "notifications.send" } }));
+    }
+
+    [Fact]
+    public void EasyAuth_RolesOutParam_ListsGrantedRoles()
+    {
+        var header = EncodeEasyAuthPrincipal(new[]
+        {
+            new { typ = "roles", val = "Reader" },
+            new { typ = "roles", val = "Notifications.Send" }
+        });
+
+        Assert.True(CheckHeader(header, out var roles));
+        Assert.Equal("Reader, Notifications.Send", roles);
+    }
+
+    [Fact]
+    public void EasyAuth_NoRolesPresent_RolesOutParamIsNull()
+    {
+        var header = EncodeEasyAuthPrincipal(new[] { new { typ = "name", val = "TestUser" } });
+
+        Assert.False(CheckHeader(header, out var roles));
+        Assert.Null(roles);
+    }
+
+    [Fact]
+    public void EasyAuth_EmptyPrincipalHeader_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(null, out var roles));
+        Assert.Null(roles);
+    }
+
+    // --- Malformed input: every case must fail closed, and must not throw ---
+
+    [Fact]
+    public void EasyAuth_MalformedBase64_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader("not-valid-base64!!!", out _));
+    }
+
+    [Fact]
+    public void EasyAuth_BodyIsNotJson_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(EncodeRaw("this is not json"), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_ClaimsPropertyMissing_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(EncodeRaw("""{"auth_typ":"aad"}"""), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_ClaimsIsNotAnArray_IsNotAuthorized()
+    {
+        // Guarded by the ValueKind check rather than by catching InvalidOperationException.
+        Assert.False(CheckHeader(EncodeRaw("""{"claims":"Notifications.Send"}"""), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_RoleClaimMissingVal_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(EncodeRaw("""{"claims":[{"typ":"roles"}]}"""), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_ClaimTypIsNotAString_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(EncodeRaw("""{"claims":[{"typ":123,"val":"Notifications.Send"}]}"""), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_RoleValIsNotAString_IsNotAuthorized()
+    {
+        Assert.False(CheckHeader(EncodeRaw("""{"claims":[{"typ":"roles","val":{"nested":true}}]}"""), out _));
+    }
+
+    [Fact]
+    public void EasyAuth_MixedValidAndMalformedClaims_StillMatchesValidRole()
+    {
+        // A junk entry alongside a good one must not discard the good one.
+        Assert.True(CheckHeader(
+            EncodeRaw("""{"claims":[{"typ":"roles"},{"typ":"roles","val":"Notifications.Send"}]}"""),
+            out var roles));
+        Assert.Equal("Notifications.Send", roles);
     }
 
     // --- §1 Regression Tests (API key auth removed) ---
@@ -181,8 +235,13 @@ public class AuthMiddlewareTests
     public void EasyAuth_AlternativeRoleClaimType_IsRecognized()
     {
         // The middleware accepts both "roles" and the long-form URI claim type
-        var claims = new[] { new { typ = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role", val = "Notifications.Send" } };
-        var principal = EncodeEasyAuthPrincipal(claims);
-        Assert.True(ExtractHasRole(principal, "Notifications.Send"));
+        Assert.True(CheckClaims(new[]
+        {
+            new
+            {
+                typ = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
+                val = "Notifications.Send"
+            }
+        }));
     }
 }

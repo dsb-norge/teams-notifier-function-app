@@ -156,7 +156,10 @@ public class AzuriteFixture : IAsyncLifetime
                 return reason;
             }
 
-            if (IsPortOpen(_tablePort) && IsPortOpen(_queuePort))
+            // All three ports, not just table/queue: the connection string this fixture hands out
+            // advertises a BlobEndpoint too, so gating on a subset would let a test start against
+            // a blob service that has not finished binding.
+            if (IsPortOpen(_blobPort) && IsPortOpen(_tablePort) && IsPortOpen(_queuePort))
             {
                 _azuriteProcess = process;
                 return null;

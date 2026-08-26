@@ -82,6 +82,49 @@ Always commit the updated `app-requirements.json` alongside your code changes.
 - Wrap user-controlled values in `LogSanitizer.Sanitize()` before logging (CWE-117 barrier — see the CI/CD section on CodeQL).
 - Secret/webhook handling: never log a plaintext token (store/compare only its SHA-256); derive the source IP from the `X-Forwarded-For` first hop via `IpMatcher.ParseClientIp` (strips Azure's `ip:port`) with a fallback to `RemoteIpAddress`; wrap DNS resolution in try/catch so a transient failure degrades gracefully rather than throwing.
 
+### Broad `catch (Exception)` is deliberate in side-effect paths
+
+GitHub's **Code Quality** surface (separate from code scanning — those alerts are all triaged to
+zero) flags `cs/catch-of-all-exceptions` in around a dozen places. Almost all are intentional and
+should **not** be narrowed. The rule in this codebase is:
+
+> A failure in a *side concern* must never break notification delivery.
+
+Channel-name backfill, conversation-reference auto-refresh, `LastUpdated` stamping, the
+poison-alias nudge, channel enumeration, the updown allowlist warm-up, and best-effort test
+teardown are all side concerns. Each catches broadly, logs at `Debug`/`Warning`, and continues.
+Narrowing them to specific exception types would convert an unforeseen SDK or Table Storage error
+into a dropped notification — the opposite of what we want. `PoisonQueueMonitorFunction` catches
+everything for the same reason, to avoid a `-poison-poison` cascade.
+
+Two places are **not** side concerns, and there a broad catch is a genuine defect:
+
+- **Auth and validation decisions.** `AuthMiddleware.HasRequiredRole` previously wrapped its
+  whole body in `catch (Exception) { return false; }`, which made a bug in the parser
+  indistinguishable from a legitimately denied caller — every failure became a 403. It now checks
+  shape explicitly with `JsonValueKind` guards and catches only `FormatException` and
+  `JsonException`, the two a caller can actually provoke. Anything else surfaces as a 500.
+- **Anything that decides whether to send.** If a catch determines *whether* a notification goes
+  out (rather than decorating one that is going out anyway), it must be specific.
+
+When adding a broad catch, say in a comment which of the two categories it falls into.
+
+### Findings that are rejected on sight
+
+Recorded so they are not re-litigated each scan:
+
+- **`ResponseFabric` is not a typo.** It is the real `ThrottlingTroll` options member
+  (`Program.cs`). Tooling periodically suggests "ResponseFactory" — ignore it.
+- **Em dashes in comments and docs are intentional** house style. Do not convert them to `--`.
+- **`SetupGuideCardBuilder` does not need `PropertyNamingPolicy = CamelCase`.** Every anonymous
+  object there already uses lowercase member names, and `AdaptiveTextBlock` carries explicit
+  `[JsonPropertyName]` attributes, which override a naming policy anyway. Adding the option is a
+  no-op that also allocates a fresh `JsonSerializerOptions` per call.
+- **`IDisposable` findings in test doubles.** `TurnContextStateCollection` in `TurnContextStub` is
+  returned from a Moq setup and must outlive the helper (the turn pipeline NREs without it), and
+  `HttpResponseMessage`s returned from a test `HttpMessageHandler` are disposed by the owning
+  `HttpClient`. Both are false positives.
+
 ---
 
 ## 6. Pull Requests
