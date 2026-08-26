@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.3...teams-notifier-function-app-v1.8.0) (2026-08-26)
+
+
+### Features
+
+* migrate Teams handler to Microsoft.Agents.Extensions.MSTeams ([a69aa94](https://github.com/dsb-norge/teams-notifier-function-app/commit/a69aa94d80172833cc3324538fc2acc560cfd6e4))
+
+
+### Bug Fixes
+
+* **deps:** Bump github/codeql-action/upload-sarif from 4.37.7 to 4.37.8 ([4f85e38](https://github.com/dsb-norge/teams-notifier-function-app/commit/4f85e38f3efd48ba09ad0adaab7636d6b67be253))
+* **deps:** Bump the azure-sdk group with 1 update ([74e7109](https://github.com/dsb-norge/teams-notifier-function-app/commit/74e7109f04e0ab9d7d165d97e36cc976201a44a2))
+* **deps:** Bump the azure-sdk group with 1 update ([7e9db42](https://github.com/dsb-norge/teams-notifier-function-app/commit/7e9db423266fdb0b326ab571e1a1b817498ce5ca))
+* **deps:** Bump the microsoft-agents group with 3 updates ([8e53c1d](https://github.com/dsb-norge/teams-notifier-function-app/commit/8e53c1d46bc524957c9a0ad2fae3f89b4da0e93d))
+* narrow the EasyAuth claims catch and triage the Code Quality findings ([a2a5856](https://github.com/dsb-norge/teams-notifier-function-app/commit/a2a5856359c8b5c63baf8af8015a8fc102010829))
+
 ## [1.7.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.2...teams-notifier-function-app-v1.7.3) (2026-08-17)
 
 
