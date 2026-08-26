@@ -17,7 +17,7 @@ namespace TeamsNotificationBot.Services;
 
 // Migrated from the [Obsolete] TeamsActivityHandler inheritance model to AgentApplication +
 // TeamsAgentExtension route registration (docs/contributing.md §9 "Deferred migrations" records
-// the evaluation and the Kiota transitive pin that ships with it). AgentApplication implements
+// the evaluation and the workarounds that shipped with it). AgentApplication implements
 // the same IAgent contract, so CloudAdapter hosting and BotMessagesFunction are unchanged.
 public class TeamsBotHandler : AgentApplication
 {

@@ -32,11 +32,6 @@ updates:
       # Incompatible with Functions.Worker.ApplicationInsights 2.x — see docs/contributing.md §9
       - dependency-name: "Microsoft.ApplicationInsights.WorkerService"
         versions: [">=3.0.0"]
-      # Load-bearing transitive pin for the MSTeams 1.7.4 Graph 5.x stack (GHSA-7j59-v9qr-6fq9);
-      # Kiota 2.x pairs with Graph.Core 4.x and would split the stack across majors. Dropping the
-      # pin entirely is a hand-verified step — see docs/contributing.md §9.
-      - dependency-name: "Microsoft.Kiota.Abstractions"
-        versions: [">=2.0.0"]
     open-pull-requests-limit: 10
 
   - package-ecosystem: github-actions
