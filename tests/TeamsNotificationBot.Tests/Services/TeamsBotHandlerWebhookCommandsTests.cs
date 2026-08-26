@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Services;
@@ -27,6 +28,7 @@ public class TeamsBotHandlerWebhookCommandsTests
             .ReturnsAsync(true);
 
         return new TeamsBotHandler(
+            TestAgentOptions.Create(),
             _botService.Object, _aliasService.Object, _teamLookupTable.Object, _botOpsQueue.Object,
             NullLogger<TeamsBotHandler>.Instance,
             queueService: null,
@@ -47,12 +49,7 @@ public class TeamsBotHandlerWebhookCommandsTests
             ServiceUrl = "https://smba.trafficmanager.net/emea/"
         };
 
-        var ctx = new Mock<ITurnContext<IMessageActivity>>();
-        ctx.Setup(t => t.Activity).Returns(activity);
-        ctx.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        ctx.Setup(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
-        return ctx;
+        return TurnContextStub.Wrap<IMessageActivity>(activity);
     }
 
     private static bool TextContains(IActivity a, params string[] needles)

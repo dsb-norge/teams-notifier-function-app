@@ -4,35 +4,14 @@ using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Services;
-
-/// <summary>
-/// Testable wrapper that exposes protected methods for direct testing.
-/// </summary>
-public class TestableTeamsBotHandler : TeamsBotHandler
-{
-    public TestableTeamsBotHandler(
-        IBotService botService,
-        IAliasService aliasService,
-        [FromKeyedServices("teamlookup")] TableClient teamLookupTable,
-        [FromKeyedServices("botoperations")] QueueClient botOpsQueue,
-        Microsoft.Extensions.Logging.ILogger<TeamsBotHandler> logger,
-        IQueueManagementService? queueService = null)
-        : base(botService, aliasService, teamLookupTable, botOpsQueue, logger, queueService) { }
-
-    public Task<AdaptiveCardInvokeResponse> TestOnAdaptiveCardInvokeAsync(
-        ITurnContext<IInvokeActivity> turnContext,
-        AdaptiveCardInvokeValue invokeValue,
-        CancellationToken cancellationToken)
-        => OnAdaptiveCardInvokeAsync(turnContext, invokeValue, cancellationToken);
-}
 
 // Tests mutate Environment.SetEnvironmentVariable("PoisonAlertAlias") — must not run
 // in parallel with PoisonQueueMonitorFunctionTests which depends on the same env var.
@@ -46,29 +25,24 @@ public class TeamsBotHandlerTests
     private readonly Mock<IQueueManagementService> _queueService = new();
     private readonly TeamsBotHandler _handler;
     private readonly TeamsBotHandler _handlerWithQueues;
-    private readonly TestableTeamsBotHandler _testableHandler;
 
     public TeamsBotHandlerTests()
     {
         _handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
             _botService.Object,
             _aliasService.Object,
             _teamLookupTable.Object,
             _botOpsQueue.Object,
             NullLogger<TeamsBotHandler>.Instance);
         _handlerWithQueues = new TeamsBotHandler(
+            TestAgentOptions.Create(),
             _botService.Object,
             _aliasService.Object,
             _teamLookupTable.Object,
             _botOpsQueue.Object,
             NullLogger<TeamsBotHandler>.Instance,
             _queueService.Object);
-        _testableHandler = new TestableTeamsBotHandler(
-            _botService.Object,
-            _aliasService.Object,
-            _teamLookupTable.Object,
-            _botOpsQueue.Object,
-            NullLogger<TeamsBotHandler>.Instance);
     }
 
     [Fact]
@@ -636,52 +610,49 @@ public class TeamsBotHandlerTests
         _aliasService.Setup(s => s.SetAliasAsync("test-alias", It.IsAny<AliasEntity>()))
             .ReturnsAsync(new AliasEntity { RowKey = "test-alias" });
 
-        var (turnContext, invokeValue) = CreateAdaptiveCardInvokeInput(new
+        var turnContext = CreateAdaptiveCardInvokeInput(new
         {
             action = "createAlias",
             aliasName = "test-alias",
             aliasDescription = "My test alias"
         }, conversationType: "channel", teamAadGroupId: "team-guid-1");
 
-        var response = await _testableHandler.TestOnAdaptiveCardInvokeAsync(
-            turnContext.Object, invokeValue, CancellationToken.None);
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync("test-alias", It.IsAny<AliasEntity>()), Times.Once);
-        Assert.Equal(200, response.StatusCode);
+        Assert.Equal(200, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     [Fact]
     public async Task AdaptiveCardInvoke_CreateAlias_InvalidName_ReturnsError()
     {
-        var (turnContext, invokeValue) = CreateAdaptiveCardInvokeInput(new
+        var turnContext = CreateAdaptiveCardInvokeInput(new
         {
             action = "createAlias",
             aliasName = "A!",
             aliasDescription = ""
         }, conversationType: "channel", teamAadGroupId: "team-guid-1");
 
-        var response = await _testableHandler.TestOnAdaptiveCardInvokeAsync(
-            turnContext.Object, invokeValue, CancellationToken.None);
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
-        Assert.Equal(400, response.StatusCode);
+        Assert.Equal(400, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     [Fact]
     public async Task AdaptiveCardInvoke_CreateAlias_EmptyName_ReturnsError()
     {
-        var (turnContext, invokeValue) = CreateAdaptiveCardInvokeInput(new
+        var turnContext = CreateAdaptiveCardInvokeInput(new
         {
             action = "createAlias",
             aliasName = "",
             aliasDescription = ""
         }, conversationType: "channel", teamAadGroupId: "team-guid-1");
 
-        var response = await _testableHandler.TestOnAdaptiveCardInvokeAsync(
-            turnContext.Object, invokeValue, CancellationToken.None);
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _aliasService.Verify(s => s.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
-        Assert.Equal(400, response.StatusCode);
+        Assert.Equal(400, TurnContextStub.GetInvokeResponseBody(turnContext).StatusCode);
     }
 
     // --- Card submit via message activity tests (Action.Submit flow) ---
@@ -1274,6 +1245,7 @@ public class TeamsBotHandlerTests
 
             // Create fresh handler to avoid cache from prior tests
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1300,6 +1272,7 @@ public class TeamsBotHandlerTests
                 .ReturnsAsync(new AliasEntity { TargetType = "channel" });
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1322,6 +1295,7 @@ public class TeamsBotHandlerTests
             _aliasService.Setup(s => s.GetAliasAsync("ops-alerts")).ReturnsAsync((AliasEntity?)null);
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1352,6 +1326,7 @@ public class TeamsBotHandlerTests
             _aliasService.Setup(s => s.GetAliasAsync("ops-alerts")).ReturnsAsync((AliasEntity?)null);
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1382,6 +1357,7 @@ public class TeamsBotHandlerTests
             _aliasService.Setup(s => s.GetAllAliasesAsync()).ReturnsAsync(new List<AliasEntity>());
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1430,6 +1406,7 @@ public class TeamsBotHandlerTests
                 .ReturnsAsync(new AliasEntity { TargetType = "channel" });
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1460,6 +1437,7 @@ public class TeamsBotHandlerTests
             _aliasService.Setup(s => s.GetAliasAsync("ops-alerts")).ReturnsAsync((AliasEntity?)null);
 
             var handler = new TeamsBotHandler(
+            TestAgentOptions.Create(),
                 _botService.Object, _aliasService.Object, _teamLookupTable.Object,
                 _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
 
@@ -1578,12 +1556,7 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IMessageActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IMessageActivity>(activity);
         turnContext.Setup(t => t.DeleteActivityAsync(
             It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -1620,17 +1593,12 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var turnContext = new Mock<ITurnContext<IInstallationUpdateActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IInstallationUpdateActivity>(activity);
 
         return (turnContext, activity);
     }
 
-    private static (Mock<ITurnContext<IInvokeActivity>> turnContext, AdaptiveCardInvokeValue invokeValue) CreateAdaptiveCardInvokeInput(
+    private static Mock<ITurnContext<IInvokeActivity>> CreateAdaptiveCardInvokeInput(
         object actionData,
         string conversationType = "personal",
         string? teamAadGroupId = null)
@@ -1647,7 +1615,17 @@ public class TeamsBotHandlerTests
                 ConversationType = conversationType
             },
             ChannelId = "msteams",
-            ServiceUrl = "https://smba.trafficmanager.net/emea/"
+            ServiceUrl = "https://smba.trafficmanager.net/emea/",
+            // The SDK route deserializes the raw invoke value from Activity.Value and only
+            // accepts Action.Execute here (Action.Submit arrives as a message with Value).
+            Value = System.Text.Json.JsonSerializer.SerializeToElement(new
+            {
+                action = new
+                {
+                    type = "Action.Execute",
+                    data = actionData
+                }
+            })
         };
 
         if (teamAadGroupId != null)
@@ -1659,23 +1637,9 @@ public class TeamsBotHandlerTests
             });
         }
 
-        var invokeValue = new AdaptiveCardInvokeValue
-        {
-            Action = new AdaptiveCardInvokeAction
-            {
-                Type = "Action.Submit",
-                Data = System.Text.Json.JsonSerializer.SerializeToElement(actionData)
-            }
-        };
+        var turnContext = TurnContextStub.Wrap<IInvokeActivity>(activity);
 
-        var turnContext = new Mock<ITurnContext<IInvokeActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
-
-        return (turnContext, invokeValue);
+        return turnContext;
     }
 
     private (Mock<ITurnContext<IConversationUpdateActivity>> turnContext, Activity activity) CreateConversationUpdateContext(
@@ -1714,12 +1678,7 @@ public class TeamsBotHandlerTests
                 .Returns(Task.CompletedTask);
         }
 
-        var turnContext = new Mock<ITurnContext<IConversationUpdateActivity>>();
-        turnContext.Setup(t => t.Activity).Returns(activity);
-        turnContext.As<ITurnContext>().Setup(t => t.Activity).Returns(activity);
-        turnContext.Setup(t => t.SendActivityAsync(
-            It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResourceResponse());
+        var turnContext = TurnContextStub.Wrap<IConversationUpdateActivity>(activity);
 
         return (turnContext, activity);
     }

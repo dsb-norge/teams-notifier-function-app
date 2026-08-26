@@ -180,8 +180,33 @@ var host = new HostBuilder()
         // M365 Agents SDK: CloudAdapter as IAgentHttpAdapter + dependencies
         services.AddCloudAdapter();
 
-        // M365 Agents SDK: register the bot handler as the agent
-        services.AddTransient<IAgent, TeamsBotHandler>();
+        // M365 Agents SDK: AgentApplication turn options for the route-based TeamsBotHandler.
+        // The DI ctor defaults TurnStateFactory to MemoryStorage — this bot keeps no turn state.
+        // Connections + HttpClientFactory are re-assigned with GetRequiredService on purpose:
+        // TeamsAgentExtension's before-turn hook ThrowIfNulls on BOTH for every inbound Teams
+        // turn, so a missing AddHttpClient()/IConnections registration must fail at startup,
+        // not as a total bot outage at turn time. Behavior flags (mention handling, typing
+        // timer) come from TeamsBotHandler.ApplyHandlerOptionInvariants — shared with the test
+        // helper so test and production configuration cannot drift.
+        // Do NOT pass loggerFactory: null — the SDK would substitute an isolated warning-only
+        // logger factory, silently breaking the Logging__LogLevel__Microsoft.Agents debug profile.
+        services.AddSingleton(sp => TeamsBotHandler.ApplyHandlerOptionInvariants(
+            new Microsoft.Agents.Builder.App.AgentApplicationOptions(
+                sp,
+                context.Configuration,
+                sp.GetRequiredService<CloudAdapter>(),
+                loggerFactory: sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>())
+            {
+                Connections = sp.GetRequiredService<IConnections>(),
+                HttpClientFactory = sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
+            }));
+
+        // M365 Agents SDK: register the bot handler as the agent. Singleton on purpose: the
+        // AgentApplication base ctor reflection-scans the whole class and builds the route table
+        // per construction, the route table is immutable afterwards, every injected dependency is
+        // a singleton, and per-turn state flows through ITurnContext/ITurnState. (Singleton also
+        // makes the poison-nudge cache actually cache; it is volatile-safe for concurrent turns.)
+        services.AddSingleton<IAgent, TeamsBotHandler>();
 
         // M365 Agents SDK: inbound JWT validation for Bot Framework and Entra ID tokens
         services.AddAgentAspNetAuthentication(context.Configuration);

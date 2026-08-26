@@ -16,6 +16,11 @@ namespace TeamsNotificationBot.Tests.Services;
 /// operation — so the adapter is passed as null here. If that ever stops being true, these
 /// tests fail loudly with a NullReferenceException rather than silently testing the wrong thing.
 /// </summary>
+// Joins the "Azurite" collection ONLY to serialize with the other classes that mutate the
+// process-global TEAMS_INTEGRATION_DISABLED env var (NotifyFlowTests, UpdownIngestFlowTests,
+// BotServiceStorageTests). BotService reads it in its CONSTRUCTOR, so a class constructing
+// BotService in parallel with one of those tests intermittently captures the wrong value.
+[Collection("Azurite")]
 public class BotServiceChannelNameTests
 {
     private readonly Mock<TableClient> _tableClient = new();
@@ -23,7 +28,7 @@ public class BotServiceChannelNameTests
 
     public BotServiceChannelNameTests()
     {
-        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance);
+        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
     }
 
     // Fixed timestamps so "was it preserved / was it bumped" assertions are exact.
@@ -206,6 +211,11 @@ public class BotServiceChannelNameTests
 /// must be set before construction. Follows the same set-in-ctor / restore-in-Dispose convention
 /// as QueueProcessorFunctionTests and PoisonQueueMonitorFunctionTests.
 /// </summary>
+// Joins the "Azurite" collection ONLY to serialize with the other classes that mutate the
+// process-global TEAMS_INTEGRATION_DISABLED env var (NotifyFlowTests, UpdownIngestFlowTests,
+// BotServiceStorageTests). BotService reads it in its CONSTRUCTOR, so a class constructing
+// BotService in parallel with one of those tests intermittently captures the wrong value.
+[Collection("Azurite")]
 public class BotServiceChannelNameTeamsDisabledTests : IDisposable
 {
     private const string EnvVar = "TEAMS_INTEGRATION_DISABLED";
@@ -216,7 +226,7 @@ public class BotServiceChannelNameTeamsDisabledTests : IDisposable
     public BotServiceChannelNameTeamsDisabledTests()
     {
         Environment.SetEnvironmentVariable(EnvVar, "true");
-        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance);
+        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
     }
 
     public void Dispose() => Environment.SetEnvironmentVariable(EnvVar, _previous);
