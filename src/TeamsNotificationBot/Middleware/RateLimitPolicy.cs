@@ -5,16 +5,23 @@ namespace TeamsNotificationBot.Middleware;
 /// behaviour is unit-testable without spinning up the host.
 ///
 /// Two disjoint zones:
-///  - AAD routes (<see cref="ApiUriPattern"/>): keyed by EasyAuth principal, EXCLUDING the anonymous
-///    ingest sub-path (negative lookahead) so an anonymous ingest call — which has no principal —
-///    is never bucketed under this rule.
-///  - updown ingest (<see cref="IngestUriPattern"/>): keyed by source IP, since it is now a public
-///    anonymous endpoint (see docs/feat-updown-io-webhook/design.md §10).
+///  - AAD routes (<see cref="ApiUriPattern"/>): keyed by EasyAuth principal. EXCLUDES the anonymous
+///    routes under /api/v1/ (the ingest sub-path and openapi.yaml). EasyAuth passes a client-forged
+///    X-MS-CLIENT-PRINCIPAL-ID through on its excluded paths (verified on dev 2026-09-24), so a key
+///    read on an anonymous route could be anyone's, and a caller could spend another principal's
+///    budget with it.
+///  - updown ingest (<see cref="IngestUriPattern"/>): keyed by source IP, since it is a public
+///    anonymous endpoint.
+///
+/// ThrottlingTroll matches these against the full URL, query string included
+/// (scheme://host/path?query), case-insensitively and unanchored. Both patterns are anchored on
+/// scheme://host/ so only the path decides the zone: unanchored, "/api/messages?x=/api/v1/send"
+/// would fall under the principal rule.
 /// </summary>
 public static class RateLimitPolicy
 {
-    public const string ApiUriPattern = "/api/v1/(?!ingest/).*";
-    public const string IngestUriPattern = "/api/v1/ingest/.*";
+    public const string ApiUriPattern = @"^https?://[^/]+/api/v1/(?!ingest/|openapi\.yaml(?:\?|$))";
+    public const string IngestUriPattern = @"^https?://[^/]+/api/v1/ingest/";
 
     public const int DefaultApiPermitLimit = 60;
     public const int DefaultApiIntervalSeconds = 60;
