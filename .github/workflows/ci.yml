@@ -23,6 +23,11 @@ jobs:
   # reported regardless of which jobs ran.
   changes:
     name: Detect changes
+    # paths-filter lists PR files through the API with the token it is
+    # given (read is enough) and uses git on push; nothing here writes.
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -31,6 +36,8 @@ jobs:
       actions: ${{ steps.filter.outputs.actions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3 2026-08-05
         id: filter
         with:
@@ -61,9 +68,15 @@ jobs:
     name: Build and Test
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    # Builds and runs the PR's code and tests. Results go out as workflow
+    # commands (annotations, job summary), which need no token scope.
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6 2026-07-16
         with:
@@ -123,7 +136,12 @@ jobs:
     if: needs.changes.outputs.requirements == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Runs the PR's generate/validate scripts. Keep the token out of
+      # .git/config so they can't read it; the PR-comment steps below get it
+      # explicitly via GH_TOKEN.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
 
       - name: Regenerate app-requirements.json
         run: bash scripts/generate-requirements.sh
