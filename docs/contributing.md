@@ -94,8 +94,10 @@ should **not** be narrowed. The rule in this codebase is:
 > A failure in a *side concern* must never break notification delivery.
 
 Channel-name backfill, conversation-reference auto-refresh, `LastUpdated` stamping, the
-poison-alias nudge, channel enumeration, the updown allowlist warm-up, and best-effort test
-teardown are all side concerns. Each catches broadly, logs at `Debug`/`Warning`, and continues.
+poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, and
+best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
+whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
+into the `BotMessages` 500 envelope. Each catches broadly, logs at `Debug`/`Warning`, and continues.
 Narrowing them to specific exception types would convert an unforeseen SDK or Table Storage error
 into a dropped notification — the opposite of what we want. `PoisonQueueMonitorFunction` catches
 everything for the same reason, to avoid a `-poison-poison` cascade.
@@ -112,6 +114,15 @@ Two places are **not** side concerns, and there a broad catch is a genuine defec
 
 When adding a broad catch, say in a comment which of the two categories it falls into.
 
+The CodeQL query behind this finding exempts a catch that has an exception filter (`when (…)`)
+or that rethrows. Don't add a filter just to quiet it; add one only when it changes behaviour
+you want.
+
+**Code Quality findings can't be dismissed through the API**: `code-quality/findings` is
+read-only. Dismiss them in the web UI (Security → Code quality) as *Won't fix* for the
+deliberate catches and *False positive* for the test-double `IDisposable` hits below, citing
+this section.
+
 ### Findings that are rejected on sight
 
 Recorded so they are not re-litigated each scan:
@@ -127,6 +138,8 @@ Recorded so they are not re-litigated each scan:
   returned from a Moq setup and must outlive the helper (the turn pipeline NREs without it), and
   `HttpResponseMessage`s returned from a test `HttpMessageHandler` are disposed by the owning
   `HttpClient`. Both are false positives.
+- **`AdaptiveTextBlock` `Type`/`Text` "should be required"** was fixed (fixed getter, `required`
+  text). If it resurfaces in another shape, it's the same finding.
 
 ---
 
@@ -154,17 +167,43 @@ Include:
 - Are new app settings added to both `app-requirements.json` (via the seed file) and `local.settings.json.example`?
 - Do new services have corresponding unit tests?
 
+### Review threads: every one gets an answer
+
+Open PRs as **ready for review**, not as drafts: Copilot's automatic review only runs on
+ready PRs. After that it reviews every push, and its comments open review threads. `main`'s ruleset
+blocks the merge while any thread is unresolved, and `gh pr merge --admin` does **not** bypass
+that. Resolve each thread with one of:
+
+1. **The proposed change**, applied as suggested.
+2. **A different fix**, when the finding is right but the suggestion isn't the best remedy.
+3. **A rationale**, when the finding doesn't apply or the current code is deliberate: say why,
+   and if it is a recurring false positive, record it under
+   [Findings that are rejected on sight](#findings-that-are-rejected-on-sight) so it isn't
+   re-argued.
+
+Reply in the thread saying which of the three it is and linking the fixing commit, then resolve
+it. A silent resolve loses the reasoning. Human review threads are handled the same way.
+
+A PR is ready to hand over only when **every thread is resolved** and the review of the latest
+push has been read. Pushing a fix triggers a new review, so keep going until one comes back with
+nothing unresolved, or a thread needs a decision from a maintainer.
+
+A review can land **after** the PR merged. Handle those threads the same way: fix them in the
+next PR and reply on the old thread with a link to it.
+
 ---
 
 ## 7. CI/CD Pipeline
 
-Every pull request targeting `main` runs three CI jobs (in `ci.yml`). A **CI Conclusion** job aggregates their results into a single required status check for branch protection.
+Every pull request targeting `main` runs the CI jobs below (in `ci.yml`), each gated on a path filter so unrelated changes skip it. A **CI Conclusion** job aggregates their results into a single required status check for branch protection; a skipped job counts as passed.
 
 | Job | What it checks |
 |-----|---------------|
 | **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test failures appear as inline annotations and a Job Summary. |
 | **Dependency Review** | Blocks PRs that introduce dependencies with known vulnerabilities. Only runs on pull requests. |
 | **Validate Requirements** | Regenerates `app-requirements.json` from source and diffs against the committed file. Posts a PR comment with the diff if stale. Then runs `scripts/validate-requirements.sh` for structural validation. |
+| **Lint Workflows** | Runs [actionlint](https://github.com/rhysd/actionlint), which also shellchecks every `run:` block, when anything under `.github/workflows/` or `.github/actions/` changes. The binary is pinned by version and SHA-256 in `ci.yml`; bump both together. |
+| **Release Build (dry run)** | On the same changes, runs the shared `build-release-artifacts` action that `release.yml` and `prerelease.yml` use, and checks the three artifacts come out. Nothing is published or attested. |
 
 **CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` marks `LogSanitizer.Sanitize()` as a taint barrier for advanced/custom CodeQL setups. **Note:** GitHub **Default Setup does not load repo-local model packs**, so it does not recognise this barrier — `cs/log-forging` alerts still fire on `Sanitize()`-wrapped values and are triaged as **false positives** (the sanitizer strips CR/LF/tab + U+2028/U+2029 and `ILogger` uses structured, non-interpolated logging). Dismiss such alerts with that rationale (see the dismissed alerts for the established wording). See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
 
@@ -239,6 +278,7 @@ How it behaves:
 - **Version** is `X.Y.(Z+1)-pre.N`: `X.Y.Z` is `.release-please-manifest.json` on the branch, `N` the workflow's run number. It sorts after the current release and before the next one, whatever bump that turns out to be. The version is stamped into `AppInfo.cs` and `app-requirements.json` in the build only, never committed, so `/api/health` and `checkin` report the pre-release version. The infrastructure hash excludes the version, so a deploy that gates on the hash treats a pre-release like the release it came from.
 - **The tag uses the release-please format**, so deploy tooling that derives the version from the tag and finds the assets by it works unchanged. release-please ignores these tags: in manifest mode it only looks for the tag of the version recorded in the manifest file.
 - **Tags are permanent.** The `Tags - No Deletion` ruleset covers pre-release tags too, so every successful run leaves one behind. The release is created as a draft (drafts have no tag) and published only once every asset is attached, so a failed run leaves at most a draft to delete. Re-running a failed run reuses its run number and is refused if that tag or draft exists — start a new run instead.
+- **Branch code never runs with write access.** The branch may be unreviewed, and its build runs NuGet packages, MSBuild targets and scripts from it. So a `build` job does all of that with a read-only token and no OIDC, without leaving the token in `.git/config`, and a separate `publish` job, which checks nothing out, attests the uploaded files and creates the release. Keep that split when editing the workflow.
 - **Not a release-please release**: no `CHANGELOG.md` entry, no version bump on `main`. The workflow fails if `app-requirements.json` is stale on the branch, the same check CI runs.
 - **Never marked Latest**, so a deploy that tracks the latest release never picks a pre-release up. The reverse can bite: if that deploy only checks whether `/api/health`'s version equals the latest release, its next run **puts the latest release back over a pre-release**. Finish testing before then, or redeploy the pre-release by tag.
 - **Teams manifest**: the pre-release version flows into the manifest `version`. The v1.25 schema accepts it, but Microsoft's Store guidelines ask for plain `MAJOR.MINOR.PATCH`, and whether a Teams Admin upload of a custom app accepts a pre-release suffix is unverified. Skip the manifest upload unless the pre-release changes commands or other manifest content.
