@@ -33,8 +33,15 @@ token with the correct audience and application role before making requests.
 | Required role | `Notifications.Send` |
 
 The `Notifications.Send` app role must be assigned to the calling service principal or user in
-Entra ID. Requests without a valid token or without the required role receive a `401` or `403`
-response.
+Entra ID. A request without a valid token gets `401`; one with a valid token but without the role
+gets `403`.
+
+The `401` comes from the platform: App Service Authentication (EasyAuth) rejects the request
+before it reaches the app, so it has **no** problem+json body and **no** `X-Correlation-Id`
+header. Clients should branch on the status code, not the body. The `403` and every other error
+come from the app, in the format in [§5](#5-error-format). Only `/api/health`,
+`/api/v1/openapi.yaml`, `/api/messages` (Bot Framework) and `/api/v1/ingest/updown/{token}` are
+reachable without a token.
 
 ### Token acquisition (Azure CLI)
 
@@ -67,7 +74,7 @@ For a complete guide on setting up authentication, registering callers, and assi
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization` | Yes (except `/health`, `/v1/openapi.yaml`) | `Bearer <token>` — Entra ID access token with `Notifications.Send` role |
+| `Authorization` | Yes on the Entra ID routes (`/v1/notify`, `/alert`, `/send`, `/checkin`, `/aliases`). Not used on `/health`, `/v1/openapi.yaml`, `/messages` (Bot Framework sends its own JWT) or `/v1/ingest/updown/{token}` (the path token is the credential) | `Bearer <token>` — Entra ID access token with `Notifications.Send` role |
 | `Content-Type` | Yes (POST requests) | Must be `application/json` |
 | `Idempotency-Key` | No | Client-generated deduplication key. See [Idempotency](#7-idempotency). |
 
@@ -75,7 +82,7 @@ For a complete guide on setting up authentication, registering callers, and assi
 
 | Header | Description |
 |--------|-------------|
-| `X-Correlation-Id` | Unique correlation identifier for the request. Include this value when reporting issues. |
+| `X-Correlation-Id` | Unique correlation identifier for the request. Include this value when reporting issues. Set on every response the app generates; absent on EasyAuth's `401`, which never reaches the app (see [§2](#2-authentication)). |
 | `Retry-After` | Seconds to wait before retrying. Present on `429` responses. |
 | `Content-Type` | `application/json` for all JSON responses, `application/yaml` for OpenAPI spec. |
 
@@ -113,8 +120,9 @@ Content-Type: application/json
 
 ## 5. Error Format
 
-All error responses follow the [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807)
-Problem Details format:
+All error responses from the app follow the [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807)
+Problem Details format. The exception is `401`, which the platform returns without this body
+(see [§2](#2-authentication)):
 
 ```json
 {
@@ -142,7 +150,7 @@ Problem Details format:
 |------|---------|
 | 202 | Accepted — message queued for delivery |
 | 400 | Bad Request — invalid JSON, missing required fields, or validation failure |
-| 401 | Unauthorized — missing or invalid Bearer token |
+| 401 | Unauthorized — missing or invalid Bearer token (returned by EasyAuth, no problem+json body) |
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint |
 | 413 | Payload Too Large — request body exceeds 28 KB |

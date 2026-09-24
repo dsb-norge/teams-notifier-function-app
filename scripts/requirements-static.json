@@ -17,8 +17,8 @@
 
   "bot_auth_settings": {
     "platform_enabled": true,
-    "require_authentication": false,
-    "unauthenticated_action": "AllowAnonymous",
+    "require_authentication": true,
+    "unauthenticated_action": "Return401",
     "identity_provider": "azureActiveDirectory"
   },
 

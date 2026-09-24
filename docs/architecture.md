@@ -132,7 +132,7 @@ message, so `QueueProcessor` is unchanged).
 ```mermaid
 sequenceDiagram
     participant U as updown.io
-    participant EA as EasyAuth<br/>(AllowAnonymous)
+    participant EA as EasyAuth<br/>(ingress path excluded)
     participant AM as AuthMiddleware<br/>(skips /api/v1/ingest/updown/)
     participant IF as UpdownIngestFunction
     participant WT as webhooktokens<br/>(SHA-256 lookup)
