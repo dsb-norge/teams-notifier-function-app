@@ -230,6 +230,12 @@ It never shares code with the AAD-gated routes.
   `/api/v1/ingest/updown` and `/api/v1/ingest/updown/*`. Microsoft documents only the
   `/path/subpath/*` form and not whether a bare path covers its children, and without a working
   exclusion every updown webhook would get a 401. That is why the ingress is listed both ways.
+  Verified on dev (2026-09-24): real updown webhooks to `/api/v1/ingest/updown/<token>` reached
+  the handler and were enqueued, so the `/*` entry works. The bare entry is kept because it is
+  harmless; the bare path itself has no route (404).
+- **The allowlist runs before the token lookup.** In `enforce` mode, a request from a non-updown IP
+  gets `403` ("Source IP not allowed", problem+json with `X-Correlation-Id`) whatever its token,
+  so a probe with an unknown token from elsewhere sees 403, not 404.
 - **`AuthMiddleware` is the second layer.** It serves exactly those routes without a principal
   (the ingress by the `/api/v1/ingest/updown/` prefix, the rest by exact match; a suffix match
   would also exempt alias-shaped paths such as `/api/v1/notify/health`). Everything else still

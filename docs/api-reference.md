@@ -38,7 +38,14 @@ gets `403`.
 
 The `401` comes from the platform: App Service Authentication (EasyAuth) rejects the request
 before it reaches the app, so it has **no** problem+json body and **no** `X-Correlation-Id`
-header. Clients should branch on the status code, not the body. The `403` and every other error
+header. Clients should branch on the status code, not the body. As observed on dev:
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Length: 0
+WWW-Authenticate: Bearer realm="<function-app-name>.azurewebsites.net"
+```
+ The `403` and every other error
 come from the app, in the format in [§5](#5-error-format). Only `/api/health`,
 `/api/v1/openapi.yaml`, `/api/messages` (Bot Framework) and `/api/v1/ingest/updown/{token}` are
 reachable without a token.
