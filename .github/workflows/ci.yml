@@ -28,6 +28,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       deps: ${{ steps.filter.outputs.deps }}
       requirements: ${{ steps.filter.outputs.requirements }}
+      actions: ${{ steps.filter.outputs.actions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3 2026-08-05
@@ -52,6 +53,9 @@ jobs:
               - 'teams-app-package/create-teams-app-package.sh'
               - 'teams-app-package/app-metadata.json'
               - '.github/workflows/ci.yml'
+            actions:
+              - '.github/workflows/**'
+              - '.github/actions/**'
 
   build-and-test:
     name: Build and Test
@@ -139,6 +143,8 @@ jobs:
       - name: Prepare PR comment if stale
         if: steps.diff-check.outputs.stale == 'true' && github.event_name == 'pull_request'
         run: |
+          # The backticks below are Markdown for the comment, not shell expansions.
+          # shellcheck disable=SC2016
           {
             echo '### :x: `app-requirements.json` is out of date'
             echo ''
@@ -251,6 +257,69 @@ jobs:
           sys.exit(1)
           PY
 
+  # Workflow and composite-action edits change the release path but touch none
+  # of the code filters above, so without these two jobs they would merge with
+  # every build skipped.
+  lint-workflows:
+    name: Lint Workflows
+    needs: changes
+    if: needs.changes.outputs.actions == 'true'
+    # Runs code from the PR branch: don't hand it the workflow-level
+    # pull-requests: write token.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      # Bump both together: the checksum is the linux_amd64 tarball's line in
+      # the release's actionlint_<version>_checksums.txt.
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          TARBALL="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "/tmp/$TARBALL" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$TARBALL"
+          echo "${ACTIONLINT_SHA256}  /tmp/$TARBALL" | sha256sum --check --strict
+          tar -xzf "/tmp/$TARBALL" -C /tmp actionlint
+
+      - name: Run actionlint
+        # Also shellchecks every run: block (shellcheck ships on ubuntu-latest).
+        run: /tmp/actionlint -color
+
+  release-build:
+    name: Release Build (dry run)
+    needs: changes
+    if: needs.changes.outputs.actions == 'true'
+    # Runs code from the PR branch: don't hand it the workflow-level
+    # pull-requests: write token.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
+
+      - name: Build release artifacts
+        uses: ./.github/actions/build-release-artifacts
+        with:
+          version: 0.0.0-pre.${{ github.run_number }}
+
+      - name: Check the artifacts exist
+        run: |
+          set -euo pipefail
+          VERSION="0.0.0-pre.${{ github.run_number }}"
+          ls -l "teams-notifier-function-app-v${VERSION}.zip" app-requirements.json "teams-app-package-v${VERSION}.tar.gz"
+          # Look the entry up by name (exit 11 if absent) rather than piping the listing into
+          # `grep -q`, which can SIGPIPE `unzip` under pipefail and fail a good artifact.
+          unzip -l "teams-notifier-function-app-v${VERSION}.zip" TeamsNotificationBot.dll >/dev/null
+
   # Single required status check for branch protection.
   # This replaces requiring each job individually, which breaks when jobs
   # use 'if:' conditions (e.g. dependency-review is PR-only, and others now
@@ -260,7 +329,7 @@ jobs:
   conclusion:
     if: always()
     name: CI Conclusion
-    needs: [changes, build-and-test, dependency-review, validate]
+    needs: [changes, build-and-test, dependency-review, validate, lint-workflows, release-build]
     runs-on: ubuntu-latest
     steps:
       - run: exit 1
