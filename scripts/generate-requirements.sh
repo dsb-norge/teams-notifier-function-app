@@ -90,7 +90,8 @@ INGEST_ROUTE="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/Updo
 # EasyAuth excluded path = the static prefix, without the {token} segment. Emitted both bare and
 # as "<prefix>/*": Microsoft documents only the "/path/subpath/*" form and not whether a bare path
 # also matches its children, so both are listed rather than risk a 401 on every updown webhook
-# once require_authentication is on. The extra entry is harmless if matching is by prefix.
+# once require_authentication is on. The "/*" form was verified on dev on 2026-09-24 (real updown
+# webhooks reached the handler); the bare entry is kept because it is harmless.
 INGEST_EXCLUDED_PATH="${INGEST_ROUTE%/*}"
 echo "  Ingest route: ${INGEST_ROUTE}"
 echo "  Ingest excluded paths: ${INGEST_EXCLUDED_PATH}, ${INGEST_EXCLUDED_PATH}/*"
