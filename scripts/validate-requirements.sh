@@ -185,10 +185,11 @@ echo ""
 # === 9. Version format (semver) ===
 echo "[9/9] Version format"
 APP_VERSION=$(jq -r '.notifier_application_version' "${REQ_FILE}")
-if [[ "${APP_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+# X.Y.Z from release-please; X.Y.Z-pre.N as stamped by .github/workflows/prerelease.yml.
+if [[ "${APP_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-pre\.[0-9]+)?$ ]]; then
   pass "Version '${APP_VERSION}' is valid semver"
 else
-  fail "Version '${APP_VERSION}' is not valid semver (expected X.Y.Z)"
+  fail "Version '${APP_VERSION}' is not valid semver (expected X.Y.Z or X.Y.Z-pre.N)"
 fi
 
 # Cross-check version against AppInfo.cs
