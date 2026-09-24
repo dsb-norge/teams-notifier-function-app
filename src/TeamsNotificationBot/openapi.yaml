@@ -388,7 +388,12 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     Unauthorized:
-      description: Missing or invalid Bearer token
+      description: >-
+        Missing or invalid Bearer token. In Azure this is returned by App Service
+        Authentication (EasyAuth) before the request reaches the app, so it carries
+        no problem+json body and no X-Correlation-Id header. The problem+json body
+        below is only returned where platform authentication is off, e.g. local
+        development.
       content:
         application/problem+json:
           schema:

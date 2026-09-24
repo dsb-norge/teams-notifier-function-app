@@ -223,15 +223,19 @@ It never shares code with the AAD-gated routes.
   created by the `create-webhook` bot command and bound to one conversation. Only its **SHA-256** is
   stored (`webhooktokens` table); the plaintext is shown **once** and never logged. Rotate with
   `rotate-webhook` if a URL leaks.
-- **Why anonymous works safely for the rest of the app.** EasyAuth runs with
-  `unauthenticatedClientAction=AllowAnonymous`, so it only *validates* a bearer token when one is
-  present and otherwise forwards the request. `AuthMiddleware` skips paths starting with
-  `/api/v1/ingest/updown/`. Its other exemptions (`/api/messages`, `/api/health`,
-  `/api/v1/openapi.yaml`) are exact matches: a suffix match would also exempt alias-shaped paths
-  such as `/api/v1/notify/health`. The AAD routes are unaffected: they still require the
-  EasyAuth-validated `X-MS-CLIENT-PRINCIPAL-ID` header — no token → `401`. Opening the ingress does
-  not weaken them. (The module can also add the ingress prefix to `excludedPaths`; because EasyAuth
-  is AllowAnonymous this is defensive/forward-looking — see `easy_auth_excluded_paths`.)
+- **How the ingress stays anonymous while the rest of the app doesn't.** EasyAuth runs with
+  `require_authentication=true` and `unauthenticatedClientAction=Return401`: a request without a
+  valid token gets a platform `401` before it reaches the app. The exceptions are the excluded
+  paths `/api/messages`, `/api/health`, `/api/v1/openapi.yaml`, and the ingress, listed as both
+  `/api/v1/ingest/updown` and `/api/v1/ingest/updown/*`. Microsoft documents only the
+  `/path/subpath/*` form and not whether a bare path covers its children, and without a working
+  exclusion every updown webhook would get a 401. That is why the ingress is listed both ways.
+- **`AuthMiddleware` is the second layer.** It serves exactly those routes without a principal
+  (the ingress by the `/api/v1/ingest/updown/` prefix, the rest by exact match; a suffix match
+  would also exempt alias-shaped paths such as `/api/v1/notify/health`). Everything else still
+  needs the EasyAuth-validated `X-MS-CLIENT-PRINCIPAL-ID` header and the `Notifications.Send` role.
+  The excluded paths come from `scripts/generate-requirements.sh`, and `validate-requirements.sh`
+  fails if a route `AuthMiddleware` serves anonymously is missing from them.
 - **Source-IP allowlist — defense-in-depth, not the primary control.** The ingress optionally
   restricts callers to updown's published IPs (resolved from `ips.updown.io`), with modes
   `off` / `log-only` / `enforce` (**default — secure by default**). `enforce` returns `403` for a

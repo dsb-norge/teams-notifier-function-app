@@ -21,7 +21,7 @@ This guide covers common issues, diagnostic queries, and monitoring for the Team
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `401 Unauthorized` on `/api/v1/notify/{alias}` | Missing or expired Bearer token | Acquire a fresh token from Entra ID with the correct audience (`api://<api-app-id>`). Tokens expire after 1 hour by default. |
+| `401 Unauthorized` on `/api/v1/notify/{alias}` | Missing or expired Bearer token | Acquire a fresh token from Entra ID with the correct audience (`api://<api-app-id>`). Tokens expire after 1 hour by default. The 401 comes from EasyAuth, so it has no body and no `X-Correlation-Id`, and nothing about it reaches the app's logs. |
 | `403 Forbidden` on `/api/v1/notify/{alias}` | Caller missing `Notifications.Send` app role | Assign the `Notifications.Send` app role to the calling service principal in the API's Entra ID app registration. See [access-and-roles.md](access-and-roles.md). |
 | `403 Forbidden` despite having the role | Wrong audience (`aud`) claim in the token | The token must target `api://<api-app-id>`. If using a different resource URI, the EasyAuth middleware rejects the request. |
 | `429 Too Many Requests` | Rate limit exceeded (60 requests per 60 seconds per principal) | Back off and retry after the `Retry-After` header value. Rate limits are per-principal, not per-IP. |

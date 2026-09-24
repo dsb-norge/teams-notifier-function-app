@@ -126,6 +126,28 @@ if [[ "${REQ_ROLE}" == "${CODE_ROLE}" ]]; then
 else
   fail "bot_auth_settings.required_role mismatch: requirements='${REQ_ROLE}' vs code='${CODE_ROLE}'"
 fi
+
+# Every route AuthMiddleware serves without a principal must also be excluded from EasyAuth,
+# or require_authentication=true answers it with a platform 401 before the app sees it.
+REQ_EXCLUDED=$(jq -r '.bot_auth_settings.easy_auth_excluded_paths[]' "${REQ_FILE}")
+CODE_EXEMPT=$(grep -oP 'AuthExemptPaths\s*=\s*\[\K[^\]]+' "${APP_DIR}/Middleware/AuthMiddleware.cs" | grep -oP '"\K/[^"]+')
+CODE_INGEST_PREFIX=$(grep -oP 'UpdownIngestPrefix\s*=\s*"\K[^"]+' "${APP_DIR}/Middleware/AuthMiddleware.cs")
+if [[ -z "${CODE_EXEMPT}" || -z "${CODE_INGEST_PREFIX}" ]]; then
+  fail "Could not read AuthExemptPaths/UpdownIngestPrefix from AuthMiddleware.cs"
+else
+  while IFS= read -r exempt; do
+    if echo "${REQ_EXCLUDED}" | grep -qxF "${exempt}"; then
+      pass "Anonymous route '${exempt}' is in easy_auth_excluded_paths"
+    else
+      fail "Anonymous route '${exempt}' (AuthMiddleware) is NOT in easy_auth_excluded_paths"
+    fi
+  done <<< "${CODE_EXEMPT}"
+  if echo "${REQ_EXCLUDED}" | grep -qxF "${CODE_INGEST_PREFIX}*"; then
+    pass "Ingest prefix '${CODE_INGEST_PREFIX}*' is in easy_auth_excluded_paths"
+  else
+    fail "Ingest prefix '${CODE_INGEST_PREFIX}*' (AuthMiddleware) is NOT in easy_auth_excluded_paths"
+  fi
+fi
 echo ""
 
 # === 6. Infra hash integrity ===
