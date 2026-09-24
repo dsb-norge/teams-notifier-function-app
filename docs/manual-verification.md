@@ -18,7 +18,9 @@ Agents SDK packages, `BotService`'s proactive paths, or authentication — and a
 ## Setup
 
 1. Deploy the build to dev (ops repo: `dsb-infra/azure-terraform-ikt-operations`, "Deploy Teams
-   Notifier — dev").
+   Notifier — dev"). To verify before releasing, cut a pre-release from the branch and deploy it by
+   tag ([contributing §8, Pre-releases](contributing.md#pre-releases)). A deploy that tracks the
+   latest release can put that release back over it on its next run.
 2. **Enable the debug logging profile** (app settings on the Function App, added via the ops/infra
    repo or portal for a temporary session):
 
