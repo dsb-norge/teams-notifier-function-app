@@ -270,6 +270,14 @@ across callers. Two disjoint rules apply:
 | AAD routes (`/api/v1/notify\|alert\|send\|checkin\|aliases`) | `X-MS-CLIENT-PRINCIPAL-ID` (per authenticated caller, set by EasyAuth) | 60 req / 60 s |
 | updown ingress (`/api/v1/ingest/*`) | **source IP** (resolved via `IpMatcher.ClientIpHeaders` — `CLIENT-IP` on Flex; see §5) | 100 req / 60 s (defaults) |
 
+**Never trust a principal header on an EasyAuth excluded path.** On dev (2026-09-24), 60 anonymous
+`GET /api/v1/openapi.yaml` requests carrying a forged `X-MS-CLIENT-PRINCIPAL-ID` drew a `429`:
+EasyAuth passes client-supplied principal headers through on the paths it doesn't check. So
+`openapi.yaml` is outside the principal-keyed rule, and both rule patterns are anchored on
+`scheme://host/`. ThrottlingTroll matches the full URL including the query string, and unanchored,
+`/api/messages?x=/api/v1/send` would have fallen under the principal rule. `AuthMiddleware` never
+reads principal headers on the routes it exempts.
+
 Counters are stored in the `ThrottlingTrollCounters` Azure Table; exceeding a limit returns
 `429 Too Many Requests` with a `Retry-After` header. The AAD rule uses a negative-lookahead pattern
 so it never applies to the anonymous ingress; the ingress rule is keyed by source IP because those

@@ -97,8 +97,10 @@ The API enforces rate limits to prevent abuse. Two disjoint rules apply:
 | AAD routes (`/v1/notify`, `/alert`, `/send`, `/checkin`, `/aliases`) | authenticated principal (`X-MS-CLIENT-PRINCIPAL-ID`) | 60 s / 60 requests |
 | updown ingress (`/v1/ingest/*`) | source IP (`X-Forwarded-For` first hop) | 60 s / 100 requests (default) |
 
-The AAD rule excludes the ingress (negative-lookahead pattern); the ingress is keyed by source IP
-because those anonymous requests carry no principal. When a limit is exceeded, the API returns
+The AAD rule excludes the ingress and `/v1/openapi.yaml`; the ingress is keyed by source IP because
+those anonymous requests carry no principal. `/v1/openapi.yaml`, `/health` and `/messages` are not
+rate-limited per principal: EasyAuth doesn't check them, so a principal header there could be
+forged. Only the request path decides which rule applies; the query string is ignored. When a limit is exceeded, the API returns
 `429 Too Many Requests` with a `Retry-After` header indicating the number of seconds to wait before
 retrying.
 
