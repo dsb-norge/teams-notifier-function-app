@@ -354,7 +354,11 @@ for the trust model.
 ## Step 8: End-to-End Verification
 
 Run through each endpoint to confirm the full deployment is working. First,
-set up variables used by all subsequent commands:
+set up variables used by all subsequent commands. The token must belong to a
+service principal or managed identity holding `Notifications.Send`, so sign
+`az` in as that identity first (`az login --service-principal …` or
+`az login --identity`). A user sign-in can't get a token with the role; see
+[API Reference §2](api-reference.md#2-authentication).
 
 ```bash
 HOST="https://<function-app-hostname>"

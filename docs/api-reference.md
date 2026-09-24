@@ -32,8 +32,8 @@ token with the correct audience and application role before making requests.
 | Scope | `api://<api-app-id>/.default` |
 | Required role | `Notifications.Send` |
 
-The `Notifications.Send` app role must be assigned to the calling service principal or user in
-Entra ID. A request without a valid token gets `401`; one with a valid token but without the role
+The `Notifications.Send` app role must be assigned in Entra ID to the calling application
+identity: a service principal or a managed identity (see Token acquisition below). A request without a valid token gets `401`; one with a valid token but without the role
 gets `403`.
 
 The `401` comes from the platform: App Service Authentication (EasyAuth) rejects the request
@@ -45,12 +45,18 @@ HTTP/1.1 401 Unauthorized
 Content-Length: 0
 WWW-Authenticate: Bearer realm="<function-app-name>.azurewebsites.net"
 ```
- The `403` and every other error
-come from the app, in the format in [§5](#5-error-format). Only `/api/health`,
-`/api/v1/openapi.yaml`, `/api/messages` (Bot Framework) and `/api/v1/ingest/updown/{token}` are
-reachable without a token.
+
+The `403` and every other error come from the app, in the format in [§5](#5-error-format). Only
+`/api/health`, `/api/v1/openapi.yaml`, `/api/messages` (Bot Framework) and
+`/api/v1/ingest/updown/{token}` are reachable without a token.
 
 ### Token acquisition (Azure CLI)
+
+`Notifications.Send` is normally an **application** role, assigned to service principals and
+managed identities. A user sign-in can't get a token carrying it; Entra ID refuses with
+`AADSTS50105`. So `az` has to be signed in **as the calling principal** for this to work:
+`az login --service-principal …` for an app registration, `az login --identity` on a host with the
+managed identity, or a federated login in CI.
 
 ```bash
 TOKEN=$(az account get-access-token \

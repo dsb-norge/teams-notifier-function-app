@@ -77,9 +77,11 @@ Agents SDK packages, `BotService`'s proactive paths, or authentication — and a
 
 ### 5. Proactive delivery (the untestable core)
 
-The `/api/v1/*` calls below need `Authorization: Bearer <token>` for a principal holding the
-`Notifications.Send` app role on dev. [API Reference §2](api-reference.md#2-authentication) shows
-how to get one with the Azure CLI or client credentials. A 401 means the token is missing or
+The `/api/v1/*` calls below need `Authorization: Bearer <token>` for a service principal or
+managed identity holding the `Notifications.Send` app role on dev. Your own user sign-in won't do:
+the role is for applications. A short-lived managed identity federated from CI, deleted after the
+run, works well. [API Reference §2](api-reference.md#2-authentication) shows how to get the token
+with the Azure CLI or client credentials. A 401 means the token is missing or
 invalid, a 403 that it lacks the role. The webhook smoke test is the exception: the ingest URL
 (`/api/v1/ingest/updown/{token}`) is anonymous and its path token is the credential, so send it
 without a bearer token.
