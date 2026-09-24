@@ -99,7 +99,6 @@ jobs:
             echo "::error::app-requirements.json is stale on ${GITHUB_REF_NAME}. Run scripts/generate-requirements.sh and commit the result."
             exit 1
           fi
-          bash scripts/validate-requirements.sh
 
       - name: Stamp the pre-release version
         # AppInfo.Version is what /api/health, the bot's check-in reply and
@@ -128,6 +127,10 @@ jobs:
             exit 1
           fi
           git diff --stat
+
+      - name: Validate the stamped app-requirements.json
+        # Validates the file that actually ships, pre-release version and all.
+        run: bash scripts/validate-requirements.sh
 
       - name: Build release artifacts
         uses: ./.github/actions/build-release-artifacts
