@@ -225,8 +225,10 @@ It never shares code with the AAD-gated routes.
   `rotate-webhook` if a URL leaks.
 - **Why anonymous works safely for the rest of the app.** EasyAuth runs with
   `unauthenticatedClientAction=AllowAnonymous`, so it only *validates* a bearer token when one is
-  present and otherwise forwards the request. `AuthMiddleware` skips paths containing `/v1/ingest/`
-  (like it skips `/api/messages`). The AAD routes are unaffected: they still require the
+  present and otherwise forwards the request. `AuthMiddleware` skips paths starting with
+  `/api/v1/ingest/updown/`. Its other exemptions (`/api/messages`, `/api/health`,
+  `/api/v1/openapi.yaml`) are exact matches: a suffix match would also exempt alias-shaped paths
+  such as `/api/v1/notify/health`. The AAD routes are unaffected: they still require the
   EasyAuth-validated `X-MS-CLIENT-PRINCIPAL-ID` header — no token → `401`. Opening the ingress does
   not weaken them. (The module can also add the ingress prefix to `excludedPaths`; because EasyAuth
   is AllowAnonymous this is defensive/forward-looking — see `easy_auth_excluded_paths`.)

@@ -37,13 +37,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
         httpContext.Items["CorrelationId"] = correlationId;
         httpContext.Response.Headers["X-Correlation-Id"] = correlationId;
 
-        // Skip auth for bot messages endpoint (uses Bot Framework JWT auth), health probe, and OpenAPI spec.
-        // Also skip the anonymous updown.io webhook ingress: it is a distinct trust zone that performs its
-        // own token validation in-handler (no EasyAuth principal). See docs/feat-updown-io-webhook/design.md.
-        if (path.EndsWith("/messages", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/health", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/openapi.yaml", StringComparison.OrdinalIgnoreCase) ||
-            path.Contains("/v1/ingest/", StringComparison.OrdinalIgnoreCase))
+        if (IsAuthExempt(path))
         {
             await next(context);
             return;
@@ -88,6 +82,22 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
             "No authentication credentials provided. Supply a valid Bearer token (Entra ID).",
             path, correlationId);
     }
+
+    // Bot messages (Bot Framework JWT, validated by the Agents SDK), the health probe and the OpenAPI
+    // spec are anonymous. So is the updown.io webhook ingress: a distinct trust zone that validates its
+    // own capability token in-handler (docs/feat-updown-io-webhook/design.md).
+    private static readonly string[] AuthExemptPaths = ["/api/messages", "/api/health", "/api/v1/openapi.yaml"];
+    private const string UpdownIngestPrefix = "/api/v1/ingest/updown/";
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is served without an EasyAuth principal. Exact matches only,
+    /// plus the ingest prefix (its last segment is the token): a suffix match would also exempt
+    /// <c>/api/v1/notify/health</c>, because <c>health</c> and <c>messages</c> are valid alias names.
+    /// <c>internal</c> so AuthMiddlewareTests can exercise it directly.
+    /// </summary>
+    internal static bool IsAuthExempt(string path) =>
+        AuthExemptPaths.Any(exempt => string.Equals(path, exempt, StringComparison.OrdinalIgnoreCase)) ||
+        path.StartsWith(UpdownIngestPrefix, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Decodes the EasyAuth X-MS-CLIENT-PRINCIPAL header (Base64 JSON) and checks for the required app role.

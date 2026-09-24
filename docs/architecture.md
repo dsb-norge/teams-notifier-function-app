@@ -133,7 +133,7 @@ message, so `QueueProcessor` is unchanged).
 sequenceDiagram
     participant U as updown.io
     participant EA as EasyAuth<br/>(AllowAnonymous)
-    participant AM as AuthMiddleware<br/>(skips /v1/ingest/)
+    participant AM as AuthMiddleware<br/>(skips /api/v1/ingest/updown/)
     participant IF as UpdownIngestFunction
     participant WT as webhooktokens<br/>(SHA-256 lookup)
     participant Q as notifications queue
