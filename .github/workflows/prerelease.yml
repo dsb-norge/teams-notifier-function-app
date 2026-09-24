@@ -1,0 +1,146 @@
+name: Pre-release
+
+# Cuts a GitHub pre-release from the branch picked in "Run workflow", with the
+# same three artifacts release.yml attaches to a real release. A deploy can
+# then take it by explicit tag, e.g. to a test environment ahead of a
+# release-please release.
+#
+# Version: X.Y.(Z+1)-pre.N, where X.Y.Z is .release-please-manifest.json on
+# the selected ref and N is this workflow's run number. That sorts after the
+# current release and before whatever release-please cuts next, without
+# guessing whether the next one is a patch, minor or major.
+#
+# Tag: teams-notifier-function-app-v<version>, the release-please format, so
+# deploy tooling that derives the version from the tag (`${TAG##*-v}`) and
+# finds the assets by it works unchanged. release-please ignores it: in manifest mode it only looks
+# for the tag of the version recorded in .release-please-manifest.json.
+#
+# Tags cannot be deleted in this repo (the "Tags - No Deletion" ruleset), so
+# the release is created as a draft, which creates no tag, and only published
+# once every asset is attached. A failed run leaves at most a draft to delete.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prerelease:
+    name: Build Pre-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+
+      - name: Compute version and tag
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASE=$(jq -r '."."' .release-please-manifest.json)
+          if ! [[ "$BASE" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Unexpected version '$BASE' in .release-please-manifest.json (expected X.Y.Z)."
+            exit 1
+          fi
+          VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))-pre.${GITHUB_RUN_NUMBER}"
+          TAG="teams-notifier-function-app-v${VERSION}"
+
+          # A re-run keeps the run number, so it would reuse the tag. Refuse
+          # rather than collide with what an earlier attempt left behind.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists (a draft if an earlier attempt failed). Delete it, or start a new run instead of re-running this one."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists and tags cannot be deleted here. Start a new run instead of re-running this one."
+            exit 1
+          fi
+
+          {
+            echo "base=$BASE"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice title=Pre-release::$TAG from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}"
+
+      - name: Check app-requirements.json is current
+        # Same gate as CI's Validate Requirements job, run before the version
+        # stamp below so a stale committed file fails here instead of being
+        # silently regenerated into the pre-release.
+        run: |
+          set -euo pipefail
+          bash scripts/generate-requirements.sh
+          if ! git diff --exit-code src/TeamsNotificationBot/app-requirements.json; then
+            echo "::error::app-requirements.json is stale on ${GITHUB_REF_NAME}. Run scripts/generate-requirements.sh and commit the result."
+            exit 1
+          fi
+          bash scripts/validate-requirements.sh
+
+      - name: Stamp the pre-release version
+        # AppInfo.Version is what /api/health, the bot's check-in reply and
+        # the Teams manifest (via notifier_application_version) report, so it
+        # must carry the pre-release version rather than the last release's.
+        # The build only; nothing is committed. The infra hash excludes the
+        # version, so a deploy that gates on the hash treats a pre-release
+        # like the release it came from.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP_INFO=src/TeamsNotificationBot/Helpers/AppInfo.cs
+          REQS=src/TeamsNotificationBot/app-requirements.json
+          sed -i -E "s/(Version = \")[^\"]+(\"; \/\/ x-release-please-version)/\1${VERSION}\2/" "$APP_INFO"
+          if ! grep -qF "\"${VERSION}\"; // x-release-please-version" "$APP_INFO"; then
+            echo "::error::Could not stamp $VERSION into $APP_INFO; the x-release-please-version line has changed shape."
+            exit 1
+          fi
+          bash scripts/generate-requirements.sh
+          jq -e --arg v "$VERSION" '.notifier_application_version == $v' "$REQS" >/dev/null
+          COMMITTED_HASH=$(git show "HEAD:$REQS" | jq -r .infrastructure_requirements_unique_hash)
+          STAMPED_HASH=$(jq -r .infrastructure_requirements_unique_hash "$REQS")
+          if [ "$COMMITTED_HASH" != "$STAMPED_HASH" ]; then
+            echo "::error::Stamping the version changed infrastructure_requirements_unique_hash ($COMMITTED_HASH -> $STAMPED_HASH)."
+            exit 1
+          fi
+          git diff --stat
+
+      - name: Build and attest release artifacts
+        uses: ./.github/actions/build-release-artifacts
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.version.outputs.base }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<EOF
+          Pre-release built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA} by the Pre-release workflow ([run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
+
+          Not a release-please release: no CHANGELOG entry, and never marked Latest, so anything that deploys "the latest release" won't pick it up. To deploy it, pass the tag \`${TAG}\` to your deploy workflow. Changes since v${BASE}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/teams-notifier-function-app-v${BASE}...${GITHUB_SHA}
+          EOF
+          )
+          # Draft first: a draft creates no tag, so a failed upload leaves
+          # nothing permanent behind.
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "teams-notifier-function-app: v${VERSION}" \
+            --notes "$NOTES" \
+            "teams-notifier-function-app-v${VERSION}.zip" \
+            "app-requirements.json" \
+            "teams-app-package-v${VERSION}.tar.gz"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --prerelease --latest=false
