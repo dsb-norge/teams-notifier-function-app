@@ -1,0 +1,51 @@
+name: Build release artifacts
+description: >-
+  Publishes the function app and packages the three release artifacts (app ZIP,
+  app-requirements.json, Teams app package tarball) into the workspace root,
+  then attests the ZIP and app-requirements.json. Shared by release.yml and
+  prerelease.yml so both channels ship the same artifact shape — downstream
+  deploy tooling depends on these exact file names. Expects the repo to be
+  checked out, and the calling job to grant id-token: write and
+  attestations: write.
+
+inputs:
+  version:
+    description: "Version stamped into the build and the artifact file names (X.Y.Z or X.Y.Z-pre.N)."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6 2026-07-16
+      with:
+        global-json-file: global.json
+        cache: true
+        cache-dependency-path: "**/*.csproj"
+
+    - name: Publish function app
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        dotnet publish src/TeamsNotificationBot \
+          -c Release -r linux-x64 -o ./publish \
+          -p:Version=$VERSION
+
+    - name: Create release artifacts
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        cd publish && zip -r ../teams-notifier-function-app-v${VERSION}.zip . && cd ..
+        cp src/TeamsNotificationBot/app-requirements.json ./app-requirements.json
+        tar czf teams-app-package-v${VERSION}.tar.gz -C teams-app-package .
+
+    - name: Attest function app ZIP
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2 2026-08-06
+      with:
+        subject-path: teams-notifier-function-app-v${{ inputs.version }}.zip
+
+    - name: Attest app-requirements.json
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2 2026-08-06
+      with:
+        subject-path: app-requirements.json
