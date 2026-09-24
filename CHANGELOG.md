@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.8.1...teams-notifier-function-app-v2.0.0) (2026-09-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* a call to /api/v1/* without a valid token now gets EasyAuth's 401, which has no problem+json body and no X-Correlation-Id header, instead of the app's RFC 7807 401. Clients should branch on the status code. 403 (valid token, missing role) and all other errors are unchanged. openapi.yaml, the API reference, authentication and troubleshooting docs say so.
+
+### Features
+
+* reject unauthenticated calls at the platform with EasyAuth ([fa5f62a](https://github.com/dsb-norge/teams-notifier-function-app/commit/fa5f62abc37e33c5f60145c6ae3adf932bc6427d))
+
+
+### Bug Fixes
+
+* anchor rate-limit rules and keep openapi.yaml out of the principal rule ([4cfabad](https://github.com/dsb-norge/teams-notifier-function-app/commit/4cfabadc7646239d0f551bd4da28c65a9a046a4d))
+
 ## [1.8.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.8.0...teams-notifier-function-app-v1.8.1) (2026-09-24)
 
 
