@@ -218,7 +218,6 @@ public static class SetupGuideCardBuilder
     {
         return new AdaptiveTextBlock
         {
-            Type = "TextBlock",
             Text = text,
             Wrap = true,
             Weight = weight,
@@ -240,11 +239,13 @@ public static class SetupGuideCardBuilder
 
     private sealed class AdaptiveTextBlock
     {
+        // The class only ever models a TextBlock, so the type is fixed and the text is required;
+        // neither can silently default into an empty or mistyped element.
         [JsonPropertyName("type")]
-        public string Type { get; set; } = "TextBlock";
+        public string Type => "TextBlock";
 
         [JsonPropertyName("text")]
-        public string Text { get; set; } = "";
+        public required string Text { get; init; }
 
         [JsonPropertyName("wrap")]
         public bool Wrap { get; set; } = true;
