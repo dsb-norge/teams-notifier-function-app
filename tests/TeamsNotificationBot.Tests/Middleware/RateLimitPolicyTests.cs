@@ -6,15 +6,30 @@ namespace TeamsNotificationBot.Tests.Middleware;
 
 public class RateLimitPolicyTests
 {
-    private static bool Matches(string pattern, string path) => Regex.IsMatch(path, pattern);
+    // ThrottlingTroll matches UriPattern case-insensitively against the full URL, query string
+    // included (IncomingHttpRequestProxy.Uri), so the tests do the same.
+    private const string Host = "https://func-example.azurewebsites.net";
+
+    private static bool Matches(string pattern, string pathAndQuery) =>
+        Regex.IsMatch(Host + pathAndQuery, pattern, RegexOptions.IgnoreCase);
 
     [Theory]
     [InlineData("/api/v1/notify/ops", true)]
     [InlineData("/api/v1/alert/ops", true)]
     [InlineData("/api/v1/send", true)]
     [InlineData("/api/v1/checkin/ops", true)]
+    [InlineData("/api/v1/aliases", true)]
+    [InlineData("/api/v1/send?x=1", true)]
     [InlineData("/api/v1/ingest/updown/tok", false)] // ingest is excluded from the principal rule
-    public void ApiUriPattern_ExcludesIngest(string path, bool expected)
+    [InlineData("/api/v1/openapi.yaml", false)] // anonymous: a forged principal header reaches the app
+    [InlineData("/API/V1/OPENAPI.YAML", false)]
+    [InlineData("/api/v1/openapi.yaml?x=1", false)]
+    // A query string must not pull a route into the rule: the match is anchored on the path.
+    [InlineData("/api/messages?x=/api/v1/send", false)]
+    [InlineData("/api/health?x=/api/v1/send", false)]
+    [InlineData("/api/v1/openapi.yaml?x=/api/v1/send", false)]
+    [InlineData("/api/v1/ingest/updown/tok?x=/api/v1/send", false)]
+    public void ApiUriPattern_ExcludesAnonymousRoutes(string path, bool expected)
     {
         Assert.Equal(expected, Matches(RateLimitPolicy.ApiUriPattern, path));
     }
@@ -23,6 +38,7 @@ public class RateLimitPolicyTests
     [InlineData("/api/v1/ingest/updown/tok", true)]
     [InlineData("/api/v1/notify/ops", false)]
     [InlineData("/api/v1/send", false)]
+    [InlineData("/api/messages?x=/api/v1/ingest/", false)]
     public void IngestUriPattern_MatchesOnlyIngest(string path, bool expected)
     {
         Assert.Equal(expected, Matches(RateLimitPolicy.IngestUriPattern, path));
@@ -100,7 +116,8 @@ public class RateLimitPolicyTests
         foreach (var path in new[]
         {
             "/api/v1/notify/x", "/api/v1/alert/x", "/api/v1/send",
-            "/api/v1/ingest/updown/tok"
+            "/api/v1/ingest/updown/tok", "/api/v1/ingest/updown/tok?x=/api/v1/send",
+            "/api/v1/openapi.yaml"
         })
         {
             var inApi = Matches(RateLimitPolicy.ApiUriPattern, path);
