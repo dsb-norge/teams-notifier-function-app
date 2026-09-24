@@ -197,6 +197,8 @@ next PR and reply on the old thread with a link to it.
 
 Every pull request targeting `main` runs the CI jobs below (in `ci.yml`), each gated on a path filter so unrelated changes skip it. A **CI Conclusion** job aggregates their results into a single required status check for branch protection; a skipped job counts as passed.
 
+The workflow-level token has `pull-requests: write` (Validate Requirements posts PR comments). Any job that runs code from the PR branch (Build and Test, Lint Workflows, Release Build) declares `permissions: contents: read`, and checks out with `persist-credentials: false` so the PR's code can't read the token from `.git/config`. Do the same for new jobs.
+
 | Job | What it checks |
 |-----|---------------|
 | **Build and Test** | Restores, builds, and runs the full test suite (xUnit) with Azurite for storage emulation. Test failures appear as inline annotations and a Job Summary. |
