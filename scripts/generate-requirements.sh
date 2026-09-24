@@ -79,12 +79,21 @@ echo "  Alert route: ${ALERT_ROUTE}"
 MESSAGING_ENDPOINT="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/BotMessagesFunction.cs" | head -1)"
 echo "  Messaging endpoint: ${MESSAGING_ENDPOINT}"
 
+# Anonymous probe and spec routes: Route = "health" / "v1/openapi.yaml"
+HEALTH_ROUTE="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/HealthFunction.cs" | head -1)"
+OPENAPI_ROUTE="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/OpenApiFunction.cs" | head -1)"
+echo "  Health route: ${HEALTH_ROUTE}"
+echo "  OpenAPI route: ${OPENAPI_ROUTE}"
+
 # updown webhook ingress route: Route = "v1/ingest/updown/{token}" in UpdownIngestFunction.cs
 INGEST_ROUTE="/api/$(grep -ohP 'Route\s*=\s*"\K[^"]+' "${APP_DIR}/Functions/UpdownIngestFunction.cs" | head -1)"
-# EasyAuth excluded path = the static prefix, without the {token} segment
+# EasyAuth excluded path = the static prefix, without the {token} segment. Emitted both bare and
+# as "<prefix>/*": Microsoft documents only the "/path/subpath/*" form and not whether a bare path
+# also matches its children, so both are listed rather than risk a 401 on every updown webhook
+# once require_authentication is on. The extra entry is harmless if matching is by prefix.
 INGEST_EXCLUDED_PATH="${INGEST_ROUTE%/*}"
 echo "  Ingest route: ${INGEST_ROUTE}"
-echo "  Ingest excluded path: ${INGEST_EXCLUDED_PATH}"
+echo "  Ingest excluded paths: ${INGEST_EXCLUDED_PATH}, ${INGEST_EXCLUDED_PATH}/*"
 
 # Required role from AuthMiddleware.cs
 REQUIRED_ROLE=$(grep -oP 'RequiredRole\s*=\s*"\K[^"]+' "${APP_DIR}/Middleware/AuthMiddleware.cs")
@@ -109,6 +118,8 @@ jq -n \
   --arg messaging_endpoint "${MESSAGING_ENDPOINT}" \
   --arg ingest_route "${INGEST_ROUTE}" \
   --arg ingest_excluded "${INGEST_EXCLUDED_PATH}" \
+  --arg health_route "${HEALTH_ROUTE}" \
+  --arg openapi_route "${OPENAPI_ROUTE}" \
   --arg required_role "${REQUIRED_ROLE}" \
   --arg dotnet_version "${DOTNET_VERSION}" \
   --arg app_version "${APP_VERSION}" \
@@ -127,7 +138,7 @@ jq -n \
     function_app_required_app_settings: $seed.function_app_required_app_settings,
     bot_auth_settings: ($seed.bot_auth_settings + {
       required_role: $required_role,
-      easy_auth_excluded_paths: [ $messaging_endpoint, $ingest_excluded ]
+      easy_auth_excluded_paths: [ $messaging_endpoint, $health_route, $openapi_route, $ingest_excluded, ($ingest_excluded + "/*") ]
     }),
     bot_service: ($seed.bot_service + { messaging_endpoint: $messaging_endpoint }),
     teams_app_configuration: $seed.teams_app_configuration,

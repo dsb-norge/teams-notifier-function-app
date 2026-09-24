@@ -33,8 +33,15 @@ token with the correct audience and application role before making requests.
 | Required role | `Notifications.Send` |
 
 The `Notifications.Send` app role must be assigned to the calling service principal or user in
-Entra ID. Requests without a valid token or without the required role receive a `401` or `403`
-response.
+Entra ID. A request without a valid token gets `401`; one with a valid token but without the role
+gets `403`.
+
+The `401` comes from the platform: App Service Authentication (EasyAuth) rejects the request
+before it reaches the app, so it has **no** problem+json body and **no** `X-Correlation-Id`
+header. Clients should branch on the status code, not the body. The `403` and every other error
+come from the app, in the format in [§5](#5-error-format). Only `/api/health`,
+`/api/v1/openapi.yaml`, `/api/messages` (Bot Framework) and `/api/v1/ingest/updown/{token}` are
+reachable without a token.
 
 ### Token acquisition (Azure CLI)
 
@@ -113,8 +120,9 @@ Content-Type: application/json
 
 ## 5. Error Format
 
-All error responses follow the [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807)
-Problem Details format:
+All error responses from the app follow the [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807)
+Problem Details format. The exception is `401`, which the platform returns without this body
+(see [§2](#2-authentication)):
 
 ```json
 {
@@ -142,7 +150,7 @@ Problem Details format:
 |------|---------|
 | 202 | Accepted — message queued for delivery |
 | 400 | Bad Request — invalid JSON, missing required fields, or validation failure |
-| 401 | Unauthorized — missing or invalid Bearer token |
+| 401 | Unauthorized — missing or invalid Bearer token (returned by EasyAuth, no problem+json body) |
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint |
 | 413 | Payload Too Large — request body exceeds 28 KB |
