@@ -224,6 +224,27 @@ The tag format is `teams-notifier-function-app-v{VERSION}` (e.g., `teams-notifie
 
 See the [Deployment Guide](deployment-guide.md#step-3-deploy-function-app) for how to deploy from release artifacts.
 
+### Pre-releases
+
+To run a change in a test environment before it is released, cut a pre-release from its branch with the **Pre-release** workflow ([`prerelease.yml`](../.github/workflows/prerelease.yml)):
+
+```bash
+gh workflow run prerelease.yml --ref <branch>
+```
+
+It builds the branch into a GitHub pre-release with the same three artifacts as a real release, built by the same composite action ([`.github/actions/build-release-artifacts`](../.github/actions/build-release-artifacts/action.yml)) and attested the same way. Then deploy it by passing its tag (e.g. `teams-notifier-function-app-v1.8.1-pre.7`) to your deploy workflow; the release notes name the tag.
+
+How it behaves:
+
+- **Version** is `X.Y.(Z+1)-pre.N`: `X.Y.Z` is `.release-please-manifest.json` on the branch, `N` the workflow's run number. It sorts after the current release and before the next one, whatever bump that turns out to be. The version is stamped into `AppInfo.cs` and `app-requirements.json` in the build only, never committed, so `/api/health` and `checkin` report the pre-release version. The infrastructure hash excludes the version, so a deploy that gates on the hash treats a pre-release like the release it came from.
+- **The tag uses the release-please format**, so deploy tooling that derives the version from the tag and finds the assets by it works unchanged. release-please ignores these tags: in manifest mode it only looks for the tag of the version recorded in the manifest file.
+- **Tags are permanent.** The `Tags - No Deletion` ruleset covers pre-release tags too, so every successful run leaves one behind. The release is created as a draft (drafts have no tag) and published only once every asset is attached, so a failed run leaves at most a draft to delete. Re-running a failed run reuses its run number and is refused if that tag or draft exists — start a new run instead.
+- **Not a release-please release**: no `CHANGELOG.md` entry, no version bump on `main`. The workflow fails if `app-requirements.json` is stale on the branch, the same check CI runs.
+- **Never marked Latest**, so a deploy that tracks the latest release never picks a pre-release up. The reverse can bite: if that deploy only checks whether `/api/health`'s version equals the latest release, its next run **puts the latest release back over a pre-release**. Finish testing before then, or redeploy the pre-release by tag.
+- **Teams manifest**: the pre-release version flows into the manifest `version`. The v1.25 schema accepts it, but Microsoft's Store guidelines ask for plain `MAJOR.MINOR.PATCH`, and whether a Teams Admin upload of a custom app accepts a pre-release suffix is unverified. Skip the manifest upload unless the pre-release changes commands or other manifest content.
+
+release-please's own `versioning: prerelease` mode was considered and rejected: it switches every release from `main` to a pre-release, Dependabot patches included, until it is turned off again.
+
 ---
 
 ## 9. Dependency Management
