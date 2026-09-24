@@ -85,7 +85,8 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
 
     // Bot messages (Bot Framework JWT, validated by the Agents SDK), the health probe and the OpenAPI
     // spec are anonymous. So is the updown.io webhook ingress: a distinct trust zone that validates its
-    // own capability token in-handler (docs/feat-updown-io-webhook/design.md).
+    // own capability token in-handler. Every route here must also be an EasyAuth excluded path, which
+    // validate-requirements.sh checks (docs/authentication.md §5).
     private static readonly string[] AuthExemptPaths = ["/api/messages", "/api/health", "/api/v1/openapi.yaml"];
     private const string UpdownIngestPrefix = "/api/v1/ingest/updown/";
 

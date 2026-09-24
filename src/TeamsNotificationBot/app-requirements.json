@@ -3,7 +3,7 @@
   "_description": "Requirements for Azure infrastructure and Teams configuration for the Teams Notifier application.",
   "_created_by": "https://github.com/dsb-norge/teams-notifier-function-app",
   "notifier_application_version": "1.8.1",
-  "infrastructure_requirements_unique_hash": "04eec911853e",
+  "infrastructure_requirements_unique_hash": "e9529cc7ef7d",
   "function_app_runtime_version": "10.0",
   "storage_account_required_queues": [
     "botoperations",
@@ -30,13 +30,16 @@
   ],
   "bot_auth_settings": {
     "platform_enabled": true,
-    "require_authentication": false,
-    "unauthenticated_action": "AllowAnonymous",
+    "require_authentication": true,
+    "unauthenticated_action": "Return401",
     "identity_provider": "azureActiveDirectory",
     "required_role": "Notifications.Send",
     "easy_auth_excluded_paths": [
       "/api/messages",
-      "/api/v1/ingest/updown"
+      "/api/health",
+      "/api/v1/openapi.yaml",
+      "/api/v1/ingest/updown",
+      "/api/v1/ingest/updown/*"
     ]
   },
   "bot_service": {
