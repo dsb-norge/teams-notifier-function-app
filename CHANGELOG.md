@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.8.0...teams-notifier-function-app-v1.8.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** Bump github/codeql-action/upload-sarif from 4.37.8 to 4.38.1 ([1e65058](https://github.com/dsb-norge/teams-notifier-function-app/commit/1e6505809df946c50905dff92ed01b5e5750b30f))
+* **deps:** Bump the azure-sdk group with 1 update ([5e3d036](https://github.com/dsb-norge/teams-notifier-function-app/commit/5e3d036e3f217bc639a15d7e6057576ea67a7f52))
+* **deps:** Bump xunit.v3.mtp-v2 from 4.0.0 to 4.0.1 ([4892d15](https://github.com/dsb-norge/teams-notifier-function-app/commit/4892d1597d4dd572a31ef09b32d6ecbb02ffb921))
+* match auth-exempt routes exactly ([b2ef1b3](https://github.com/dsb-norge/teams-notifier-function-app/commit/b2ef1b3eb4aaeb3082e6a4fc0cf855fa3a2730e0))
+
 ## [1.8.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.7.3...teams-notifier-function-app-v1.8.0) (2026-08-26)
 
 
