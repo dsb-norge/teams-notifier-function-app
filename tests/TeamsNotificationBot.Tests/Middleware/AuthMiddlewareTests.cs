@@ -19,18 +19,36 @@ public class AuthMiddlewareTests
         Assert.Equal(28672, 28 * 1024);
     }
 
-    [Fact]
-    public void HealthEndpointSkipsAuth()
+    // --- Auth-exempt routes ---
+    // These call AuthMiddleware.IsAuthExempt directly. The earlier versions asserted string methods
+    // against literal paths and so could not notice that the real check used suffix matching.
+
+    [Theory]
+    [InlineData("/api/messages")]
+    [InlineData("/api/health")]
+    [InlineData("/api/v1/openapi.yaml")]
+    [InlineData("/api/HEALTH")]
+    [InlineData("/api/v1/ingest/updown/abc123")]
+    public void IsAuthExempt_AnonymousRoutes(string path)
     {
-        var path = "/api/health";
-        Assert.EndsWith("/health", path, StringComparison.OrdinalIgnoreCase);
+        Assert.True(AuthMiddleware.IsAuthExempt(path));
     }
 
-    [Fact]
-    public void MessagesEndpointSkipsAuth()
+    [Theory]
+    // "health" and "messages" are valid alias names: a suffix match exempted these.
+    [InlineData("/api/v1/notify/health")]
+    [InlineData("/api/v1/notify/messages")]
+    [InlineData("/api/v1/alert/health")]
+    [InlineData("/api/v1/checkin/messages")]
+    [InlineData("/api/v1/send")]
+    [InlineData("/api/v1/aliases")]
+    [InlineData("/api/v1/notify/x/v1/ingest/updown/y")]
+    [InlineData("/api/v1/ingest/updown")]
+    [InlineData("/api/health/")]
+    [InlineData("")]
+    public void IsAuthExempt_ProtectedRoutes(string path)
     {
-        var path = "/api/messages";
-        Assert.EndsWith("/messages", path, StringComparison.OrdinalIgnoreCase);
+        Assert.False(AuthMiddleware.IsAuthExempt(path));
     }
 
     [Fact]
@@ -217,13 +235,6 @@ public class AuthMiddlewareTests
     }
 
     // --- §1 Regression Tests (API key auth removed) ---
-
-    [Fact]
-    public void OpenApiEndpointSkipsAuth()
-    {
-        var path = "/api/v1/openapi.yaml";
-        Assert.EndsWith("/openapi.yaml", path, StringComparison.OrdinalIgnoreCase);
-    }
 
     [Fact]
     public void ApiKeyHeaderWithoutEasyAuth_IsRejected()
