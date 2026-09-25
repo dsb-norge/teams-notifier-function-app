@@ -401,12 +401,13 @@ public class TeamsBotHandler : AgentApplication
         // Pre-fetch channel names for teams that have aliases with missing channel names.
         // One API call per team, cached for the duration of this list operation.
         var channelNameCache = await BuildChannelNameCacheAsync(turnContext, aliases);
+        var teamNameCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         var hostname = GetHostname();
         var displayInfos = new List<AliasDisplayInfo>();
         foreach (var a in aliases)
         {
-            var target = await FormatAliasTargetAsync(a, channelNameCache);
+            var target = await FormatAliasTargetAsync(a, channelNameCache, teamNameCache);
             displayInfos.Add(new AliasDisplayInfo(
                 Name: a.RowKey!,
                 TargetType: a.TargetType ?? "unknown",
@@ -426,7 +427,8 @@ public class TeamsBotHandler : AgentApplication
     }
 
     private async Task<string> FormatAliasTargetAsync(
-        AliasEntity alias, Dictionary<string, string> channelNameCache)
+        AliasEntity alias, Dictionary<string, string> channelNameCache,
+        Dictionary<string, string?> teamNameCache)
     {
         switch (alias.TargetType)
         {
@@ -453,10 +455,20 @@ public class TeamsBotHandler : AgentApplication
                     await _botService.TryUpdateChannelNameAsync(alias.TeamId!, alias.ChannelId!, apiName);
                 }
 
+                // Same for the team name: rows written by channel events before they learned to
+                // read it from teamlookup have none. Unlike the channel cache this needs no team
+                // context, so it also heals rows listed from a 1:1 chat.
+                if (entity != null && string.IsNullOrEmpty(teamName))
+                {
+                    teamName = await LookupTeamNameAsync(alias.TeamId!, teamNameCache);
+                    if (!string.IsNullOrEmpty(teamName))
+                        await _botService.TryUpdateTeamNameAsync(alias.TeamId!, alias.ChannelId!, teamName);
+                }
+
                 if (!string.IsNullOrEmpty(channelName) || !string.IsNullOrEmpty(teamName))
                 {
                     var channelDisplay = !string.IsNullOrEmpty(channelName) ? $"#{channelName}" : "channel";
-                    var teamDisplay = teamName ?? alias.TeamId;
+                    var teamDisplay = !string.IsNullOrEmpty(teamName) ? teamName : alias.TeamId;
                     return $"{channelDisplay} in {teamDisplay}";
                 }
                 return $"channel `{alias.ChannelId}` in team `{alias.TeamId}`";
@@ -477,6 +489,39 @@ public class TeamsBotHandler : AgentApplication
             default:
                 return "unknown";
         }
+    }
+
+    /// <summary>
+    /// Finds a team's name in teamlookup by its AAD group GUID. teamlookup is keyed by team
+    /// thread ID, which an alias doesn't store, so this is a filtered query over its single
+    /// partition (one row per installed team), memoized per list-aliases run. A failure only
+    /// costs the display name, so it is logged and treated as "unknown".
+    /// </summary>
+    private async Task<string?> LookupTeamNameAsync(string teamGuid, Dictionary<string, string?> cache)
+    {
+        if (cache.TryGetValue(teamGuid, out var cached))
+            return cached;
+
+        string? name = null;
+        try
+        {
+            await foreach (var lookup in _teamLookupTable.QueryAsync<TeamLookupEntity>(
+                e => e.PartitionKey == "teamlookup" && e.TeamGuid == teamGuid))
+            {
+                if (!string.IsNullOrEmpty(lookup.TeamName))
+                {
+                    name = lookup.TeamName;
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to look up team name for {TeamGuid}", teamGuid);
+        }
+
+        cache[teamGuid] = name;
+        return name;
     }
 
     private async Task<Dictionary<string, string>> BuildChannelNameCacheAsync(

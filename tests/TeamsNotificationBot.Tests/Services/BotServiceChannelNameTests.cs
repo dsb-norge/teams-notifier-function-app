@@ -35,13 +35,13 @@ public class BotServiceChannelNameTests
     private static readonly DateTimeOffset Installed = new(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
     private const string ReferenceJson = """{"Conversation":{"Id":"19:channel@thread.tacv2"}}""";
 
-    private static ConversationReferenceEntity Entity(string? channelName) => new()
+    private static ConversationReferenceEntity Entity(string? channelName, string? teamName = "Test Team") => new()
     {
         PartitionKey = "team-1",
         RowKey = "19:channel@thread.tacv2",
         ConversationReference = ReferenceJson,
         ConversationType = "channel",
-        TeamName = "Test Team",
+        TeamName = teamName,
         ChannelName = channelName,
         InstalledAt = Installed,
         LastUpdated = Installed,
@@ -165,6 +165,45 @@ public class BotServiceChannelNameTests
         _tableClient.Verify(t => t.UpdateEntityAsync(
             It.IsAny<ConversationReferenceEntity>(), It.IsAny<ETag>(),
             It.IsAny<TableUpdateMode>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // TryUpdateTeamNameAsync shares the backfill loop with TryUpdateChannelNameAsync, so the
+    // conflict/failure tests above cover it too; these pin that it targets the right column.
+
+    [Fact]
+    public async Task TeamNameEmpty_SetsTeamNameOnly()
+    {
+        SetupGet(_ => Entity("utvikling", teamName: null));
+        ConversationReferenceEntity? written = null;
+        _tableClient.Setup(t => t.UpdateEntityAsync(
+                It.IsAny<ConversationReferenceEntity>(), It.IsAny<ETag>(),
+                It.IsAny<TableUpdateMode>(), It.IsAny<CancellationToken>()))
+            .Callback<ConversationReferenceEntity, ETag, TableUpdateMode, CancellationToken>(
+                (e, _, _, _) => written = e)
+            .ReturnsAsync(Mock.Of<Response>());
+
+        var result = await _service.TryUpdateTeamNameAsync("team-1", "19:channel@thread.tacv2", "Some Team");
+
+        Assert.True(result);
+        Assert.NotNull(written);
+        Assert.Equal("Some Team", written.TeamName);
+        Assert.Equal("utvikling", written.ChannelName);
+        Assert.Equal(ReferenceJson, written.ConversationReference);
+        Assert.Equal(Installed, written.InstalledAt);
+    }
+
+    [Fact]
+    public async Task TeamNameAlreadySet_ReturnsFalseAndWritesNothing()
+    {
+        // The channel name is empty here: only the TeamName column may gate this writer.
+        SetupGet(_ => Entity(null, teamName: "Existing Team"));
+
+        var result = await _service.TryUpdateTeamNameAsync("team-1", "19:channel@thread.tacv2", "Some Team");
+
+        Assert.False(result);
+        _tableClient.Verify(t => t.UpdateEntityAsync(
+            It.IsAny<ConversationReferenceEntity>(), It.IsAny<ETag>(),
+            It.IsAny<TableUpdateMode>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
