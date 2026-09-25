@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.1...teams-notifier-function-app-v2.0.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* clear the poison-alias nudge when a card creates the alias ([b21444f](https://github.com/dsb-norge/teams-notifier-function-app/commit/b21444f490a10a892eda9e0775ad90b25e8021a3))
+* skip the channel-list call when every alias row has a name ([8467f70](https://github.com/dsb-norge/teams-notifier-function-app/commit/8467f70cf7f6a0ddcb9c96009e54624d540c06d1))
+
 ## [2.0.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.0...teams-notifier-function-app-v2.0.1) (2026-09-25)
 
 
