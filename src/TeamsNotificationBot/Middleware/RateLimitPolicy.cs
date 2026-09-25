@@ -34,8 +34,9 @@ public static class RateLimitPolicy
 
     /// <summary>
     /// Source-IP identity for the ingest zone. Resolves the client IP from forwarding headers
-    /// (<see cref="Helpers.IpMatcher.ClientIpHeaders"/> — X-Forwarded-For, then the App Service
-    /// X-Azure-* headers), falling back to <paramref name="remoteIp"/>. Ports are stripped so the
+    /// (<see cref="Helpers.IpMatcher.ClientIpHeaders"/> — the platform-set CLIENT-IP first, then
+    /// X-Forwarded-For, then the App Service X-Azure-* headers), falling back to
+    /// <paramref name="remoteIp"/>. Ports are stripped so the
     /// same client shares one key; without this every request keys distinctly and the per-source-IP
     /// limit never triggers. See refinements.md (F8): on Flex + isolated worker the connection is
     /// loopback, so a forwarding header is the only real source.
