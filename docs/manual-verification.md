@@ -54,8 +54,10 @@ Agents SDK packages, `BotService`'s proactive paths, or authentication — and a
 
 ### 2. Channel lifecycle (in a team where the bot is installed)
 
-- [ ] Create a channel → alias it (`set-alias`) → notify works; `list-aliases` shows its name.
-- [ ] Rename that channel → `list-aliases` shows the new name.
+- [ ] Create a channel → alias it (`set-alias`) → notify works; `list-aliases` shows its name
+  **and the team's name** (not the team GUID), also when run from a 1:1 chat. The
+  `channelCreated` payload carries no team name, so this proves it came from `teamlookup`.
+- [ ] Rename that channel → `list-aliases` shows the new name and still the team's name.
 - [ ] Delete the channel → its reference row is removed (alias renders as raw IDs).
 - [ ] Restore the channel → reference reappears; notify works again.
 

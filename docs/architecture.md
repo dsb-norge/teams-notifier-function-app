@@ -195,7 +195,7 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 |---|---|
 | `aliases` | Maps alias names to conversation targets (channel, personal, groupChat) |
 | `conversationreferences` | Stores Bot Framework conversation references (auto-populated on bot install) |
-| `teamlookup` | Caches team metadata (team names) |
+| `teamlookup` | Maps team thread IDs to AAD group GUIDs and team names; written on install, updated on team rename. Channel events carry neither the GUID nor the team name, so this is where both come from |
 | `idempotencykeys` | Deduplication records (no automatic expiry); also stores updown webhook `(token,event,time)` dedupe markers |
 | `ThrottlingTrollCounters` | Rate limiter fixed window counters |
 | `webhooktokens` | updown.io webhook capability tokens (SHA-256 hashed) → conversation target + event filter |
@@ -259,9 +259,10 @@ erDiagram
     }
 
     teamlookup {
-        string PartitionKey "team GUID"
-        string RowKey "always empty"
-        string TeamName ""
+        string PartitionKey "always 'teamlookup'"
+        string RowKey "team thread ID (19:...@thread.tacv2)"
+        string TeamGuid "AAD group GUID"
+        string TeamName "nullable"
     }
 
     idempotencykeys {
