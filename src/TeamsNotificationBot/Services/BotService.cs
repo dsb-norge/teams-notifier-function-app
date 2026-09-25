@@ -127,22 +127,96 @@ public class BotService : IBotService
             return;
         }
 
-        var entity = new ConversationReferenceEntity
-        {
-            PartitionKey = partitionKey,
-            RowKey = rowKey,
-            ConversationReference = JsonSerializer.Serialize(reference),
-            ConversationType = conversationType,
-            TeamName = teamName,
-            ChannelName = channelName,
-            UserName = userName,
-            InstalledAt = DateTimeOffset.UtcNow,
-            LastUpdated = DateTimeOffset.UtcNow
-        };
+        var entity = NewReferenceEntity(
+            reference, partitionKey, rowKey, conversationType, teamName, channelName, userName);
 
         await _tableClient.UpsertEntityAsync(entity);
         _logger.LogInformation("Stored conversation reference for {PK}/{RK} (type={Type})",
             partitionKey, rowKey, conversationType);
+    }
+
+    private static ConversationReferenceEntity NewReferenceEntity(
+        ConversationReference reference, string partitionKey, string rowKey,
+        string conversationType, string? teamName, string? channelName, string? userName) => new()
+    {
+        PartitionKey = partitionKey,
+        RowKey = rowKey,
+        ConversationReference = JsonSerializer.Serialize(reference),
+        ConversationType = conversationType,
+        TeamName = teamName,
+        ChannelName = channelName,
+        UserName = userName,
+        InstalledAt = DateTimeOffset.UtcNow,
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public async Task UpsertChannelReferenceAsync(
+        ConversationReference reference, string teamGuid, string channelId,
+        string? teamName, string? channelName)
+    {
+        if (_teamsDisabled)
+        {
+            _logger.LogInformation(
+                "Teams integration disabled. Would upsert channel reference for {PK}/{RK}",
+                teamGuid, channelId);
+            return;
+        }
+
+        // Same optimistic-concurrency pattern as the name backfills: retry a few times on 412,
+        // or on 409 when a concurrent writer creates the row between our read and our insert.
+        // Unlike the backfills this is the event's primary write, so the last conflict propagates.
+        const int maxRetries = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            ConversationReferenceEntity entity;
+            try
+            {
+                entity = (await _tableClient.GetEntityAsync<ConversationReferenceEntity>(teamGuid, channelId)).Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Insert-only, so a row another writer just created is updated in place on the
+                // next attempt rather than overwritten here.
+                try
+                {
+                    await _tableClient.AddEntityAsync(NewReferenceEntity(
+                        reference, teamGuid, channelId, "channel", teamName, channelName, userName: null));
+                    _logger.LogInformation("Stored conversation reference for {PK}/{RK} (type={Type})",
+                        teamGuid, channelId, "channel");
+                    return;
+                }
+                catch (RequestFailedException addEx) when (addEx.Status == 409 && attempt < maxRetries)
+                {
+                    _logger.LogDebug(
+                        addEx,
+                        "Channel reference for {PK}/{RK} created concurrently; retry {Next}/{MaxRetries}",
+                        teamGuid, channelId, attempt + 1, maxRetries);
+                    continue;
+                }
+            }
+
+            // Update in place: keep InstalledAt, and never replace a stored name with an absent one.
+            entity.ConversationReference = JsonSerializer.Serialize(reference);
+            if (!string.IsNullOrEmpty(teamName))
+                entity.TeamName = teamName;
+            if (!string.IsNullOrEmpty(channelName))
+                entity.ChannelName = channelName;
+            entity.LastUpdated = DateTimeOffset.UtcNow;
+
+            try
+            {
+                await _tableClient.UpdateEntityAsync(entity, entity.ETag);
+                _logger.LogInformation("Updated channel reference for {PK}/{RK}", teamGuid, channelId);
+                return;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 412 && attempt < maxRetries)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Concurrency conflict updating channel reference for {PK}/{RK}; retry {Next}/{MaxRetries}",
+                    teamGuid, channelId, attempt + 1, maxRetries);
+            }
+        }
     }
 
     public async Task<bool> UpdateConversationReferenceAsync(
@@ -365,9 +439,9 @@ public class BotService : IBotService
                             }
                         };
 
-                        await StoreConversationReferenceAsync(
-                            channelRef, teamGuid, channel.Id,
-                            "channel", teamName, channelName);
+                        // Same in-place writer as channel events: enumeration can race a
+                        // channelCreated for the same channel right after install.
+                        await UpsertChannelReferenceAsync(channelRef, teamGuid, channel.Id, teamName, channelName);
                     }
                 }
                 catch (Exception ex)

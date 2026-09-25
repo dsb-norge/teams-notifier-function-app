@@ -190,12 +190,12 @@ public class TeamsBotHandlerLifecycleTests
 
         // The handler must rebuild the reference around the CHANNEL conversation (not the
         // activity's own conversation) so proactive sends target the channel top-level.
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.Is<ConversationReference>(r =>
                 r.Conversation.Id == ChannelThreadId &&
                 r.Conversation.ConversationType == "channel" &&
                 r.Conversation.IsGroup == true),
-            TeamGuid, ChannelThreadId, "channel", "Test Team", "New Channel", null), Times.Once);
+            TeamGuid, ChannelThreadId, "Test Team", "New Channel"), Times.Once);
     }
 
     [Theory]
@@ -209,9 +209,9 @@ public class TeamsBotHandlerLifecycleTests
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.IsAny<ConversationReference>(),
-            TeamGuid, ChannelThreadId, "channel", "Test Team", "New Channel", null), Times.Once);
+            TeamGuid, ChannelThreadId, "Test Team", "New Channel"), Times.Once);
         _teamLookupTable.Verify(t => t.GetEntityAsync<TeamLookupEntity>(
             "teamlookup", TeamThreadId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -223,9 +223,9 @@ public class TeamsBotHandlerLifecycleTests
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.IsAny<ConversationReference>(),
-            TeamGuid, ChannelThreadId, "channel", "Payload Team", "New Channel", null), Times.Once);
+            TeamGuid, ChannelThreadId, "Payload Team", "New Channel"), Times.Once);
         _teamLookupTable.Verify(t => t.GetEntityAsync<TeamLookupEntity>(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -241,9 +241,9 @@ public class TeamsBotHandlerLifecycleTests
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.IsAny<ConversationReference>(),
-            TeamGuid, ChannelThreadId, "channel", null, "New Channel", null), Times.Once);
+            TeamGuid, ChannelThreadId, null, "New Channel"), Times.Once);
     }
 
     [Fact]
@@ -257,9 +257,9 @@ public class TeamsBotHandlerLifecycleTests
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.IsAny<ConversationReference>(),
-            TeamGuid, ChannelThreadId, "channel", null, "New Channel", null), Times.Once);
+            TeamGuid, ChannelThreadId, null, "New Channel"), Times.Once);
     }
 
     [Fact]
@@ -273,6 +273,9 @@ public class TeamsBotHandlerLifecycleTests
         _botService.Verify(s => s.StoreConversationReferenceAsync(
             It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
+            It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
@@ -288,6 +291,9 @@ public class TeamsBotHandlerLifecycleTests
         _botService.Verify(s => s.StoreConversationReferenceAsync(
             It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
+            It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
     }
 
     // --- Team events ---

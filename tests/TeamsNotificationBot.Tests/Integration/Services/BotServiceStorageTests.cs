@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Azure.Data.Tables;
 using Microsoft.Agents.Core.Models;
+using Microsoft.Extensions.Logging.Abstractions;
 using TeamsNotificationBot.Models;
+using TeamsNotificationBot.Services;
 using TeamsNotificationBot.Tests.Integration.Fixtures;
 using Xunit;
 
@@ -233,6 +235,32 @@ public class BotServiceStorageTests
         Assert.Equal("utvikling - testkanal", after.Value.ChannelName);
         Assert.Equal(originalReference, after.Value.ConversationReference);
         Assert.Equal(originalInstalledAt, after.Value.InstalledAt);
+    }
+
+    [Fact]
+    public async Task ChannelEventUpsert_ExistingRow_KeepsInstalledAtAndStoredTeamName()
+    {
+        // Runs the real BotService.UpsertChannelReferenceAsync (it never touches the adapter).
+        // A channelRenamed event carries no team name: the stored one and InstalledAt must survive.
+        var seeded = MakeEntity("team-event-upsert", "19:renamed@thread.tacv2",
+            channelId: "19:renamed@thread.tacv2", teamName: "Stored Team");
+        seeded.InstalledAt = new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
+        await _tableClient.UpsertEntityAsync(seeded);
+        var service = new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!);
+
+        await service.UpsertChannelReferenceAsync(
+            new ConversationReference
+            {
+                ServiceUrl = "https://smba.trafficmanager.net/emea/",
+                Conversation = new ConversationAccount { Id = "19:renamed@thread.tacv2", ConversationType = "channel" }
+            },
+            "team-event-upsert", "19:renamed@thread.tacv2", teamName: null, channelName: "renamed-channel");
+
+        var after = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
+            "team-event-upsert", "19:renamed@thread.tacv2");
+        Assert.Equal("Stored Team", after.Value.TeamName);
+        Assert.Equal("renamed-channel", after.Value.ChannelName);
+        Assert.Equal(seeded.InstalledAt, after.Value.InstalledAt);
     }
 
     [Fact]
