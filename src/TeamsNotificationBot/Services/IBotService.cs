@@ -39,4 +39,10 @@ public interface IBotService
     /// Returns true only when the name was actually written.
     /// </summary>
     Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName);
+
+    /// <summary>
+    /// TeamName counterpart of <see cref="TryUpdateChannelNameAsync"/>, with the same contract:
+    /// writes only when TeamName is empty, touches nothing else but LastUpdated, never throws.
+    /// </summary>
+    Task<bool> TryUpdateTeamNameAsync(string partitionKey, string rowKey, string teamName);
 }

@@ -246,11 +246,21 @@ public class BotService : IBotService
         }
     }
 
-    public async Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName)
+    public Task<bool> TryUpdateChannelNameAsync(string partitionKey, string rowKey, string channelName) =>
+        TryBackfillNameAsync(partitionKey, rowKey, channelName, "ChannelName",
+            e => e.ChannelName, (e, v) => e.ChannelName = v);
+
+    public Task<bool> TryUpdateTeamNameAsync(string partitionKey, string rowKey, string teamName) =>
+        TryBackfillNameAsync(partitionKey, rowKey, teamName, "TeamName",
+            e => e.TeamName, (e, v) => e.TeamName = v);
+
+    private async Task<bool> TryBackfillNameAsync(
+        string partitionKey, string rowKey, string name, string column,
+        Func<ConversationReferenceEntity, string?> get, Action<ConversationReferenceEntity, string> set)
     {
         if (_teamsDisabled)
             return false;
-        if (string.IsNullOrEmpty(channelName))
+        if (string.IsNullOrEmpty(name))
             return false;
 
         // Best-effort bookkeeping, same optimistic-concurrency pattern as UpdateLastUpdatedAsync:
@@ -264,13 +274,13 @@ public class BotService : IBotService
                 {
                     var response = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(partitionKey, rowKey);
                     var entity = response.Value;
-                    if (!string.IsNullOrEmpty(entity.ChannelName))
+                    if (!string.IsNullOrEmpty(get(entity)))
                         return false; // an earlier run or a concurrent writer already set it — never overwrite
 
-                    entity.ChannelName = channelName;
+                    set(entity, name);
                     entity.LastUpdated = DateTimeOffset.UtcNow;
                     await _tableClient.UpdateEntityAsync(entity, entity.ETag);
-                    _logger.LogInformation("Backfilled ChannelName for {PK}/{RK}", partitionKey, rowKey);
+                    _logger.LogInformation("Backfilled {Column} for {PK}/{RK}", column, partitionKey, rowKey);
                     return true;
                 }
                 catch (RequestFailedException ex) when (ex.Status == 412)
@@ -279,21 +289,21 @@ public class BotService : IBotService
                     {
                         _logger.LogDebug(
                             ex,
-                            "Concurrency conflict backfilling ChannelName for {PK}/{RK}; retry {Next}/{MaxRetries}",
-                            partitionKey, rowKey, attempt + 1, maxRetries);
+                            "Concurrency conflict backfilling {Column} for {PK}/{RK}; retry {Next}/{MaxRetries}",
+                            column, partitionKey, rowKey, attempt + 1, maxRetries);
                         continue;
                     }
                     _logger.LogWarning(
                         ex,
-                        "Gave up backfilling ChannelName for {PK}/{RK} after {MaxRetries} concurrency conflicts",
-                        partitionKey, rowKey, maxRetries);
+                        "Gave up backfilling {Column} for {PK}/{RK} after {MaxRetries} concurrency conflicts",
+                        column, partitionKey, rowKey, maxRetries);
                     return false;
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to backfill ChannelName for {PK}/{RK}", partitionKey, rowKey);
+            _logger.LogWarning(ex, "Failed to backfill {Column} for {PK}/{RK}", column, partitionKey, rowKey);
         }
         return false;
     }
