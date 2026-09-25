@@ -1486,7 +1486,7 @@ public class TeamsBotHandler : AgentApplication
     // --- Channel events (routed by TeamsAgentExtension on channelData.eventType) ---
 
     /// <summary>
-    /// Shared handler for channelCreated/channelRenamed/channelRestored: (re)stores the
+    /// Shared handler for channelCreated/channelRenamed/channelRestored: stores or updates the
     /// conversation reference rebuilt around the CHANNEL conversation (not the activity's own),
     /// so proactive sends target the channel top-level.
     /// Teams sends channelData.team.name only on install and teamRenamed, never on channel
@@ -1514,9 +1514,7 @@ public class TeamsBotHandler : AgentApplication
             TenantId = reference.Conversation?.TenantId
         };
 
-        await _botService.StoreConversationReferenceAsync(
-            reference, teamGuid, channelId,
-            "channel", teamName, channelName);
+        await _botService.UpsertChannelReferenceAsync(reference, teamGuid, channelId, teamName, channelName);
     }
 
     private async Task OnChannelDeletedAsync(
