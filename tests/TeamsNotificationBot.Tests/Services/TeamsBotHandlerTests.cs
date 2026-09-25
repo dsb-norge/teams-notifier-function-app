@@ -1377,6 +1377,49 @@ public class TeamsBotHandlerTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]  // Action.Execute: adaptiveCard/action invoke
+    [InlineData(false)] // Action.Submit: message activity carrying Value
+    public async Task CardCreatedPoisonAlias_ClearsCachedSetupWarning(bool viaInvoke)
+    {
+        // Same contract as set-alias: creating the configured poison alias must end the
+        // "Setup incomplete" nudge now, not when the 5-minute cache entry expires.
+        var orig = Environment.GetEnvironmentVariable("PoisonAlertAlias");
+        try
+        {
+            Environment.SetEnvironmentVariable("PoisonAlertAlias", "ops-alerts");
+            AliasEntity? stored = null;
+            _aliasService.Setup(s => s.GetAliasAsync("ops-alerts")).ReturnsAsync(() => stored);
+            _aliasService.Setup(s => s.SetAliasAsync("ops-alerts", It.IsAny<AliasEntity>()))
+                .Callback<string, AliasEntity>((_, e) => stored = e)
+                .ReturnsAsync((string _, AliasEntity e) => e);
+            var handler = new TeamsBotHandler(
+                TestAgentOptions.Create(),
+                _botService.Object, _aliasService.Object, _teamLookupTable.Object,
+                _botOpsQueue.Object, NullLogger<TeamsBotHandler>.Instance);
+            Assert.NotNull(await handler.GetPoisonAliasNudgeAsync()); // primes the cache
+
+            var cardData = new { action = "createAlias", aliasName = "ops-alerts", aliasDescription = "" };
+            if (viaInvoke)
+            {
+                await ((IAgent)handler).OnTurnAsync(CreateAdaptiveCardInvokeInput(cardData).Object);
+            }
+            else
+            {
+                var (turnContext, activity) = CreateMessageContext(null, conversationType: "personal");
+                activity.Value = System.Text.Json.JsonSerializer.SerializeToElement(cardData);
+                await ((IAgent)handler).OnTurnAsync(turnContext.Object);
+            }
+
+            Assert.NotNull(stored);
+            Assert.Null(await handler.GetPoisonAliasNudgeAsync());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PoisonAlertAlias", orig);
+        }
+    }
+
     [Fact]
     public void InvalidatePoisonNudgeCache_MatchingAlias_ResetsExpiry()
     {

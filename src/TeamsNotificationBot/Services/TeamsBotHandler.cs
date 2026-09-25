@@ -1330,6 +1330,7 @@ public class TeamsBotHandler : AgentApplication
         };
 
         await _aliasService.SetAliasAsync(aliasName, entity);
+        InvalidatePoisonNudgeCacheIfMatch(aliasName);
         _logger.LogInformation("Alias '{Alias}' created via card by {User}", aliasName, entity.CreatedByName);
 
         var hostname = GetHostname();
@@ -1407,6 +1408,7 @@ public class TeamsBotHandler : AgentApplication
         };
 
         await _aliasService.SetAliasAsync(aliasName, entity);
+        InvalidatePoisonNudgeCacheIfMatch(aliasName);
         _logger.LogInformation("Alias '{Alias}' created via card by {User}", aliasName, entity.CreatedByName);
 
         var hostname = GetHostname();
