@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.0...teams-notifier-function-app-v2.0.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* backfill missing team names from teamlookup on list-aliases ([8ccd1a3](https://github.com/dsb-norge/teams-notifier-function-app/commit/8ccd1a3f75cf5e316c4b41f999dcd8d050faef3f))
+* take the team name from teamlookup on channel events ([95ee391](https://github.com/dsb-norge/teams-notifier-function-app/commit/95ee39119c6842550ff8ca9e96a4a853a41a175c))
+* update channel rows in place instead of overwriting them ([dd1a8c7](https://github.com/dsb-norge/teams-notifier-function-app/commit/dd1a8c78c5f6c0a78d6ad3a8a0e0cef62a43b4a5))
+
 ## [2.0.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v1.8.1...teams-notifier-function-app-v2.0.0) (2026-09-24)
 
 
