@@ -110,6 +110,28 @@ public class RateLimitPolicyTests
     }
 
     [Fact]
+    public void SourceIpKey_UsesClientIp_OnFlex()
+    {
+        // F8, the shape confirmed live: Flex sets CLIENT-IP=<ip:port>, X-Forwarded-For is absent and
+        // the connection is loopback. Without CLIENT-IP every request would share the ::1 bucket.
+        Assert.Equal("ingest-ip:203.0.113.8", RateLimitPolicy.SourceIpKey(
+            Hdrs(new Dictionary<string, string?> { ["CLIENT-IP"] = "203.0.113.8:10404" }), "::1"));
+    }
+
+    [Fact]
+    public void SourceIpKey_PrefersClientIp_OverForwardedFor()
+    {
+        // CLIENT-IP is platform-set; X-Forwarded-For can be supplied by the caller. If XFF won, a
+        // client could pick a fresh key per request and never hit the per-source-IP limit.
+        Assert.Equal("ingest-ip:203.0.113.8", RateLimitPolicy.SourceIpKey(
+            Hdrs(new Dictionary<string, string?>
+            {
+                ["CLIENT-IP"] = "203.0.113.8:10404",
+                ["X-Forwarded-For"] = "198.51.100.5",
+            }), "::1"));
+    }
+
+    [Fact]
     public void IngestAndApiPatterns_AreDisjoint()
     {
         // No path should match both rules.
