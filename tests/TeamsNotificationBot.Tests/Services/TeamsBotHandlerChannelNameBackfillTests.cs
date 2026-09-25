@@ -218,6 +218,30 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 
         _botService.Verify(s => s.TryUpdateChannelNameAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        // Every row already stores its name, so the channel-list round trip is skipped entirely.
+        Assert.Null(_stubHandler.LastRequestUri);
+        turnContext.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => ContainsCardText(a, "#already-named")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task InTeamChannel_RowMissing_StillFetchesChannelList()
+    {
+        // No row at all: the API is the only source for the display name.
+        SetupChannelAlias();
+        _botService.Setup(s => s.GetConversationReferenceEntityAsync(TeamGuid, ChannelId))
+            .ReturnsAsync((ConversationReferenceEntity?)null);
+        var turnContext = CreateListAliasesContext(
+            inTeamChannel: true,
+            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"utvikling - testkanal"}]}""");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        Assert.NotNull(_stubHandler.LastRequestUri);
+        turnContext.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => ContainsCardText(a, "#utvikling - testkanal")),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

@@ -398,16 +398,22 @@ public class TeamsBotHandler : AgentApplication
             return;
         }
 
-        // Pre-fetch channel names for teams that have aliases with missing channel names.
-        // One API call per team, cached for the duration of this list operation.
-        var channelNameCache = await BuildChannelNameCacheAsync(turnContext, aliases);
+        // Each channel alias's conversation row is read once, up front: the rows decide whether
+        // the Teams channel-list call is needed at all, and FormatAliasTargetAsync renders them.
+        var channelRows = new Dictionary<string, ConversationReferenceEntity?>(StringComparer.Ordinal);
+        foreach (var a in aliases.Where(a => a.TargetType == "channel"))
+            channelRows[a.RowKey!] = await _botService.GetConversationReferenceEntityAsync(a.TeamId!, a.ChannelId!);
+
+        // Pre-fetch channel names for the current team when one of its rows lacks one.
+        // One API call per list operation at most, cached for its duration.
+        var channelNameCache = await BuildChannelNameCacheAsync(turnContext, aliases, channelRows);
         var teamNameCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         var hostname = GetHostname();
         var displayInfos = new List<AliasDisplayInfo>();
         foreach (var a in aliases)
         {
-            var target = await FormatAliasTargetAsync(a, channelNameCache, teamNameCache);
+            var target = await FormatAliasTargetAsync(a, channelRows, channelNameCache, teamNameCache);
             displayInfos.Add(new AliasDisplayInfo(
                 Name: a.RowKey!,
                 TargetType: a.TargetType ?? "unknown",
@@ -427,14 +433,14 @@ public class TeamsBotHandler : AgentApplication
     }
 
     private async Task<string> FormatAliasTargetAsync(
-        AliasEntity alias, Dictionary<string, string> channelNameCache,
-        Dictionary<string, string?> teamNameCache)
+        AliasEntity alias, Dictionary<string, ConversationReferenceEntity?> channelRows,
+        Dictionary<string, string> channelNameCache, Dictionary<string, string?> teamNameCache)
     {
         switch (alias.TargetType)
         {
             case "channel":
             {
-                var entity = await _botService.GetConversationReferenceEntityAsync(alias.TeamId!, alias.ChannelId!);
+                var entity = channelRows.GetValueOrDefault(alias.RowKey!);
                 var channelName = entity?.ChannelName;
                 var teamName = entity?.TeamName;
 
@@ -525,9 +531,19 @@ public class TeamsBotHandler : AgentApplication
     }
 
     private async Task<Dictionary<string, string>> BuildChannelNameCacheAsync(
-        ITurnContext turnContext, IReadOnlyList<AliasEntity> aliases)
+        ITurnContext turnContext, IReadOnlyList<AliasEntity> aliases,
+        Dictionary<string, ConversationReferenceEntity?> channelRows)
     {
         var cache = new Dictionary<string, string>();
+
+        // The API only fills in names a row doesn't store (a missing row, or an empty ChannelName).
+        // When every row has one, skip the call: otherwise every list-aliases sent from a team
+        // channel pays for a Teams API round trip whose result nothing uses.
+        bool NeedsChannelName(AliasEntity a) =>
+            a.TargetType == "channel" &&
+            string.IsNullOrEmpty(channelRows.GetValueOrDefault(a.RowKey!)?.ChannelName);
+        if (!aliases.Any(NeedsChannelName))
+            return cache;
 
         // The channel-list API requires the team thread ID (19:xxx@thread.tacv2), not the AAD group
         // GUID. We can only resolve this from the current turn context when the command is sent
@@ -544,11 +560,11 @@ public class TeamsBotHandler : AgentApplication
         var currentTeamGroupId = await ResolveTeamGuidAsync(channelData!.Team);
 
         // Only resolve channels for the current team (we only have its thread ID)
-        var hasAliasInCurrentTeam = aliases.Any(a =>
-            a.TargetType == "channel" &&
+        var currentTeamNeedsNames = aliases.Any(a =>
+            NeedsChannelName(a) &&
             string.Equals(a.TeamId, currentTeamGroupId, StringComparison.OrdinalIgnoreCase));
 
-        if (!hasAliasInCurrentTeam)
+        if (!currentTeamNeedsNames)
             return cache;
 
         try
