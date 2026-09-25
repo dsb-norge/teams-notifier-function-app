@@ -170,12 +170,20 @@ public class TeamsBotHandlerLifecycleTests
 
     // --- Channel events ---
 
+    private void SetupTeamLookup(string? teamName) =>
+        _teamLookupTable.Setup(t => t.GetEntityAsync<TeamLookupEntity>(
+                "teamlookup", TeamThreadId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Response.FromValue(
+                new TeamLookupEntity { RowKey = TeamThreadId, TeamGuid = TeamGuid, TeamName = teamName },
+                Mock.Of<Response>()));
+
     [Theory]
     [InlineData("channelCreated")]
     [InlineData("channelRenamed")]
     [InlineData("channelRestored")]
     public async Task ChannelUpsertEvents_StoreChannelScopedReference(string eventType)
     {
+        SetupTeamLookup("Test Team");
         var turnContext = ConversationUpdateTurn(eventType);
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
@@ -188,6 +196,70 @@ public class TeamsBotHandlerLifecycleTests
                 r.Conversation.ConversationType == "channel" &&
                 r.Conversation.IsGroup == true),
             TeamGuid, ChannelThreadId, "channel", "Test Team", "New Channel", null), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ChannelCreated_NoTeamNameInPayload_TakesNameFromTeamLookup(bool includeAadGroupId)
+    {
+        // With or without aadGroupId the payload lacks the team name; one lookup read serves both.
+        SetupTeamLookup("Test Team");
+        var turnContext = ConversationUpdateTurn("channelCreated", includeAadGroupId);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        _botService.Verify(s => s.StoreConversationReferenceAsync(
+            It.IsAny<ConversationReference>(),
+            TeamGuid, ChannelThreadId, "channel", "Test Team", "New Channel", null), Times.Once);
+        _teamLookupTable.Verify(t => t.GetEntityAsync<TeamLookupEntity>(
+            "teamlookup", TeamThreadId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChannelCreated_TeamNameInPayload_WinsWithoutReadingLookup()
+    {
+        var turnContext = ConversationUpdateTurn("channelCreated", teamName: "Payload Team");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        _botService.Verify(s => s.StoreConversationReferenceAsync(
+            It.IsAny<ConversationReference>(),
+            TeamGuid, ChannelThreadId, "channel", "Payload Team", "New Channel", null), Times.Once);
+        _teamLookupTable.Verify(t => t.GetEntityAsync<TeamLookupEntity>(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChannelCreated_LookupMissingButGuidKnown_StillStoresWithoutTeamName()
+    {
+        _teamLookupTable.Setup(t => t.GetEntityAsync<TeamLookupEntity>(
+                "teamlookup", TeamThreadId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RequestFailedException(404, "not found"));
+        var turnContext = ConversationUpdateTurn("channelCreated");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        _botService.Verify(s => s.StoreConversationReferenceAsync(
+            It.IsAny<ConversationReference>(),
+            TeamGuid, ChannelThreadId, "channel", null, "New Channel", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChannelCreated_LookupFailsButGuidKnown_StillStoresWithoutTeamName()
+    {
+        // The name is enrichment: a teamlookup outage must not cost the channel its reference.
+        _teamLookupTable.Setup(t => t.GetEntityAsync<TeamLookupEntity>(
+                "teamlookup", TeamThreadId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RequestFailedException(503, "Server Busy"));
+        var turnContext = ConversationUpdateTurn("channelCreated");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        _botService.Verify(s => s.StoreConversationReferenceAsync(
+            It.IsAny<ConversationReference>(),
+            TeamGuid, ChannelThreadId, "channel", null, "New Channel", null), Times.Once);
     }
 
     [Fact]
@@ -509,8 +581,10 @@ public class TeamsBotHandlerLifecycleTests
     }
 
     private Mock<ITurnContext<IConversationUpdateActivity>> ConversationUpdateTurn(
-        string eventType, bool includeAadGroupId = true, string teamName = "Test Team", bool withMember = false)
+        string eventType, bool includeAadGroupId = true, string? teamName = null, bool withMember = false)
     {
+        // teamName defaults to absent because that is what Teams sends: channelData.team.name is
+        // only populated on install and teamRenamed, never on channel events.
         var activity = BaseActivity(ActivityTypes.ConversationUpdate, "channel");
         activity.Conversation.Id = ChannelThreadId;
         activity.Conversation.IsGroup = true;

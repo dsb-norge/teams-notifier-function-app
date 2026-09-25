@@ -1489,12 +1489,14 @@ public class TeamsBotHandler : AgentApplication
     /// Shared handler for channelCreated/channelRenamed/channelRestored: (re)stores the
     /// conversation reference rebuilt around the CHANNEL conversation (not the activity's own),
     /// so proactive sends target the channel top-level.
+    /// Teams sends channelData.team.name only on install and teamRenamed, never on channel
+    /// events, so the team name comes from the teamlookup row those two events maintain.
     /// </summary>
     private async Task UpsertChannelReferenceAsync(
         ITeamsTurnContext teamsContext, TeamsApi.Channel? channelInfo, string channelEvent)
     {
         var teamInfo = teamsContext.Activity.ChannelData?.Team;
-        var teamGuid = await ResolveTeamGuidAsync(teamInfo);
+        var (teamGuid, teamName) = await ResolveTeamAsync(teamInfo, needName: true);
         var channelId = channelInfo?.Id;
         var channelName = channelInfo?.Name;
 
@@ -1514,7 +1516,7 @@ public class TeamsBotHandler : AgentApplication
 
         await _botService.StoreConversationReferenceAsync(
             reference, teamGuid, channelId,
-            "channel", teamInfo?.Name, channelName);
+            "channel", teamName, channelName);
     }
 
     private async Task OnChannelDeletedAsync(
@@ -1798,32 +1800,57 @@ public class TeamsBotHandler : AgentApplication
     // --- Private helpers: team GUID resolution ---
 
     private async Task<string?> ResolveTeamGuidAsync(TeamsApi.Team? teamInfo)
+        => (await ResolveTeamAsync(teamInfo, needName: false)).Guid;
+
+    /// <summary>
+    /// Resolves the team's AAD group GUID and, when <paramref name="needName"/> is set, its
+    /// display name. Values carried on the activity win; whatever is missing comes from the
+    /// teamlookup row (one read, only when something is missing).
+    /// </summary>
+    private async Task<(string? Guid, string? Name)> ResolveTeamAsync(TeamsApi.Team? teamInfo, bool needName)
     {
         // Prefer aadGroupId if present (reliable in membersAdded / bot install)
-        var aadGroupId = teamInfo?.AadGroupId;
-        if (!string.IsNullOrEmpty(aadGroupId))
-            return aadGroupId;
+        var guid = teamInfo?.AadGroupId;
+        var name = teamInfo?.Name;
+        var needGuid = string.IsNullOrEmpty(guid);
+        if (!needGuid && (!needName || !string.IsNullOrEmpty(name)))
+            return (guid, name);
 
         // Fall back to teamlookup table using team thread ID
         var teamThreadId = teamInfo?.Id;
         if (string.IsNullOrEmpty(teamThreadId))
         {
-            _logger.LogWarning("Cannot resolve team GUID: both AadGroupId and Id are null");
-            return null;
+            if (needGuid)
+                _logger.LogWarning("Cannot resolve team GUID: both AadGroupId and Id are null");
+            return (needGuid ? null : guid, name);
         }
 
         try
         {
             var response = await _teamLookupTable.GetEntityAsync<TeamLookupEntity>("teamlookup", teamThreadId);
-            _logger.LogDebug("Resolved team thread ID {ThreadId} -> GUID {TeamGuid} via lookup table",
-                teamThreadId, response.Value.TeamGuid);
-            return response.Value.TeamGuid;
+            if (needGuid)
+            {
+                guid = response.Value.TeamGuid;
+                _logger.LogDebug("Resolved team thread ID {ThreadId} -> GUID {TeamGuid} via lookup table",
+                    teamThreadId, guid);
+            }
+            if (string.IsNullOrEmpty(name))
+                name = response.Value.TeamName;
+            return (guid, name);
+        }
+        catch (Exception ex) when (!needGuid)
+        {
+            // Only the name was missing. It is enrichment: store the reference without it
+            // rather than fail the channel event over a teamlookup outage.
+            if (ex is not Azure.RequestFailedException { Status: 404 })
+                _logger.LogWarning(ex, "Failed to read team name from lookup for thread ID {ThreadId}", teamThreadId);
+            return (guid, name);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
             _logger.LogWarning("Team lookup not found for thread ID {ThreadId}. " +
                 "Bot may need to be reinstalled in this team.", teamThreadId);
-            return null;
+            return (null, name);
         }
     }
 
