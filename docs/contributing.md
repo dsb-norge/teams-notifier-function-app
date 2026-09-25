@@ -118,10 +118,10 @@ The CodeQL query behind this finding exempts a catch that has an exception filte
 or that rethrows. Don't add a filter just to quiet it; add one only when it changes behaviour
 you want.
 
-**Code Quality findings can't be dismissed through the API**: `code-quality/findings` is
-read-only. Dismiss them in the web UI (Security → Code quality) as *Won't fix* for the
-deliberate catches and *False positive* for the test-double `IDisposable` hits below, citing
-this section.
+**Findings are not dismissed in GitHub.** A deliberate catch or a test-double `IDisposable`
+hit is recorded in the permanently ignored table in
+[Security and Quality Findings](security-findings.md), citing this section, so the next check
+skips it.
 
 ### Findings that are rejected on sight
 
@@ -212,7 +212,7 @@ The workflow-level token has `pull-requests: write` (Validate Requirements posts
 | **Lint Workflows** | Runs [actionlint](https://github.com/rhysd/actionlint), which also shellchecks every `run:` block, when anything under `.github/workflows/` or `.github/actions/` changes. The binary is pinned by version and SHA-256 in `ci.yml`; bump both together. |
 | **Release Build (dry run)** | On the same changes, runs the shared `build-release-artifacts` action that `release.yml` and `prerelease.yml` use, and checks the three artifacts come out. Nothing is published or attested. |
 
-**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` marks `LogSanitizer.Sanitize()` as a taint barrier for advanced/custom CodeQL setups. **Note:** GitHub **Default Setup does not load repo-local model packs**, so it does not recognise this barrier — `cs/log-forging` alerts still fire on `Sanitize()`-wrapped values and are triaged as **false positives** (the sanitizer strips CR/LF/tab + U+2028/U+2029 and `ILogger` uses structured, non-interpolated logging). Dismiss such alerts with that rationale (see the dismissed alerts for the established wording). See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
+**CodeQL** runs separately via GitHub's Default Setup (configured in repo settings, not in a workflow file). It performs static analysis for common vulnerability patterns in C# code. A custom model extension in `.github/codeql/extensions/` marks `LogSanitizer.Sanitize()` as a taint barrier for advanced/custom CodeQL setups. **Note:** GitHub **Default Setup does not load repo-local model packs**, so it does not recognise this barrier — `cs/log-forging` alerts still fire on `Sanitize()`-wrapped values and are triaged as **false positives** (the sanitizer strips CR/LF/tab + U+2028/U+2029 and `ILogger` uses structured, non-interpolated logging). Older alerts of this kind were dismissed in GitHub with that rationale; new ones go in the permanently ignored table in [Security and Quality Findings](security-findings.md) instead, which also describes when and how the Security tab is checked. See [`CLAUDE.md`](../CLAUDE.md#things-that-bite) for why this helper must not be renamed or removed without updating the extension in lockstep.
 
 A separate **Microsoft Security DevOps** workflow (`msdo.yml`) runs in parallel:
 
@@ -456,3 +456,4 @@ When a Dependabot PR falls behind `main`, prefer commenting `@dependabot rebase`
 - [Local Development](local-development.md) -- running and debugging locally
 - [Architecture](architecture.md) -- system design and message flows
 - [Troubleshooting](troubleshooting.md) -- debugging common issues
+- [Security and Quality Findings](security-findings.md) -- checking the Security tab and the permanent ignore list
