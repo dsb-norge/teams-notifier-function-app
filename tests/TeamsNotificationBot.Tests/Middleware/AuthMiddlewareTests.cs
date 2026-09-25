@@ -1,22 +1,71 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using TeamsNotificationBot.Middleware;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Middleware;
 
 /// <summary>
-/// Tests for the auth flow logic used by AuthMiddleware.
-/// FunctionContext.GetHttpContext() requires runtime feature registration that is
-/// impractical to mock, so these tests verify the extraction and matching logic directly.
+/// Tests for AuthMiddleware. The pure checks (<c>IsAuthExempt</c>, <c>HasRequiredRole</c>) are
+/// called directly; request-level behavior runs the real <c>Invoke</c> through
+/// <see cref="InvokeAsync"/>, which hands it a mocked FunctionContext carrying a DefaultHttpContext.
 /// </summary>
 public class AuthMiddlewareTests
 {
-    [Fact]
-    public void MaxRequestBodySize_Is28KB()
+    // FunctionContext.GetHttpContext() (Worker.Extensions.Http.AspNetCore) is nothing more than a
+    // lookup of this Items key. The constant is internal to that package, so it is mirrored here;
+    // if a package bump renames it, every Invoke test fails with next-called / wrong-status.
+    private const string HttpContextItemsKey = "HttpRequestContext";
+
+    /// <summary>Runs the real middleware on <paramref name="httpContext"/>; returns whether it called next.</summary>
+    private static async Task<bool> InvokeAsync(HttpContext httpContext)
     {
-        Assert.Equal(28672, 28 * 1024);
+        var functionContext = new Mock<FunctionContext>();
+        functionContext.Setup(c => c.Items).Returns(new Dictionary<object, object>
+        {
+            [HttpContextItemsKey] = httpContext
+        });
+        var nextCalled = false;
+        await new AuthMiddleware(NullLogger<AuthMiddleware>.Instance).Invoke(
+            functionContext.Object, _ => { nextCalled = true; return Task.CompletedTask; });
+        return nextCalled;
+    }
+
+    /// <summary>A protected-route POST from a caller EasyAuth authenticated with the required role.</summary>
+    private static DefaultHttpContext AuthorizedPost(long contentLength)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/api/v1/notify/some-alias";
+        httpContext.Request.ContentLength = contentLength;
+        httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"] = "caller-object-id";
+        httpContext.Request.Headers[PrincipalHeader] = EncodeEasyAuthPrincipal(
+            new[] { new { typ = "roles", val = "Notifications.Send" } });
+        return httpContext;
+    }
+
+    // --- Request body size limit (28 KB, the Teams message size limit) ---
+
+    [Fact]
+    public async Task RequestBody_AtLimit_Proceeds()
+    {
+        var httpContext = AuthorizedPost(28 * 1024);
+
+        Assert.True(await InvokeAsync(httpContext));
+        Assert.NotEqual(StatusCodes.Status413PayloadTooLarge, httpContext.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RequestBody_AboveLimit_Returns413WithoutCallingNext()
+    {
+        var httpContext = AuthorizedPost(28 * 1024 + 1);
+
+        Assert.False(await InvokeAsync(httpContext));
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, httpContext.Response.StatusCode);
     }
 
     // --- Auth-exempt routes ---
@@ -237,28 +286,28 @@ public class AuthMiddlewareTests
     // --- §1 Regression Tests (API key auth removed) ---
 
     [Fact]
-    public void ApiKeyHeaderWithoutEasyAuth_IsRejected()
+    public async Task ApiKeyHeaderWithoutEasyAuth_IsRejected()
     {
         // After §1, providing X-API-Key without EasyAuth headers should NOT authenticate.
         // The middleware no longer checks API keys — only EasyAuth Bearer tokens are accepted.
         var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/v1/notify/some-alias";
         httpContext.Request.Headers["X-API-Key"] = "some-api-key-value";
 
-        var easyAuthPrincipal = httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault();
-        Assert.True(string.IsNullOrEmpty(easyAuthPrincipal),
-            "API key header should not substitute for EasyAuth — request should be rejected as unauthenticated");
+        Assert.False(await InvokeAsync(httpContext), "API key header must not substitute for EasyAuth");
+        Assert.Equal(StatusCodes.Status401Unauthorized, httpContext.Response.StatusCode);
     }
 
     [Fact]
-    public void ApiKeyQueryParamWithoutEasyAuth_IsRejected()
+    public async Task ApiKeyQueryParamWithoutEasyAuth_IsRejected()
     {
         // Regression: query param ?apikey=... should also be ignored after §1
         var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/v1/notify/some-alias";
         httpContext.Request.QueryString = new QueryString("?apikey=some-key");
 
-        var easyAuthPrincipal = httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault();
-        Assert.True(string.IsNullOrEmpty(easyAuthPrincipal),
-            "apikey query parameter should not substitute for EasyAuth");
+        Assert.False(await InvokeAsync(httpContext), "apikey query parameter must not substitute for EasyAuth");
+        Assert.Equal(StatusCodes.Status401Unauthorized, httpContext.Response.StatusCode);
     }
 
     [Fact]
