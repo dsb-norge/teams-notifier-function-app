@@ -103,6 +103,7 @@ curl -X POST "https://<function-app-name>.azurewebsites.net/api/v1/notify/my-ali
 | [Troubleshooting](docs/troubleshooting.md) | Common issues, KQL diagnostic queries, monitoring |
 | [Local Development](docs/local-development.md) | Offline/online modes, running tests, project structure |
 | [Contributing](docs/contributing.md) | Build, test, code style, PR guidelines, CI/CD pipeline, versioning, releases, dependency management |
+| [Security and Quality Findings](docs/security-findings.md) | When and how the Security tab is checked, and the findings permanently ignored |
 
 ## Infrastructure
 
