@@ -138,6 +138,11 @@ Recorded so they are not re-litigated each scan:
   returned from a Moq setup and must outlive the helper (the turn pipeline NREs without it), and
   `HttpResponseMessage`s returned from a test `HttpMessageHandler` are disposed by the owning
   `HttpClient`. Both are false positives.
+- **"Prefer X-Forwarded-For over CLIENT-IP" is backwards.** `CLIENT-IP` is set by the Flex
+  front end; `X-Forwarded-For` can be supplied by the caller. `IpMatcher.ClientIpHeaders` puts
+  `CLIENT-IP` first on purpose, for both the updown source-IP filter and the ingest rate-limit
+  key, and `IpMatcherTests`/`RateLimitPolicyTests` pin that order. A suggested test asserting
+  the opposite precedence is wrong, not missing coverage.
 - **`AdaptiveTextBlock` `Type`/`Text` "should be required"** was fixed (fixed getter, `required`
   text). If it resurfaces in another shape, it's the same finding.
 
