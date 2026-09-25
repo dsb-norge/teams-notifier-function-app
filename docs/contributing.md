@@ -93,7 +93,7 @@ should **not** be narrowed. The rule in this codebase is:
 
 > A failure in a *side concern* must never break notification delivery.
 
-Channel-name backfill, conversation-reference auto-refresh, `LastUpdated` stamping, the
+Channel- and team-name backfill (including the `teamlookup` name query), conversation-reference auto-refresh, `LastUpdated` stamping, the
 poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, and
 best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
 whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
