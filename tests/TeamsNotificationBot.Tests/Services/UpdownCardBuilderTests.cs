@@ -121,8 +121,8 @@ public class UpdownCardBuilderTests
     [Fact]
     public void AccountLabel_WhenProvided_AppearsOnCard()
     {
-        var (_, raw) = BuildCard(UpdownPayloads.CheckDown, "prod-monitoring / ops@dsb.no");
-        Assert.Contains("prod-monitoring / ops@dsb.no", raw);
+        var (_, raw) = BuildCard(UpdownPayloads.CheckDown, "prod-monitoring / ops@example.com");
+        Assert.Contains("prod-monitoring / ops@example.com", raw);
         Assert.Contains("updown account", raw);
     }
 

@@ -16,7 +16,7 @@ public class WebhookServiceStorageTests
 
     private Task<WebhookCreateResult> CreateChannelAsync() =>
         _service.CreateAsync("updown", "channel", "team-1", "channel-1", null, null,
-            "test description", "test@dsb.no", "oid-1", "Tester");
+            "test description", "test@example.com", "oid-1", "Tester");
 
     [Fact]
     public async Task Create_Then_ResolveByToken_RoundTrips()
@@ -78,14 +78,14 @@ public class WebhookServiceStorageTests
     {
         var created = await CreateChannelAsync();
 
-        var ok = await _service.ConfigureAsync(created.Id, "prod site", "prod-acct / ops@dsb.no",
+        var ok = await _service.ConfigureAsync(created.Id, "prod site", "prod-acct / ops@example.com",
             new[] { "check.ssl_expiration", "check.ssl_renewed" });
         Assert.True(ok);
 
         var updated = await _service.GetByIdAsync(created.Id);
         Assert.NotNull(updated);
         Assert.Equal("prod site", updated.Description);
-        Assert.Equal("prod-acct / ops@dsb.no", updated.UpdownAccount);
+        Assert.Equal("prod-acct / ops@example.com", updated.UpdownAccount);
         Assert.True(updated.IsEventEnabled("check.ssl_expiration"));
         Assert.False(updated.IsEventEnabled("check.down"));
     }

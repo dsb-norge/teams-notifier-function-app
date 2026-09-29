@@ -43,8 +43,8 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-full");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-1", "channel-1", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
-        await _webhookService.ConfigureAsync(created.Id, "prod site", "prod / ops@dsb.no", null);
+            "updown", "channel", "team-1", "channel-1", null, null, "flow test", "ops@example.com", "oid", "Tester");
+        await _webhookService.ConfigureAsync(created.Id, "prod site", "prod / ops@example.com", null);
 
         var req = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
         var result = await fn.Run(req, created.Token);
@@ -62,7 +62,7 @@ public class UpdownIngestFlowTests
         Assert.Equal("team-1", msg.Target.TeamId);
         Assert.Equal("channel-1", msg.Target.ChannelId);
         Assert.Contains("DOWN", msg.Message);
-        Assert.Contains("prod / ops@dsb.no", msg.Message); // account label surfaced
+        Assert.Contains("prod / ops@example.com", msg.Message); // account label surfaced
 
         // LastReceivedAt was bumped
         var after = await _webhookService.GetByIdAsync(created.Id);
@@ -74,7 +74,7 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-dedupe");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-2", "channel-2", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
+            "updown", "channel", "team-2", "channel-2", null, null, "flow test", "ops@example.com", "oid", "Tester");
 
         var req1 = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
         var req2 = HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown);
@@ -91,7 +91,7 @@ public class UpdownIngestFlowTests
     {
         var (fn, queue) = NewFunction("updown-flow-processor");
         var created = await _webhookService.CreateAsync(
-            "updown", "channel", "team-3", "channel-3", null, null, "flow test", "ops@dsb.no", "oid", "Tester");
+            "updown", "channel", "team-3", "channel-3", null, null, "flow test", "ops@example.com", "oid", "Tester");
 
         await fn.Run(HttpRequestHelper.CreatePostRequest(body: UpdownPayloads.CheckDown), created.Token);
 

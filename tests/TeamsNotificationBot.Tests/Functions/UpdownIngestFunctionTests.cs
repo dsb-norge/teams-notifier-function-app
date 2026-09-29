@@ -27,7 +27,7 @@ public class UpdownIngestFunctionTests
         TargetType = "channel",
         TeamId = "team-1",
         ChannelId = "channel-1",
-        UpdownAccount = "prod / ops@dsb.no",
+        UpdownAccount = "prod / ops@example.com",
         EnabledEvents = enabledEvents
     };
 

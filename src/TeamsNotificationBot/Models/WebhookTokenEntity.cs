@@ -33,7 +33,7 @@ public class WebhookTokenEntity : ITableEntity
 
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>Human-readable account label surfaced on cards (e.g. "prod-monitoring / ops@dsb.no").</summary>
+    /// <summary>Human-readable account label surfaced on cards (e.g. "prod-monitoring / ops@example.com").</summary>
     public string UpdownAccount { get; set; } = string.Empty;
 
     /// <summary>Comma-joined enabled event types. Empty means "all defaults".</summary>

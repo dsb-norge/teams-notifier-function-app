@@ -156,7 +156,7 @@ Created at runtime by the app (`CreateIfNotExists`), like the other tables — *
 | `TargetType` | property | `channel` \| `personal` \| `groupChat` |
 | `TeamId` / `ChannelId` / `UserId` / `ChatId` | properties | conversation coordinates (same shape as `AliasEntity`) |
 | `Description` | property | human-readable (D5) |
-| `UpdownAccount` | property | free-text label, e.g. `prod-monitoring / ops@dsb.no` — surfaced on the card so people know which account/login (D5) |
+| `UpdownAccount` | property | free-text label, e.g. `prod-monitoring / ops@example.com` — surfaced on the card so people know which account/login (D5) |
 | `EnabledEvents` | property | comma-joined event types; default = all except `check.performance_drop` |
 | `CreatedBy` / `CreatedByName` / `CreatedAt` | properties | audit |
 | `LastReceivedAt` | property | best-effort, updated on each accepted delivery |

@@ -8,12 +8,12 @@ public class WebhookCommandParserTests
     [Fact]
     public void ParseCreate_ValidAccountAndDescription()
     {
-        var (args, error) = WebhookCommandParser.ParseCreate(" account ops@dsb.no description Prod uptime + SSL");
+        var (args, error) = WebhookCommandParser.ParseCreate(" account ops@example.com description Prod uptime + SSL");
 
         Assert.Null(error);
         Assert.NotNull(args);
         Assert.Equal("updown", args!.Source);
-        Assert.Equal("ops@dsb.no", args.Account);
+        Assert.Equal("ops@example.com", args.Account);
         Assert.Equal("Prod uptime + SSL", args.Description);
     }
 
@@ -31,9 +31,9 @@ public class WebhookCommandParserTests
     public void ParseCreate_AccountMayContainSlashAndEmail()
     {
         var (args, _) = WebhookCommandParser.ParseCreate(
-            "account prod-monitoring / ops@dsb.no description SSL + uptime");
+            "account prod-monitoring / ops@example.com description SSL + uptime");
 
-        Assert.Equal("prod-monitoring / ops@dsb.no", args!.Account);
+        Assert.Equal("prod-monitoring / ops@example.com", args!.Account);
         Assert.Equal("SSL + uptime", args.Description);
     }
 
@@ -49,7 +49,7 @@ public class WebhookCommandParserTests
     [Theory]
     [InlineData("")]                         // nothing
     [InlineData("   ")]                       // whitespace only
-    [InlineData("account ops@dsb.no")]        // missing description
+    [InlineData("account ops@example.com")]        // missing description
     [InlineData("account   description x")]   // empty account value
     public void ParseCreate_InvalidReturnsUsageError(string input)
     {
