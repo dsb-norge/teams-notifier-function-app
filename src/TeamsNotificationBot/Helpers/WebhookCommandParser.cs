@@ -14,7 +14,7 @@ public static class WebhookCommandParser
         "Usage: **create-webhook** `account <updown account> description <description>`\n\n" +
         "Both **account** and **description** are required — they help humans track which updown " +
         "account a webhook belongs to and what it's for. Example:\n\n" +
-        "`create-webhook account ops@dsb.no description Prod uptime + SSL`";
+        "`create-webhook account ops@example.com description Prod uptime + SSL`";
 
     public const string UnsupportedSourceError =
         "Only **updown** webhooks are supported.\n\n" + UsageError;

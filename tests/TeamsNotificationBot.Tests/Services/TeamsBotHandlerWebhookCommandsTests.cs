@@ -93,26 +93,26 @@ public class TeamsBotHandlerWebhookCommandsTests
     {
         _webhook.Setup(s => s.CreateAsync("updown", "personal",
                 It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
-                "Prod uptime + SSL", "ops@dsb.no",
+                "Prod uptime + SSL", "ops@example.com",
                 It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(new WebhookCreateResult("abc12345", "SECRETTOKEN99",
                 new WebhookTokenEntity { Id = "abc12345" }));
 
-        var ctx = Context("create-webhook account ops@dsb.no description Prod uptime + SSL");
+        var ctx = Context("create-webhook account ops@example.com description Prod uptime + SSL");
         await Run(NewHandler(), ctx);
 
         // F3: account + description are captured at creation and forwarded to the service
         // (description, then updownAccount — note the parameter order).
         _webhook.Verify(s => s.CreateAsync("updown", "personal",
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(),
-            "Prod uptime + SSL", "ops@dsb.no",
+            "Prod uptime + SSL", "ops@example.com",
             It.IsAny<string>(), It.IsAny<string>()), Times.Once);
         // ...and the confirmation surfaces the id, the one-time secret URL, the labels, and the
         // default enabled-events line — the events string is sourced from UpdownEventTypes.DefaultEnabled
         // (a display path reading a source of truth; hardcoding it here could mask drift).
         ctx.Verify(t => t.SendActivityAsync(
             It.Is<IActivity>(a => TextContains(a,
-                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99", "ops@dsb.no", "Prod uptime + SSL",
+                "abc12345", "/api/v1/ingest/updown/SECRETTOKEN99", "ops@example.com", "Prod uptime + SSL",
                 string.Join(", ", UpdownEventTypes.DefaultEnabled))),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -137,7 +137,7 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task CreateWebhook_MissingDescription_Rejected()
     {
-        var ctx = Context("create-webhook account ops@dsb.no");   // no description
+        var ctx = Context("create-webhook account ops@example.com");   // no description
         await Run(NewHandler(), ctx);
 
         ctx.Verify(t => t.SendActivityAsync(
@@ -205,7 +205,7 @@ public class TeamsBotHandlerWebhookCommandsTests
             new()
             {
                 Id = "abc12345", RowKey = "hashvalue", Source = "updown", TargetType = "channel",
-                Description = "prod site", UpdownAccount = "prod / ops@dsb.no", EnabledEvents = "",
+                Description = "prod site", UpdownAccount = "prod / ops@example.com", EnabledEvents = "",
                 CreatedByName = "Tester", CreatedAt = DateTimeOffset.UtcNow
             }
         });
@@ -217,7 +217,7 @@ public class TeamsBotHandlerWebhookCommandsTests
         // and that the SHA-256 RowKey (the token hash) never leaks into the card ("WithoutSecret").
         ctx.Verify(t => t.SendActivityAsync(
             It.Is<IActivity>(a =>
-                CardContains(a, "abc12345", "prod site", "prod / ops@dsb.no") &&
+                CardContains(a, "abc12345", "prod site", "prod / ops@example.com") &&
                 CardLacks(a, "hashvalue")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -253,7 +253,7 @@ public class TeamsBotHandlerWebhookCommandsTests
         _webhook.Setup(s => s.GetByIdAsync("abc12345")).ReturnsAsync(new WebhookTokenEntity
         {
             Id = "abc12345", RowKey = "hash", Source = "updown", TargetType = "personal",
-            Description = "prod site", UpdownAccount = "ops@dsb.no", EnabledEvents = "",
+            Description = "prod site", UpdownAccount = "ops@example.com", EnabledEvents = "",
             CreatedByName = "Tester", CreatedAt = DateTimeOffset.UtcNow
         });
 
@@ -263,7 +263,7 @@ public class TeamsBotHandlerWebhookCommandsTests
         // Assert the card renders the requested webhook's facts (guards against returning the wrong
         // entity or dropping fields), not merely that a card was sent.
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => CardContains(a, "abc12345", "prod site", "ops@dsb.no")),
+            It.Is<IActivity>(a => CardContains(a, "abc12345", "prod site", "ops@example.com")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -347,10 +347,10 @@ public class TeamsBotHandlerWebhookCommandsTests
     public async Task ConfigureWebhook_Account_PreservesCasing()
     {
         SetupExisting();
-        var ctx = Context("configure-webhook abc12345 account Prod-Monitoring / Ops@dsb.no");
+        var ctx = Context("configure-webhook abc12345 account Prod-Monitoring / Ops@example.com");
         await Run(NewHandler(), ctx);
 
-        _webhook.Verify(s => s.ConfigureAsync("abc12345", null, "Prod-Monitoring / Ops@dsb.no", null), Times.Once);
+        _webhook.Verify(s => s.ConfigureAsync("abc12345", null, "Prod-Monitoring / Ops@example.com", null), Times.Once);
     }
 
     [Fact]
@@ -369,12 +369,12 @@ public class TeamsBotHandlerWebhookCommandsTests
     [Fact]
     public async Task ConfigureWebhook_NoChange_ReportedAsUnchanged()
     {
-        SetupExisting(account: "ops@dsb.no");
-        var ctx = Context("configure-webhook abc12345 account ops@dsb.no");
+        SetupExisting(account: "ops@example.com");
+        var ctx = Context("configure-webhook abc12345 account ops@example.com");
         await Run(NewHandler(), ctx);
 
         ctx.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => TextContains(a, "unchanged", "ops@dsb.no")),
+            It.Is<IActivity>(a => TextContains(a, "unchanged", "ops@example.com")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

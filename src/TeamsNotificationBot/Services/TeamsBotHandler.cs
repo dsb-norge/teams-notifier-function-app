@@ -758,7 +758,7 @@ public class TeamsBotHandler : AgentApplication
                 "Usage: **configure-webhook** `<id>` `<description|account|events>` `<value>`\n\n" +
                 "Examples:\n" +
                 "- `configure-webhook <id> description Production site health`\n" +
-                "- `configure-webhook <id> account prod-monitoring / ops@dsb.no`\n" +
+                "- `configure-webhook <id> account prod-monitoring / ops@example.com`\n" +
                 "- `configure-webhook <id> events check.down,check.up,check.ssl_expiration` (or `all`)"), ct);
             return;
         }

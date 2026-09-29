@@ -128,11 +128,11 @@ public static class HelpTextBuilder
                 "Create an updown.io webhook for **this** conversation and return its secret ingest URL " +
                 "**once**. Both fields are required — they help humans manage multiple updown accounts:\n" +
                 "- `account` — the updown account this webhook belongs to (free text, e.g. an email like " +
-                "`ops@dsb.no`; may contain `/` and `@`).\n" +
+                "`ops@example.com`; may contain `/` and `@`).\n" +
                 "- `description` — what it's for (free text). Must come after `account`.\n\n" +
                 $"Newly created webhooks enable these events by default: {defaultEvents} " +
                 "(i.e. all except `check.performance_drop`). Change them later with **configure-webhook**.\n\n" +
-                "Example: `create-webhook account ops@dsb.no description Prod uptime + SSL`",
+                "Example: `create-webhook account ops@example.com description Prod uptime + SSL`",
             "configure-webhook" =>
                 "**configure-webhook** `<id>` `<field>` `<value>` — update one field of an existing webhook. " +
                 "The confirmation shows the value **before → after** (or reports it unchanged).\n\n" +
@@ -144,7 +144,7 @@ public static class HelpTextBuilder
                 $"Default when a webhook is created: {defaultEvents} (all except `check.performance_drop`).\n\n" +
                 "Examples:\n" +
                 "- `configure-webhook <id> description Production site health`\n" +
-                "- `configure-webhook <id> account prod-monitoring / ops@dsb.no`\n" +
+                "- `configure-webhook <id> account prod-monitoring / ops@example.com`\n" +
                 "- `configure-webhook <id> events check.down,check.up,check.ssl_expiration` (or `all`)",
             "list-webhooks" or "list-webhook" =>
                 "**list-webhooks**\n\nShow all configured webhooks — id, target, account, description, " +

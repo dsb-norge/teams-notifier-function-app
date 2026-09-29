@@ -10,7 +10,7 @@ public class WebhookListCardBuilderTests
         Source: "updown",
         TargetLabel: "personal chat",
         Description: "prod site health",
-        UpdownAccount: "ops@dsb.no",
+        UpdownAccount: "ops@example.com",
         EnabledEvents: "check.down, check.up",
         CreatedByName: "Tester",
         RelativeCreated: "just now",
@@ -23,7 +23,7 @@ public class WebhookListCardBuilderTests
 
         Assert.Contains("AdaptiveCard", json);
         Assert.Contains("abc12345", json);
-        Assert.Contains("ops@dsb.no", json);
+        Assert.Contains("ops@example.com", json);
         Assert.Contains("prod site health", json);
         Assert.Contains("check.down", json);
         // Single-webhook header, not the list header.

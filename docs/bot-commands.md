@@ -291,14 +291,14 @@ only supported source today). The default event filter is all events **except**
 **Example:**
 
 ```
-@<bot-display-name> create-webhook account ops@dsb.no description Prod uptime + SSL
+@<bot-display-name> create-webhook account ops@example.com description Prod uptime + SSL
 ```
 
 **Response (the URL is shown only once — paste it into updown.io):**
 
 ```
 ✅ Webhook a1b2c3d4 created for this channel.
-- Account: ops@dsb.no
+- Account: ops@example.com
 - Description: Prod uptime + SSL
 Paste this URL into updown.io — it is a secret and is shown only once:
 https://<function-app-name>.azurewebsites.net/api/v1/ingest/updown/<token>
@@ -331,13 +331,13 @@ Updates one setting of a webhook. `field` is one of:
 | Field | Value |
 |-------|-------|
 | `description` | Free-text description (casing preserved) |
-| `account` | updown account label surfaced on cards, e.g. `prod-monitoring / ops@dsb.no` |
+| `account` | updown account label surfaced on cards, e.g. `prod-monitoring / ops@example.com` |
 | `events` | Comma-separated event types, or `all` |
 
 **Examples:**
 
 ```
-@<bot-display-name> configure-webhook a1b2c3d4 account prod-monitoring / ops@dsb.no
+@<bot-display-name> configure-webhook a1b2c3d4 account prod-monitoring / ops@example.com
 @<bot-display-name> configure-webhook a1b2c3d4 events check.ssl_expiration,check.ssl_renewed
 ```
 
