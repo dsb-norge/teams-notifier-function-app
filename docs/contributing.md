@@ -156,7 +156,41 @@ Recorded so they are not re-litigated each scan:
 2. **All tests pass**: `dotnet test --project tests/TeamsNotificationBot.Tests/` exits with code 0.
 3. **Requirements are up to date**: Run `scripts/generate-requirements.sh` if you changed infrastructure dependencies. CI will catch staleness automatically.
 4. **No leaked secrets or identifiers**: Wrap user-controlled values in `LogSanitizer.Sanitize()` when logging (see §5); secret scanning push protection blocks pushed credentials.
-5. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
+5. **No internal names**: the diff, the commit messages and the PR text name no private repo, internal resource, internal address or person. See [This repository is public](#this-repository-is-public).
+6. **Descriptive commit messages**: Use conventional commits where possible (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
+
+### This repository is public
+
+This repository is public, and the infrastructure and operations repos that deploy it are
+private. Anyone can read what lands here, and some of it can't be taken back: release-please
+copies commit messages into `CHANGELOG.md` and the release notes, `main`'s history is not
+rewritten, and tags can't be deleted. So nothing that lands here names internal systems or
+people. That covers code, comments, docs, test fixtures, commit messages, PR titles and
+descriptions, and review replies.
+
+Don't name:
+
+- **Private repositories**, or their workflows and jobs. Write "the ops/infra repo" or "the
+  downstream deploy tooling".
+- **Internal environments and Azure resources**: subscription, resource group, Function App,
+  storage account and landing-zone names. "dev" or "the test environment" is enough.
+- **Internal addresses**: IPs, hostnames, CIDRs and email addresses. Public IPs count too: an
+  office or VPN egress address identifies the organization. Examples use the documentation
+  ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `2001:db8::/32`) or the
+  Terraform module's defaults, and `example.com` for domains and email addresses.
+- **Real Teams and Entra content**: team, channel and alias names, and tenant, app registration,
+  object and conversation IDs.
+- **People**: write "the maintainer" or "the operator", not a name.
+- **Internal documents and tickets** that a reader outside the organization can't open.
+
+Public repositories are fine to name, such as the Terraform module
+[`dsb-norge/terraform-azurerm-teams-notification-bot-lz`](https://github.com/dsb-norge/terraform-azurerm-teams-notification-bot-lz).
+
+Most leaks come from things copied out of a real environment: App Insights rows, logs, `az`
+output, a pasted test report, or a real Teams payload turned into a test fixture. Paraphrase or
+replace them before they go into a doc, a test, a commit or a PR. Secret
+scanning catches credentials, not names, so read the diff and the commit messages against this
+list before pushing.
 
 ### PR Description
 
