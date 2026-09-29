@@ -226,13 +226,13 @@ public class BotServiceStorageTests
 
         var entity = before.Value;
         Assert.True(string.IsNullOrEmpty(entity.ChannelName));
-        entity.ChannelName = "utvikling - testkanal";
+        entity.ChannelName = "platform - alerts";
         entity.LastUpdated = DateTimeOffset.UtcNow;
         await _tableClient.UpdateEntityAsync(entity, entity.ETag);
 
         var after = await _tableClient.GetEntityAsync<ConversationReferenceEntity>(
             "team-backfill", "channel-nameless");
-        Assert.Equal("utvikling - testkanal", after.Value.ChannelName);
+        Assert.Equal("platform - alerts", after.Value.ChannelName);
         Assert.Equal(originalReference, after.Value.ConversationReference);
         Assert.Equal(originalInstalledAt, after.Value.InstalledAt);
     }

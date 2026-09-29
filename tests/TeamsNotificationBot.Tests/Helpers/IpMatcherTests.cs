@@ -103,9 +103,9 @@ public class IpMatcherTests
         // F8: on Flex the ARR front end sets CLIENT-IP=<ip:port> (X-Forwarded-For is absent);
         // the port must be stripped. This is the case confirmed live on dev.
         var ip = IpMatcher.ExtractClientIp(
-            Headers(new() { ["CLIENT-IP"] = "91.229.21.100:10404", ["X-Original-For"] = "[::1]:49140" }),
+            Headers(new() { ["CLIENT-IP"] = "203.0.113.10:10404", ["X-Original-For"] = "[::1]:49140" }),
             "::1");
-        Assert.Equal("91.229.21.100", ip);
+        Assert.Equal("203.0.113.10", ip);
     }
 
     [Fact]
