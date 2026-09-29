@@ -8,9 +8,9 @@ public class ChannelNameResolverTests
     [Fact]
     public void Resolve_NonEmptyName_PassesThroughUnchanged()
     {
-        var result = ChannelNameResolver.Resolve("utvikling - testkanal", "19:abc@thread.tacv2", "19:team@thread.tacv2");
+        var result = ChannelNameResolver.Resolve("platform - alerts", "19:abc@thread.tacv2", "19:team@thread.tacv2");
 
-        Assert.Equal("utvikling - testkanal", result);
+        Assert.Equal("platform - alerts", result);
     }
 
     [Fact]

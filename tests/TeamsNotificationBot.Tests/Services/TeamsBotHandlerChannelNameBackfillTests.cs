@@ -79,7 +79,7 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
             }
         });
 
-    private void SetupEntity(string? channelName, string? teamName = "DevOps - ADM - IKT") =>
+    private void SetupEntity(string? channelName, string? teamName = "Contoso Platform") =>
         _botService.Setup(s => s.GetConversationReferenceEntityAsync(TeamGuid, ChannelId))
             .ReturnsAsync(new ConversationReferenceEntity
             {
@@ -119,7 +119,7 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
         {
             activity.ChannelData = System.Text.Json.JsonSerializer.SerializeToElement(new
             {
-                team = new { id = TeamThreadId, aadGroupId = TeamGuid, name = "DevOps - ADM - IKT" },
+                team = new { id = TeamThreadId, aadGroupId = TeamGuid, name = "Contoso Platform" },
                 channel = new { id = ChannelId }
             });
         }
@@ -160,12 +160,12 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
         SetupEntity(null);
         var turnContext = CreateListAliasesContext(
             inTeamChannel: true,
-            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"utvikling - testkanal"}]}""");
+            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"platform - alerts"}]}""");
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         _botService.Verify(s => s.TryUpdateChannelNameAsync(
-            TeamGuid, ChannelId, "utvikling - testkanal"), Times.Once);
+            TeamGuid, ChannelId, "platform - alerts"), Times.Once);
 
         // Pin the request TeamsChannelList hand-builds (URL shape + escaping) and that the
         // token from the options' IConnections actually reaches the wire.
@@ -192,7 +192,7 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
             .ReturnsAsync(new ConversationReferenceEntity
             {
                 PartitionKey = TeamGuid, RowKey = TeamThreadId,
-                ChannelName = null, TeamName = "DevOps - ADM - IKT",
+                ChannelName = null, TeamName = "Contoso Platform",
                 ConversationReference = RefJson(TeamThreadId)
             });
         var turnContext = CreateListAliasesContext(
@@ -212,7 +212,7 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
         SetupEntity("already-named");
         var turnContext = CreateListAliasesContext(
             inTeamChannel: true,
-            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"utvikling - testkanal"}]}""");
+            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"platform - alerts"}]}""");
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
@@ -234,13 +234,13 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
             .ReturnsAsync((ConversationReferenceEntity?)null);
         var turnContext = CreateListAliasesContext(
             inTeamChannel: true,
-            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"utvikling - testkanal"}]}""");
+            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"platform - alerts"}]}""");
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         Assert.NotNull(_stubHandler.LastRequestUri);
         turnContext.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => ContainsCardText(a, "#utvikling - testkanal")),
+            It.Is<IActivity>(a => ContainsCardText(a, "#platform - alerts")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -272,12 +272,12 @@ public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
             .ReturnsAsync(false);
         var turnContext = CreateListAliasesContext(
             inTeamChannel: true,
-            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"utvikling - testkanal"}]}""");
+            channelListJson: $$"""{"conversations":[{"id":"{{ChannelId}}","name":"platform - alerts"}]}""");
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         turnContext.Verify(t => t.SendActivityAsync(
-            It.Is<IActivity>(a => ContainsCardText(a, "utvikling - testkanal")),
+            It.Is<IActivity>(a => ContainsCardText(a, "platform - alerts")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
