@@ -14,9 +14,9 @@
 > Kept as the audit trail of what was found (F1–F12), why, and how it was verified live.
 
 Archived record of refinements discovered **after** the 1.6.0 release, during operational
-verification of the feature in the **dev** environment (`func-ikt-ops-teams-notifier-dev`,
-sub `ss12-IKT-DEV`). Sources: operator (Peder) manual testing in Teams, Claude's live
-Azure/App-Insights verification, and a GitHub Advanced Security / code-quality scan.
+verification of the feature in the **dev** environment. Sources: operator manual testing in
+Teams, Claude's live Azure/App-Insights verification, and a GitHub Advanced Security /
+code-quality scan.
 
 Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awaiting go) ·
 **FIXED** · **WON'T FIX** (with rationale).
@@ -47,11 +47,11 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 > **Resolved (2026-07-03, debug build on dev):** the header-dump diagnostic revealed the client IP
 > arrives in the **`CLIENT-IP`** header (ARR front end), as `ip:port` —
-> `CLIENT-IP=91.229.21.100:10404`. `X-Forwarded-For` and `X-Azure-*` are **absent** on Flex; the `::1`
+> `CLIENT-IP=203.0.113.10:10404`. `X-Forwarded-For` and `X-Azure-*` are **absent** on Flex; the `::1`
 > we kept seeing is `X-Original-For`/the loopback connection. Fix: `CLIENT-IP` is now first in
 > `IpMatcher.ClientIpHeaders` (port stripped by `ParseClientIp`); it's platform-set so it's the
-> trustworthy source for the allowlist. **Verified live:** an external POST from `91.229.21.100` now
-> logs `SourceIp=91.229.21.100` (was `::1`). Enforce-mode IP filtering and per-source-IP rate limiting
+> trustworthy source for the allowlist. **Verified live:** an external POST from `203.0.113.10` now
+> logs `SourceIp=203.0.113.10` (was `::1`). Enforce-mode IP filtering and per-source-IP rate limiting
 > are therefore now viable. Unit test added (`ExtractClientIp_UsesClientIpHeader_OnFlex`); the
 > header-dump diagnostic is kept (off by default) for future header changes.
 
@@ -62,15 +62,15 @@ Status legend: **OPEN** (needs decision/fix) · **PROPOSED** (fix designed, awai
 
 ### Observation (pre-fix, 1.6.0/1.7.0)
 Operator's ingest tests logged `SourceIp=127.0.0.1` and `SourceIp=::1`. Claude then sent a
-webhook POST **from a genuine external host** (`91.229.21.100`, via DSB egress) with a bogus
-token; App Insights recorded:
+webhook POST **from a genuine external host** (shown here as the documentation address
+`203.0.113.10`) with a bogus token; App Insights recorded:
 
 ```
 updown webhook source IP not in allowlist (log-only — not blocked). SourceIp=::1, CorrelationId=ea94…
 Rejected updown webhook: unknown token. TokenHashPrefix=1263876f, SourceIp=::1, CorrelationId=ea94…
 ```
 
-The app logged `::1` — **not** the real client IP `91.229.21.100`.
+The app logged `::1` — **not** the real client IP `203.0.113.10`.
 
 ### Root cause
 The source-IP extraction in `UpdownIngestFunction.Run` reads `X-Forwarded-For` then falls back
@@ -87,11 +87,11 @@ var sourceIp = IpMatcher.ParseClientIp(xffFirstHop)
 On **Flex Consumption + .NET isolated worker (ASP.NET Core integration)** the Functions host
 proxies the request to the worker over loopback, so `RemoteIpAddress` is `::1`/`127.0.0.1`, and
 `X-Forwarded-For` is **not present** in the worker's `HttpRequest.Headers` (if it were, we'd see
-`91.229.21.100`). So the code always falls through to the loopback address.
+`203.0.113.10`). So the code always falls through to the loopback address.
 
 ### Impact — this is the important part
 Two of the three app-layer defenses that justified opening the site to `0.0.0.0/0` at the network
-layer (see the dev-wlzs `allowed_caller_rules` rationale) are **currently ineffective**:
+layer (see the `allowed_caller_rules` rationale in the dev consumer config) are **currently ineffective**:
 
 1. **IP allowlist filtering** — in `enforce` mode every request would be seen as `::1`, which is
    never in the updown allowlist, so **all** updown webhooks would be rejected. In the current
@@ -119,7 +119,7 @@ so the endpoint is not wide open — but the defense-in-depth we designed is deg
    whether `enforce` mode is achievable, and document that the token is the primary control.
 
 ### Verified by
-Claude, external POST from `91.229.21.100` → logged `::1` (2026-07-02T12:26Z). Microsoft Learn
+Claude, external POST from `203.0.113.10` → logged `::1` (2026-07-02T12:26Z). Microsoft Learn
 "IP addresses in Azure Functions" + isolated-worker guide consulted; neither guarantees XFF to the
 worker, so empirical header discovery is required.
 
@@ -390,14 +390,14 @@ derived from conversation context; alias not part of the command).
 
 ### Observation (operator, pic 3)
 `list-webhooks` showed **5** webhooks. Four were "created by
-`AppValidation-20260626-c8687a94-9852-4fb5-93c9-f6a8c3385114`" (ids `ce791d09`, `d07505c0`,
+`AppValidation-20260626-<guid>`" (ids `ce791d09`, `d07505c0`,
 `a433d7ae`, `d75bcc23`). Operator asked: did Claude create these?
 
 ### Findings
 - **No — Claude did not create them.** Claude never issued a bot command and has no Storage
   data-plane access (confirmed 403 on the table).
-- App Insights over **30 days** shows **only two** webhook creations, both by "Schmedling, Leif
-  Peder" (`b4c8bad8` at 11:32:31Z, `5ee9199b` at 12:05:07Z). There is **no creation trace** for the
+- App Insights over **30 days** shows **only two** webhook creations, both by the
+  operator (`b4c8bad8` at 11:32:31Z, `5ee9199b` at 12:05:07Z). There is **no creation trace** for the
   four `AppValidation-…` webhooks — no `Received message from Teams: create-webhook`, no
   `Webhook '…' created …`.
 - The pre-1.6.0 dev app (1.5.1) didn't have this feature, so they can't predate today's deploy;
@@ -409,7 +409,7 @@ Follow-up evidence narrows it down:
   exist", and no `AppValidation*` service principal exists. So it's a **synthetic Bot Framework sender
   name** (`from.name`) minted by some tool; the GUID is a run-id, the `20260626` a mint date.
 - **The only data-plane writer on the dev storage is the app's own Managed Identity**
-  (`5f0ca180-…`, the sole `Storage Table Data Contributor`). So the rows were written **through the
+  (the sole `Storage Table Data Contributor`). So the rows were written **through the
   app** (`WebhookService.CreateAsync`), i.e. by `create-webhook` **bot activities** posted to
   `/api/messages` — not by a direct table write and not by Claude.
 - The missing "created" traces are consistent with **App Insights adaptive sampling** (host.json caps
@@ -571,7 +571,7 @@ along with the F3/F5/F6 command work.
 ## §M — Module hardening (terraform-azurerm-teams-notification-bot-lz)
 
 ### M1 — Validate IpSecurityRestriction description/name length  **[greenlit — see PR]**
-**Why:** the dev-wlzs apply failed at ARM (not at plan) because a caller-rule `description` exceeded
+**Why:** the dev apply failed at ARM (not at plan) because a caller-rule `description` exceeded
 Azure's **64-char** `IpSecurityRestriction.Description` limit (`ExtendedCode 01033`). Plan/validate
 didn't catch it.
 
@@ -593,7 +593,7 @@ Status: **FIXED** — PR #10 merged; released as **patch v1.1.1** (release PR #1
 
 ## Manual-verification progress (against manual-verification.md)
 
-Run against **deployed dev** (`func-ikt-ops-teams-notifier-dev`), 2026-07-02, using a throwaway
+Run against **deployed dev**, 2026-07-02, using a throwaway
 personal-chat webhook (`5f30b126`) the operator created. **Essentially complete** — only §7 (updown's
 own test-sender, operator side) and §8c live-flip (skipped — see below) remain.
 
