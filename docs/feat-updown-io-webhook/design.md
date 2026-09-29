@@ -300,7 +300,7 @@ existing `ThrottlingTrollCounters` table (works across Flex instances).
   the platform ever flips `require_authentication=true`, and it documents intent. Include it.
 - Version-bump the module; update the `CHANGELOG`/README of that repo.
 
-### 12.3 Consumer config `azure-terraform-ikt-app-platform-common-config` (reference repo — do not commit there as part of this repo's work, but the plan documents the change)
+### 12.3 Consumer config in the private ops/infra repo (reference repo — do not commit there as part of this repo's work, but the plan documents the change)
 
 - **Open site inbound**: add an `allowed_caller_rules` entry `{ name = "public-ingest",
   cidr = "0.0.0.0/0" }` (and `::/0` if IPv6 inbound is expected) so updown can reach `/ingest`.

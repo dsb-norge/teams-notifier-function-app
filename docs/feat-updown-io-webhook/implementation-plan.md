@@ -10,8 +10,8 @@ green before the next. Paths are relative to each repo's root.
 Repos:
 - **APP** — `dsb-norge/teams-notifier-function-app` (this repo)
 - **MODULE** — `dsb-norge/terraform-azurerm-teams-notification-bot-lz`
-- **CONSUMER** — `dsb-infra/azure-terraform-ikt-app-platform-common-config` (reference; changes
-  documented here, applied in that repo's own PR)
+- **CONSUMER** — the private ops/infra repo that deploys the app (reference; changes documented
+  here, applied in that repo's own PR)
 
 ## Status
 
@@ -198,7 +198,7 @@ negative-lookahead rule exclusion). Deltas are called out inline.
 
 ## Phase 8 — CONSUMER (documented; applied in that repo) — ⏳ Deferred
 
-27. **`main/main.teams-notifier.tf`** — add `allowed_caller_rules` entry
+27. **The consumer's module call** — add `allowed_caller_rules` entry
     `{ name = "public-ingest", description = "Public updown.io webhook ingress", cidr = "0.0.0.0/0" }`
     (+ `::/0` if needed); bump module `version`. No KV, no app settings, no updown IP rules.
 28. Apply Terraform (updates auth excludedPaths + inbound) **before** the app deploy — the infra
