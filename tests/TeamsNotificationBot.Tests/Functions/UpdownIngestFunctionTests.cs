@@ -334,7 +334,7 @@ public class UpdownIngestFunctionTests
         logger.Verify(l => l.Log(
             LogLevel.Debug,
             It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("teapot")),
+            It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("teapot")),
             It.IsAny<Exception?>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.AtLeastOnce);
