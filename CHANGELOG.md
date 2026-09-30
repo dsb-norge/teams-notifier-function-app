@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.2...teams-notifier-function-app-v2.0.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** Bump github/codeql-action/upload-sarif from 4.38.1 to 4.38.2 ([0b56170](https://github.com/dsb-norge/teams-notifier-function-app/commit/0b5617064d56e0ec39ea360e2ceefc6329f66ab7))
+* **deps:** Bump the testing group with 1 update ([0188dc2](https://github.com/dsb-norge/teams-notifier-function-app/commit/0188dc26d33fd067e49dfd893f3d6d9e2029e418))
+* **deps:** raise SDK floor to 10.0.112 for patched runtime pack ([9767aea](https://github.com/dsb-norge/teams-notifier-function-app/commit/9767aea48a418a57b53bbd74711363514324397a))
+
 ## [2.0.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.1...teams-notifier-function-app-v2.0.2) (2026-09-25)
 
 
