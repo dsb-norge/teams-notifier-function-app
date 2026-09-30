@@ -8,7 +8,7 @@ This guide covers running the Teams Notification Bot function app on your local 
 
 | Tool | Install |
 |------|---------|
-| .NET 10 SDK | `dotnet --version` should show `10.x` |
+| .NET 10 SDK | At or above the `global.json` floor. `dotnet --list-sdks` should include one; an older SDK fails with *"A compatible .NET SDK was not found"* |
 | Azure Functions Core Tools v4 | `func --version` should show `4.x` |
 | Azurite | `npm install -g azurite` |
 | jq | `sudo apt install jq` (needed for online mode) |
