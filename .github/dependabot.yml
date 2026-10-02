@@ -45,3 +45,20 @@ updates:
     commit-message:
       prefix: "fix(deps)"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    # The Teams manifest validator that reusable-deploy.yml and CI install with
+    # --require-hashes: requirements.in, compiled by pip-compile into requirements.txt.
+    # Dependabot re-runs pip-compile with the options in that file's header.
+    directory: /scripts/deploy
+    schedule:
+      interval: weekly
+      day: monday
+    # The deploy workflow ships with each release, so a bump is a patch release.
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      deploy-tooling-python:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5

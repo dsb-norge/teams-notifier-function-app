@@ -344,7 +344,7 @@ release-please's own `versioning: prerelease` mode was considered and rejected: 
 
 ## 9. Dependency Management
 
-[Dependabot](https://docs.github.com/en/code-security/dependabot) is configured to scan for outdated NuGet packages and GitHub Actions versions weekly (Mondays). The day-to-day rules — pin formats, NuGet bump rules, squash-prefix conventions, post-bump validation, and known pitfalls — live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). This section documents the longer-lived context that doesn't belong in agent instructions.
+[Dependabot](https://docs.github.com/en/code-security/dependabot) is configured to scan for outdated NuGet packages, GitHub Actions versions and the deploy tooling's Python packages weekly (Mondays). Tools pinned by version and checksum are bumped by hand; see [Pinned tools](#pinned-tools). The day-to-day rules — pin formats, NuGet bump rules, squash-prefix conventions, post-bump validation, and known pitfalls — live in [`CLAUDE.md`](../CLAUDE.md#bumping-dependencies). This section documents the longer-lived context that doesn't belong in agent instructions.
 
 ### Dependency groups
 
@@ -356,6 +356,43 @@ Related packages are grouped so they update together in a single PR:
 | azure-functions | `Microsoft.Azure.Functions.*`, `Microsoft.Azure.Core.Extensions` |
 | azure-sdk | `Azure.*` |
 | testing | `xunit*` (includes `xunit.v3.mtp-v2`), `Microsoft.NET.Test.*`, `coverlet.*`, `Moq`, `GitHubActionsTestLogger` |
+| deploy-tooling-python | every package in `scripts/deploy/requirements.txt` (jsonschema and its dependencies) |
+
+### Pinned tools
+
+Everything a workflow downloads is pinned to what executes, not just to a name that upstream can re-point:
+
+| What | Where | Pinned as | Bumped by |
+|------|-------|-----------|-----------|
+| GitHub Actions | `uses:` lines in `.github/workflows/` and `.github/actions/` | commit SHA + `# vX date` comment | Dependabot (fix the comment by hand) |
+| Azure Functions Core Tools (deploy) | `FUNC_CLI_VERSION` and `FUNC_CLI_SHA256` in `reusable-deploy.yml` | version + SHA-256 of the linux-x64 ZIP | hand |
+| jsonschema and its dependencies (deploy and CI) | `scripts/deploy/requirements.in` → `requirements.txt` | exact versions + hashes, installed with `--require-hashes --only-binary :all:` | Dependabot (`pip`) |
+| actionlint, zizmor, shfmt (CI) | `env:` of their `ci.yml` jobs | version + SHA-256 | hand |
+| bats-core (CI) | `BATS_CORE_REF` in `ci.yml` | `tag@commit`, verified by git | hand |
+| shellcheck, yq, jq, python3 (CI) | the `ubuntu-latest` image | not pinned | the runner image |
+
+**Azure Functions Core Tools.** Each release has `Azure.Functions.Cli.linux-x64.<version>.zip` and a `.sha2` file beside it. Take the checksum from upstream, confirm GitHub's digest agrees, then change both values in one commit:
+
+```bash
+V=4.15.2
+gh release download "$V" --repo Azure/azure-functions-core-tools \
+  --pattern "Azure.Functions.Cli.linux-x64.$V.zip.sha2" --output -
+gh release view "$V" --repo Azure/azure-functions-core-tools \
+  --json assets --jq ".assets[] | select(.name == \"Azure.Functions.Cli.linux-x64.$V.zip\") | .digest"
+```
+
+The cache key carries both values, so the first deploy after a bump downloads the new ZIP. Before the deploy workflow pinned it, the latest release was resolved at run time: a new upstream release went to production unreviewed, and a v5 major is already in preview.
+
+**jsonschema.** Edit the pin in `requirements.in` and recompile, or let Dependabot do both. pip-tools is not a dependency of the repository; run it from a throwaway venv, with `click` below 8.2, whose option handling makes pip-compile write a bogus `--no-index` into the file's header, which Dependabot would then pass back to pip-compile:
+
+```bash
+python3 -m venv /tmp/pip-tools && /tmp/pip-tools/bin/pip install pip-tools 'click<8.2'
+cd scripts/deploy && /tmp/pip-tools/bin/pip-compile --generate-hashes --allow-unsafe --strip-extras requirements.in
+```
+
+Then run `bats tests/deploy/validate-manifest-schema.bats`. jsonschema 4.17 and later check `"format"` values when checking a schema, and the Teams schema writes some patterns in ECMAScript syntax (`\p{L}`) that Python's `re` rejects, so `validate-manifest-schema.py` checks the schema without a format checker. The unpinned `pip install jsonschema` it replaced only worked because it resolved to the older jsonschema the runner image ships.
+
+**actionlint, zizmor, shfmt.** Change the version and the checksum together; the checksum is GitHub's digest of the release asset (`gh release view <tag> --repo <owner>/<repo> --json assets`). Then run the same tool at the new version locally before pushing: a new zizmor release can bring new audits, and a new actionlint release is the moment to try deleting `.github/actionlint.yaml`.
 
 ### Known version constraints — revisit checklist
 
