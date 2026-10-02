@@ -20,6 +20,10 @@ The deployment consists of three components:
 
 Each step depends on the previous one. Follow the steps in order.
 
+From GitHub Actions, steps 3 and 4 (and publishing the package for Step 5) are
+one call to this repository's reusable workflow; see
+[Deploy with the reusable workflow](#deploy-with-the-reusable-workflow).
+
 ---
 
 ## Step 1: Deploy Infrastructure
@@ -113,13 +117,18 @@ az ad app federated-credential list --id "<bot-app-id>" --query '[].name'
 
 ## Step 3: Deploy Function App
 
-There are two ways to deploy the function app: from a published release
+There are two ways to deploy the function app by hand: from a published release
 (recommended) or from source. Choose one.
+
+> **Deploying from GitHub Actions?** Call this repository's reusable workflow
+> instead. It deploys a release, gates it on your checked-in
+> `app-requirements.json`, and publishes your Teams app package (Step 4) as well.
+> See [Deploy with the reusable workflow](#deploy-with-the-reusable-workflow).
 
 ### Option A: Deploy from release artifacts (recommended)
 
-Each GitHub Release includes a pre-built ZIP ready for deployment. This is the
-intended deployment method for production and CI/CD pipelines.
+Each GitHub Release includes a pre-built ZIP ready for deployment. These are the
+steps the reusable workflow automates.
 
 **1. Download the release artifacts:**
 
@@ -413,6 +422,264 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$HOST/api/v1/notify/nonexisten
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"message": "Bad alias", "format": "text"}'
 ```
+
+---
+
+## Deploy with the reusable workflow
+
+[`.github/workflows/reusable-deploy.yml`](../.github/workflows/reusable-deploy.yml)
+deploys one app release to one Function App, from your repository's GitHub
+Actions. It is `workflow_call` only: your workflow decides when to deploy and
+which version. It runs four jobs:
+
+1. **preflight** (GitHub-hosted runner, no Azure access) resolves the release,
+   waits for its assets, verifies their build provenance, and checks your
+   checked-in `app-requirements.json` against the release (see
+   [Preflight checks](#preflight-checks)). When asked to, it reads
+   `/api/health` and skips the deploy if there is nothing to deploy. A failure
+   here stops the run before anything is published.
+2. **deploy** (your runner, your GitHub environment) downloads the release ZIP,
+   accepts it only if it is the file preflight verified, installs a pinned
+   Azure Functions Core Tools, logs in to Azure with OIDC and runs
+   `func azure functionapp publish --no-build --dotnet-isolated`.
+3. **package-manifest** (GitHub-hosted, read-only token) builds your Teams app
+   package (Step 4) with the release's `create-teams-app-package.sh` and your
+   branding, and validates it against the Teams manifest schema.
+4. **publish-package** (GitHub-hosted, the only job that can write to your
+   repository) takes just the package ZIP and publishes it as a release **in your
+   repository**, named `teams-app-<instance_name>-v<version>-<shorthash>` after
+   the ZIP's own content. It runs no code from the release: the generator in
+   job 3 is release code, and a pre-release may be built from an unreviewed
+   branch. A new release appears only when the package content changes, and
+   only then does a Teams Administrator need to upload it (Step 5).
+
+The package is built and published after a successful deploy, and also when
+`skip_if_current` found the target version already running, so a branding-only
+change in your repository, or a package build that failed after a good deploy,
+is picked up by your next run. Not when `/api/health` couldn't be read, since a
+package for a version nobody confirmed is running would be wrong, nor after a
+failed or cancelled deploy.
+
+The workflow is released with the app. It reads its own version from this
+repository's `.release-please-manifest.json` at the commit you call it at, so at
+the tag `teams-notifier-function-app-vX.Y.Z` it deploys release `X.Y.Z` unless
+you pass another `tag`: one `uses:` ref names both the deploy logic and the app
+version. Pinning a commit SHA works the same way. Workflow changes ship as
+ordinary app releases; you get them when you move your ref. Tags in this
+repository can't be moved or deleted.
+
+### Pinned caller
+
+The version you run is the one your `uses:` ref names, so every upgrade or
+rollback is a reviewed change in your repository. This caller deploys after each
+successful Terraform run on `main`, but only when `/api/health` reports a
+different version, and redeploys the pinned release on demand:
+
+```yaml
+name: Deploy Teams Notifier
+
+on:
+  workflow_run:
+    workflows: ["Terraform CI/CD"] # the workflow that applies the module
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # redeploys the pinned release, whatever is running
+
+permissions:
+  id-token: write # azure/login OIDC in the called workflow
+  contents: write # gh release create in publish-package
+
+jobs:
+  deploy:
+    # Infrastructure first: never deploy code whose infrastructure failed to apply.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    uses: dsb-norge/teams-notifier-function-app/.github/workflows/reusable-deploy.yml@teams-notifier-function-app-vX.Y.Z
+    with:
+      skip_if_current: ${{ github.event_name == 'workflow_run' }}
+      app_requirements_file: infra/teams-notifier/app-requirements.json
+      teams_app_package_dir: infra/teams-notifier/teams-app-package
+      instance_name: prod
+      function_app_name: func-example-teams-notifier
+      azure_environment: teams-notifier-deploy
+      azure_tenant_id: 00000000-0000-0000-0000-000000000000
+      azure_subscription_id: 00000000-0000-0000-0000-000000000000
+      azure_client_id: 00000000-0000-0000-0000-000000000000 # module output deploy_uami_client_id
+      runner: my-vnet-runner
+      concurrency_group: deploy-teams-notifier
+      bot_app_id: 00000000-0000-0000-0000-000000000000
+      teams_app_id: 00000000-0000-0000-0000-000000000000
+```
+
+`app_requirements_file` must be the `app-requirements.json` of the release the
+ref names, the same file your Terraform module call reads. The two move together;
+see [Upgrade a pinned caller](#upgrade-a-pinned-caller).
+
+Passing the Azure ids as inputs is the recommended path: they are identifiers,
+not secrets, and this path depends on no secret at all. The called workflow gets
+its own `GITHUB_TOKEN`. The deploy job's `environment:` resolves in your
+repository, so the OIDC subject is
+`repo:<your-org>/<your-repo>:environment:<azure_environment>`, and GitHub
+creates that environment on first use. That is the subject your module's
+`deploy_github_actions_from` federated credential must match (see
+[GitHub OIDC subject-claim formats](#github-oidc-subject-claim-formats)).
+
+### Autopilot caller
+
+A caller that picks the version itself passes it as `tag`. This one deploys the
+latest release whenever it is not already running, for example on a test
+instance that should always run the newest release:
+
+```yaml
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --repo dsb-norge/teams-notifier-function-app --json tagName --jq .tagName)
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+
+  deploy:
+    needs: latest
+    uses: dsb-norge/teams-notifier-function-app/.github/workflows/reusable-deploy.yml@teams-notifier-function-app-vX.Y.Z
+    with:
+      tag: ${{ needs.latest.outputs.tag }}
+      skip_if_current: ${{ github.event_name != 'workflow_dispatch' }}
+      # ...the same inputs as the pinned caller
+```
+
+With an explicit `tag`, the [version check](#preflight-checks) is skipped and
+only the hash gate applies: your `app-requirements.json` needs the same
+infrastructure hash as the release, not the same version. `gh release view`
+without a tag returns the release marked Latest, which is never a pre-release.
+Keep the `uses:` ref on a release tag and move it now and then to pick up
+workflow fixes; it does not have to match the `tag` you deploy.
+
+To deploy a **pre-release**, pass its tag, e.g.
+`teams-notifier-function-app-v2.1.1-pre.4`. A pre-release doesn't bump
+`.release-please-manifest.json`, so calling the workflow at a pre-release tag (or
+a branch) without `tag` deploys the last full release.
+
+### Inputs
+
+| Input | Required | Default | Meaning |
+|-------|----------|---------|---------|
+| `tag` | no | `""` | The app release tag to deploy. Empty deploys the workflow's own release and turns on the version check. |
+| `skip_if_current` | no | `false` | When `true`, preflight reads `https://<function_app_name>.azurewebsites.net/api/health` (three tries). If it reports the target version, nothing is deployed, but the Teams package is still built and published if its content changed. If it can't be read, nothing is deployed or packaged, with a warning: the workflow never deploys blind. A first deploy, with no code running yet, therefore needs `false`. |
+| `app_requirements_file` | yes | | Path in your repository to the checked-in `app-requirements.json`. |
+| `teams_app_package_dir` | yes | | Path in your repository to the directory with `app-metadata.json`, `color.png` and `outline.png` (Step 4). |
+| `instance_name` | yes | | Names the Teams package release, `teams-app-<instance_name>-v<version>-<shorthash>`. Lower-case letters and digits, optionally separated by single hyphens. |
+| `function_app_name` | yes | | The Function App to publish to. |
+| `azure_environment` | yes | | GitHub environment of the deploy job. It scopes the OIDC subject. GitHub creates it on first use. |
+| `azure_tenant_id`, `azure_subscription_id`, `azure_client_id` | no | `""` | The ids `azure/login` uses. Passing them is the recommended path. Each one, when empty, falls back to the secret of the same upper-case name (`AZURE_TENANT_ID` and so on) in the deploy job's environment, `azure_environment`: per GitHub's documentation, a called job that sets `environment:` uses that environment's secrets. If an id is still missing, the deploy job's first step fails with a message naming it. |
+| `runner` | yes | | Label of the runner for the deploy job. It needs network access to the Function App's SCM endpoint. |
+| `concurrency_group` | yes | | Serialises deploys to one instance. |
+| `bot_app_id` | yes | | Client id of the bot's Entra app registration (`manifest.bots[0].botId`). |
+| `teams_app_id` | yes | | Teams catalog id of the instance's app package (`manifest.id`). Fixed for the life of the instance: Teams treats a different id as a different app and every install has to be redone. |
+| `upgrade_doc_url` | no | [Upgrade a pinned caller](#upgrade-a-pinned-caller) | Linked from the job summary when a preflight check fails. Point it at your own runbook if you have one. |
+
+### Preflight checks
+
+- **Version check**, only when `tag` is empty: `notifier_application_version`
+  in `app_requirements_file` must equal the workflow's own release. It fails when
+  the `uses:` ref was moved without replacing the file, or the file was replaced
+  without moving the ref.
+- **Infrastructure hash gate**, always: the file's
+  `infrastructure_requirements_unique_hash` must equal the release's. A different
+  hash means the release needs infrastructure your Terraform hasn't applied
+  (changed EasyAuth excluded paths, app settings, queues and so on). The
+  infrastructure hash leaves the version out, so a pre-release passes the gate
+  of the release it came from.
+- **Provenance**: the release's `app-requirements.json` and ZIP must carry a
+  valid build provenance attestation from this repository, for the commit the
+  tag points at, built on a GitHub-hosted runner. An older release's file
+  uploaded under a newer tag is refused. The later jobs accept only these exact
+  files, by SHA-256. Releases before 1.3.1 were not attested and can't be
+  deployed with this workflow.
+
+A failed check explains the fix in the job summary and links `upgrade_doc_url`.
+
+### Upgrade a pinned caller
+
+An upgrade moves the app and its deploy workflow together, in one pull request
+with two changes for the same release tag:
+
+1. Move the `uses:` ref to `@teams-notifier-function-app-vX.Y.Z`.
+2. Download that release's `app-requirements.json` and replace your
+   `app_requirements_file` with it **verbatim**:
+
+   ```bash
+   gh release download teams-notifier-function-app-vX.Y.Z \
+     --repo dsb-norge/teams-notifier-function-app \
+     --pattern app-requirements.json --output <app_requirements_file> --clobber
+   ```
+
+   Terraform reads the whole file, and preflight checks both its version and its
+   hash, so changing only the version field leaves the infrastructure out of step
+   with the app.
+
+Then:
+
+3. Let your Terraform plan run on the pull request. If the hash changed, the plan
+   shows the infrastructure the release needs. If it didn't, the plan has no
+   changes.
+4. Merge. Terraform applies, then the deploy publishes the release the ref now
+   names. If the ref and the file are from different releases, preflight fails
+   before anything is published.
+5. Check that `curl -fsS https://<function-app-hostname>/api/health` reports the
+   new version.
+6. If a new `teams-app-<instance_name>-…` release was published in your
+   repository, a Teams Administrator uploads it as an update (Step 5.1).
+
+To **roll back**, revert the upgrade pull request: the older ref, the older file
+and, if the hash had changed, the older infrastructure come back together, and
+the next deploy publishes the older release. A dispatch only ever redeploys what
+is pinned.
+
+### Switching from a copy of an older deploy workflow
+
+If your repository runs its own copy of an earlier reusable deploy workflow
+(inputs `env_dir`, `tag`, `function_app_name`, `azure_environment`, `runner`,
+`concurrency_group`, `bot_app_id`, `teams_app_id`), only your caller changes:
+
+- Point `uses:` at this workflow, at a release tag.
+- Replace `env_dir` with `app_requirements_file` (the requirements file in that
+  directory) and `teams_app_package_dir` (its `teams-app-package` directory).
+- Set `instance_name` to the name your existing `teams-app-<name>-v…` releases
+  use, so new package releases keep the same names and an unchanged package is
+  not published again.
+- Keep passing `tag` if your caller picks the version: only the hash gate
+  applies then, as before.
+- Pass the Azure ids as the `azure_*` inputs, the recommended path, or leave
+  them empty to fall back to the `AZURE_*` secrets in your deploy environment.
+  A caller that passes `secrets: inherit` today can keep it while it switches;
+  its first run proves the fallback, and a missing id fails the deploy job's
+  first step with a message naming it.
+- Delete your copy of the workflow.
+
+### What the deploy runner needs
+
+- Linux on x64 (the pinned Azure Functions Core Tools build is linux-x64), with
+  `bash`, `git`, `gh`, `az`, `unzip` and `sha256sum`. Provenance is verified in
+  preflight, on a GitHub-hosted runner, so the deploy runner's `gh` doesn't need
+  `gh attestation`.
+- Egress to `github.com` and its release-asset downloads (the app ZIP and the
+  Functions Core Tools ZIP come from GitHub releases, not npm), Microsoft Entra
+  ID for the OIDC login, and the Function App's SCM endpoint.
+- GitHub.com: the workflow checks its own scripts out at `job.workflow_sha`,
+  which GitHub Enterprise Server does not provide.
+
+Everything the workflow downloads is pinned: actions by commit SHA, Azure
+Functions Core Tools by version and SHA-256 (checked on every run, including
+from the cache), and the manifest validator's Python packages by version and
+hash. The ~600 MB Functions Core Tools ZIP is cached in your repository's
+Actions cache.
 
 ---
 

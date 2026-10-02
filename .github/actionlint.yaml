@@ -1,0 +1,12 @@
+# actionlint configuration, found automatically when actionlint runs from the repository root.
+#
+# One suppression, and it has an expiry condition: actionlint v1.7.12 predates the job context's
+# workflow_* properties (GitHub changelog, 2026-09-03) and reports them as undefined.
+# reusable-deploy.yml reads job.workflow_repository and job.workflow_sha to check out its own
+# scripts at its own commit. Scoped to that file and those two properties, so any other
+# expression error there still fails. Delete this file once the pinned actionlint knows them;
+# a bump of ACTIONLINT_VERSION in ci.yml is the moment to try.
+paths:
+  .github/workflows/reusable-deploy.yml:
+    ignore:
+      - 'property "workflow_(repository|sha)" is not defined in object type'

@@ -1,0 +1,4 @@
+# The Teams manifest validator used by validate-manifest-schema.sh.
+# Regenerate requirements.txt after changing this file (see docs/contributing.md §9):
+#   pip-compile --generate-hashes --allow-unsafe --strip-extras requirements.in
+jsonschema==4.26.0

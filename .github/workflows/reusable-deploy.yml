@@ -1,0 +1,484 @@
+name: Deploy Teams Notifier (reusable)
+
+# Deploys one release of this app to one Azure Function App, and publishes that instance's Teams
+# app package as a release in the CALLER's repository. workflow_call only: when to deploy, and
+# which version, is up to the caller. The consumer guide is docs/deployment-guide.md, "Deploy
+# with the reusable workflow".
+#
+# Jobs:
+#   preflight         ubuntu-latest, no Azure. Resolves the release, waits for its assets, runs
+#                     the version check and the infrastructure hash gate, and decides whether
+#                     skip_if_current leaves anything to deploy. Fails before anything is
+#                     published.
+#   deploy            inputs.runner. Takes the ZIP preflight verified, installs the pinned
+#                     Azure Functions Core Tools, publishes.
+#   package-manifest  ubuntu-latest, read-only. Builds the Teams app package with the release's
+#                     generator and the caller's branding, and validates it against the Teams
+#                     schema. Runs after a deploy, and when the app already runs the target
+#                     version. The generator is release code, possibly a pre-release built from
+#                     an unreviewed branch, so this job never holds a write token.
+#   publish-package   ubuntu-latest, contents: write. Runs no release code: it takes only the
+#                     ZIP, names it from its own content, and releases it in the caller's
+#                     repository unless that content already is.
+#
+# The shell logic lives in scripts/deploy/ and is unit-tested in tests/deploy/. Every job checks
+# those scripts out at job.workflow_sha, the commit this file was read from, so the workflow and
+# its scripts come from the same commit whether it was called by a release tag, a pre-release
+# tag or a branch. preflight reads the commit once, on a GitHub-hosted runner, and hands it on.
+#
+# The workflow's own version is the "." version in .release-please-manifest.json at that same
+# commit. At the tag teams-notifier-function-app-vX.Y.Z it says X.Y.Z, so a caller pinned to
+# that tag that passes no `tag` deploys exactly that release. The version is read, never
+# written into this file: release-please runs with GITHUB_TOKEN, which can't update anything
+# under .github/workflows/.
+#
+# preflight verifies each release asset's build provenance against the tag's commit, on a
+# GitHub-hosted runner, and the later jobs only accept the same file by its SHA-256.
+#
+# Nothing from inputs is expanded inside a run: script. Values reach shell through env only.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: >-
+          App release tag to deploy, e.g. teams-notifier-function-app-v2.1.0. Empty (the default)
+          deploys this workflow's own release, and also checks that app_requirements_file comes
+          from it. Callers that pick the version themselves pass it.
+        type: string
+        required: false
+        default: ""
+      skip_if_current:
+        description: >-
+          When true, read https://<function_app_name>.azurewebsites.net/api/health first. If it
+          reports the target version, or can't be read, nothing is deployed.
+        type: boolean
+        required: false
+        default: false
+      app_requirements_file:
+        description: Path, in the caller repository, to the checked-in app-requirements.json.
+        type: string
+        required: true
+      teams_app_package_dir:
+        description: Path, in the caller repository, to app-metadata.json, color.png and outline.png.
+        type: string
+        required: true
+      instance_name:
+        description: >-
+          Names the Teams package release, teams-app-<instance_name>-v<version>-<shorthash>.
+          Lower-case letters and digits, optionally separated by single hyphens.
+        type: string
+        required: true
+      function_app_name:
+        description: The function app to publish to.
+        type: string
+        required: true
+      azure_environment:
+        description: >-
+          GitHub environment of the deploy job, which scopes the OIDC subject. GitHub creates it
+          in the caller repository on first use.
+        type: string
+        required: true
+      azure_tenant_id:
+        description: Tenant id for azure/login. Empty falls back to the AZURE_TENANT_ID environment secret.
+        type: string
+        required: false
+        default: ""
+      azure_subscription_id:
+        description: Subscription id for azure/login. Empty falls back to the AZURE_SUBSCRIPTION_ID environment secret.
+        type: string
+        required: false
+        default: ""
+      azure_client_id:
+        description: Client id of the deploy identity. Empty falls back to the AZURE_CLIENT_ID environment secret.
+        type: string
+        required: false
+        default: ""
+      runner:
+        description: Label of a runner that can reach the function app's SCM endpoint.
+        type: string
+        required: true
+      concurrency_group:
+        description: Concurrency group that serialises deploys to this instance.
+        type: string
+        required: true
+      bot_app_id:
+        description: Client id of the bot's Entra app registration (manifest.bots[0].botId).
+        type: string
+        required: true
+      teams_app_id:
+        description: >-
+          Teams catalog id of this instance's app package (manifest.id). Fixed for the life of the
+          instance: Teams treats a different id as a different app.
+        type: string
+        required: true
+      upgrade_doc_url:
+        description: Linked from the job summary when a preflight gate fails.
+        type: string
+        required: false
+        default: https://github.com/dsb-norge/teams-notifier-function-app/blob/main/docs/deployment-guide.md#upgrade-a-pinned-caller
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  APP_REPO: dsb-norge/teams-notifier-function-app
+  # Where each job checks out this workflow's scripts, and the app's own source at the target tag.
+  TOOLING_DIR: .teams-notifier-deploy
+  APP_SOURCE_DIR: .teams-notifier-app
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkouts, and reading the app's releases
+    outputs:
+      tooling_repository: ${{ steps.tooling.outputs.repository }}
+      tooling_sha: ${{ steps.tooling.outputs.sha }}
+      tag: ${{ steps.target.outputs.tag }}
+      version: ${{ steps.target.outputs.version }}
+      zip: ${{ steps.target.outputs.zip }}
+      zip_sha256: ${{ steps.release-zip.outputs.sha256 }}
+      requirements_sha256: ${{ steps.release-requirements.outputs.sha256 }}
+      deploy: ${{ steps.health.outputs.deploy }}
+      reason: ${{ steps.health.outputs.reason }}
+    steps:
+      - name: Find this workflow's commit
+        id: tooling
+        env:
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          # An empty ref would make actions/checkout take the default branch, i.e. scripts from a
+          # different commit than this file. Refuse instead.
+          if [[ ! "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ || ! "$WORKFLOW_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::job.workflow_sha and job.workflow_repository are not available. This workflow needs GitHub.com; GitHub Enterprise Server does not provide them."
+            exit 1
+          fi
+          {
+            echo "repository=$WORKFLOW_REPOSITORY"
+            echo "sha=$WORKFLOW_SHA"
+          } >>"$GITHUB_OUTPUT"
+          echo "Deploy tooling: $WORKFLOW_REPOSITORY@$WORKFLOW_SHA"
+
+      - name: Check out the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
+
+      - name: Check out the deploy scripts and the release-please manifest
+        # The manifest at this commit is the workflow's own version.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ steps.tooling.outputs.repository }}
+          ref: ${{ steps.tooling.outputs.sha }}
+          path: ${{ env.TOOLING_DIR }}
+          sparse-checkout: |
+            /scripts/deploy/
+            /.release-please-manifest.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Resolve the release
+        id: target
+        env:
+          RELEASE_PLEASE_MANIFEST: ${{ env.TOOLING_DIR }}/.release-please-manifest.json
+          INPUT_TAG: ${{ inputs.tag }}
+        run: bash "$TOOLING_DIR/scripts/deploy/resolve-target.sh"
+
+      - name: Wait for the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.target.outputs.tag }}
+          ASSETS: ${{ steps.target.outputs.zip }} app-requirements.json
+        run: bash "$TOOLING_DIR/scripts/deploy/wait-for-assets.sh"
+
+      - name: Download the release's app-requirements.json
+        id: release-requirements
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.target.outputs.tag }}
+          ASSET: app-requirements.json
+          DEST_DIR: ${{ runner.temp }}/release
+        run: bash "$TOOLING_DIR/scripts/deploy/download-verified-asset.sh"
+
+      - name: Version check and infrastructure hash gate
+        env:
+          REQUIREMENTS_FILE: ${{ inputs.app_requirements_file }}
+          RELEASE_REQUIREMENTS_FILE: ${{ steps.release-requirements.outputs.path }}
+          TAG: ${{ steps.target.outputs.tag }}
+          WORKFLOW_VERSION: ${{ steps.target.outputs.workflow_version }}
+          VERSION_CHECK: ${{ steps.target.outputs.version_check }}
+          UPGRADE_DOC_URL: ${{ inputs.upgrade_doc_url }}
+        run: bash "$TOOLING_DIR/scripts/deploy/check-requirements.sh"
+
+      - name: Download and verify the release ZIP
+        # Here, on a GitHub-hosted runner, rather than in deploy: the deploy runner then needs
+        # no gh attestation support, and only accepts this exact file by its SHA-256.
+        id: release-zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.target.outputs.tag }}
+          ASSET: ${{ steps.target.outputs.zip }}
+          DEST_DIR: ${{ runner.temp }}/release
+        run: bash "$TOOLING_DIR/scripts/deploy/download-verified-asset.sh"
+
+      - name: Decide whether to deploy
+        id: health
+        env:
+          SKIP_IF_CURRENT: ${{ inputs.skip_if_current }}
+          FUNCTION_APP_NAME: ${{ inputs.function_app_name }}
+          TARGET_VERSION: ${{ steps.target.outputs.version }}
+        run: bash "$TOOLING_DIR/scripts/deploy/check-health.sh"
+
+  deploy:
+    name: Deploy
+    needs: preflight
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.azure_environment }}
+    permissions:
+      contents: read # checkouts, and reading the app's releases
+      id-token: write # azure/login OIDC
+    concurrency:
+      group: ${{ inputs.concurrency_group }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+      FUNCTION_APP_NAME: ${{ inputs.function_app_name }}
+      # Azure Functions Core Tools. The SHA-256 is that of the release asset
+      # Azure.Functions.Cli.linux-x64.<version>.zip, and matches the .sha2 file published next to
+      # it. Bump both together; docs/contributing.md section 9 has the procedure.
+      FUNC_CLI_VERSION: "4.15.2"
+      FUNC_CLI_SHA256: 291f113442031e6c9c785cafdbf0045172c5df0298943401834b80b02ace981e
+    steps:
+      - name: Check out the deploy scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ needs.preflight.outputs.tooling_repository }}
+          ref: ${{ needs.preflight.outputs.tooling_sha }}
+          path: ${{ env.TOOLING_DIR }}
+          sparse-checkout: scripts/deploy
+          persist-credentials: false
+
+      - name: Check out the release's project file
+        # The stub .csproj takes its target framework from the real one at the release's tag.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ needs.preflight.outputs.tag }}
+          path: ${{ env.APP_SOURCE_DIR }}
+          sparse-checkout: src/TeamsNotificationBot/TeamsNotificationBot.csproj
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check the Azure ids
+        # Before the downloads, so a missing id fails in seconds. Each id is the input when
+        # given, else the AZURE_* secret of the same upper-case name in this job's environment
+        # (a called job that sets environment: uses that environment's secrets). Passing the
+        # inputs is the recommended path: it depends on no secret at all.
+        env:
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id || secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id || secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id || secrets.AZURE_CLIENT_ID }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_CLIENT_ID; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::No value for ${missing[*]}. Pass the matching azure_* input, or set the secret in the ${AZURE_ENVIRONMENT} environment."
+            exit 1
+          fi
+
+      - name: Download the release ZIP preflight verified
+        id: zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ needs.preflight.outputs.zip }}
+          DEST_DIR: ${{ runner.temp }}/release
+          EXPECTED_SHA256: ${{ needs.preflight.outputs.zip_sha256 }}
+        run: bash "$TOOLING_DIR/scripts/deploy/download-asset-by-digest.sh"
+
+      - name: Prepare the deployment package
+        env:
+          ZIP_PATH: ${{ steps.zip.outputs.path }}
+          CSPROJ_PATH: ${{ env.APP_SOURCE_DIR }}/src/TeamsNotificationBot/TeamsNotificationBot.csproj
+          PUBLISH_DIR: ${{ runner.temp }}/publish
+        run: bash "$TOOLING_DIR/scripts/deploy/prepare-package.sh"
+
+      - name: Restore the Azure Functions Core Tools download
+        # Holds the ~600 MB ZIP, not the unpacked CLI: install-func-cli.sh checks the ZIP against
+        # the pinned SHA-256 on every run, so a cache entry is never trusted unchecked.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 2026-06-23
+        with:
+          path: ${{ runner.temp }}/func-cli-download
+          key: func-cli-linux-x64-${{ env.FUNC_CLI_VERSION }}-${{ env.FUNC_CLI_SHA256 }}
+
+      - name: Install Azure Functions Core Tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FUNC_CLI_CACHE_DIR: ${{ runner.temp }}/func-cli-download
+          FUNC_CLI_INSTALL_DIR: ${{ runner.temp }}/func-cli
+        run: bash "$TOOLING_DIR/scripts/deploy/install-func-cli.sh"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0 2026-09-10
+        with:
+          tenant-id: ${{ inputs.azure_tenant_id || secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ inputs.azure_subscription_id || secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ inputs.azure_client_id || secrets.AZURE_CLIENT_ID }}
+
+      - name: Publish to the function app
+        working-directory: ${{ runner.temp }}/publish
+        run: func azure functionapp publish "$FUNCTION_APP_NAME" --no-build --dotnet-isolated
+
+      - name: Step summary
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.azure_environment }}
+        run: |
+          {
+            echo "## Deployed"
+            echo ""
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Version:** \`$VERSION\`"
+            echo "- **Environment:** \`$ENVIRONMENT_NAME\`"
+            echo "- **Function app:** \`$FUNCTION_APP_NAME\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  package-manifest:
+    name: Package Teams app manifest
+    needs: [preflight, deploy]
+    # After a successful deploy, and also when preflight skipped the deploy because
+    # /api/health already reports the target version: a branding-only change, or a package
+    # build that failed after a good deploy, is then picked up by the next run instead of
+    # waiting for a forced one. Never when the health check couldn't read the version
+    # (reason "unreachable"), and never after a failed or cancelled job. !cancelled() is what
+    # lets this job run at all when deploy was skipped. Publishing skips a release that
+    # already exists, so building again is harmless.
+    if: >-
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      (needs.deploy.result == 'success' ||
+       (needs.deploy.result == 'skipped' && needs.preflight.outputs.reason == 'current'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkouts, and reading the app's releases
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - name: Check out the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
+
+      - name: Check out the deploy scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ needs.preflight.outputs.tooling_repository }}
+          ref: ${{ needs.preflight.outputs.tooling_sha }}
+          path: ${{ env.TOOLING_DIR }}
+          sparse-checkout: scripts/deploy
+          persist-credentials: false
+
+      - name: Check out the release's Teams package generator
+        # The same file the release's teams-app-package tarball carries, but taken from the tag
+        # through git, which verifies it. The tarball is not attested, and this file runs.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ needs.preflight.outputs.tag }}
+          path: ${{ env.APP_SOURCE_DIR }}
+          sparse-checkout: teams-app-package/create-teams-app-package.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Download the app-requirements.json preflight verified
+        id: release-requirements
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: app-requirements.json
+          DEST_DIR: ${{ runner.temp }}/release
+          EXPECTED_SHA256: ${{ needs.preflight.outputs.requirements_sha256 }}
+        run: bash "$TOOLING_DIR/scripts/deploy/download-asset-by-digest.sh"
+
+      - name: Build the Teams app package
+        id: build
+        env:
+          GENERATOR: ${{ env.APP_SOURCE_DIR }}/teams-app-package/create-teams-app-package.sh
+          RELEASE_REQUIREMENTS_FILE: ${{ steps.release-requirements.outputs.path }}
+          PACKAGE_DIR: ${{ inputs.teams_app_package_dir }}
+          OUTPUT_DIR: ${{ runner.temp }}/teams-app-package
+          BOT_APP_ID: ${{ inputs.bot_app_id }}
+          TEAMS_APP_ID: ${{ inputs.teams_app_id }}
+          INSTANCE_NAME: ${{ inputs.instance_name }}
+        run: bash "$TOOLING_DIR/scripts/deploy/build-teams-package.sh"
+
+      - name: Validate the manifest against the Teams app schema
+        # Added after a real Teams Admin upload failed on a manifest property the schema doesn't
+        # allow. CI validates the generator's output too; this re-checks the instance's manifest
+        # against whatever schema it declares.
+        env:
+          MANIFEST: ${{ steps.build.outputs.manifest }}
+        run: bash "$TOOLING_DIR/scripts/deploy/validate-manifest-schema.sh"
+
+      - name: Hand the package to publish-package
+        # Only the ZIP crosses into the job that holds the write token.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 2026-04-10
+        with:
+          name: teams-app-package-${{ inputs.instance_name }}
+          path: ${{ steps.build.outputs.zip_path }}
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  publish-package:
+    name: Publish Teams app package
+    needs: [preflight, package-manifest]
+    # An explicit condition: package-manifest can run with deploy skipped, and a skipped job
+    # further up the chain would otherwise skip this one as well.
+    if: >-
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      needs.package-manifest.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release create in the caller repository
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+    # No checkout of the caller or of the release: this job runs this workflow's own scripts
+    # and gh, nothing else.
+    steps:
+      - name: Check out the deploy scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          repository: ${{ needs.preflight.outputs.tooling_repository }}
+          ref: ${{ needs.preflight.outputs.tooling_sha }}
+          path: ${{ env.TOOLING_DIR }}
+          sparse-checkout: scripts/deploy
+          persist-credentials: false
+
+      - name: Download the package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1 2026-03-11
+        with:
+          name: teams-app-package-${{ inputs.instance_name }}
+          path: ${{ runner.temp }}/teams-app-package
+
+      - name: Publish the package as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PACKAGE_DIR: ${{ runner.temp }}/teams-app-package
+          INSTANCE_NAME: ${{ inputs.instance_name }}
+          BOT_APP_ID: ${{ inputs.bot_app_id }}
+        run: bash "$TOOLING_DIR/scripts/deploy/publish-teams-package.sh"
