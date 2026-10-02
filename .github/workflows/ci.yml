@@ -34,6 +34,7 @@ jobs:
       deps: ${{ steps.filter.outputs.deps }}
       requirements: ${{ steps.filter.outputs.requirements }}
       actions: ${{ steps.filter.outputs.actions }}
+      deploy: ${{ steps.filter.outputs.deploy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
         with:
@@ -63,6 +64,24 @@ jobs:
             actions:
               - '.github/workflows/**'
               - '.github/actions/**'
+              - '.github/actionlint.yaml'
+              - '.github/zizmor.yml'
+            # Everything the Deploy Tooling job's tests read: the scripts, the workflow
+            # that runs them, the release-please files, and the repository files the
+            # tests use as fixtures.
+            deploy:
+              - 'scripts/deploy/**'
+              - 'scripts/ci/**'
+              - 'tests/deploy/**'
+              - '.shellcheckrc'
+              - '.github/workflows/reusable-deploy.yml'
+              - '.github/workflows/ci.yml'
+              - 'release-please-config.json'
+              - '.release-please-manifest.json'
+              - 'docs/deployment-guide.md'
+              - 'teams-app-package/**'
+              - 'src/TeamsNotificationBot/app-requirements.json'
+              - 'src/TeamsNotificationBot/TeamsNotificationBot.csproj'
 
   build-and-test:
     name: Build and Test
@@ -292,6 +311,10 @@ jobs:
       # the release's actionlint_<version>_checksums.txt.
       ACTIONLINT_VERSION: 1.7.12
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      # Bump both together: the checksum is GitHub's SHA-256 digest of the release asset
+      # zizmor-x86_64-unknown-linux-gnu.tar.gz.
+      ZIZMOR_VERSION: 1.30.1
+      ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
         with:
@@ -308,7 +331,83 @@ jobs:
 
       - name: Run actionlint
         # Also shellchecks every run: block (shellcheck ships on ubuntu-latest).
+        # .github/actionlint.yaml holds its one, expiring, suppression.
         run: /tmp/actionlint -color
+
+      - name: Install zizmor
+        run: |
+          set -euo pipefail
+          TARBALL="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL --retry 3 -o "/tmp/$TARBALL" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/$TARBALL"
+          echo "${ZIZMOR_SHA256}  /tmp/$TARBALL" | sha256sum --check --strict
+          tar -xzf "/tmp/$TARBALL" -C /tmp zizmor
+
+      - name: Run zizmor
+        # Security audit (template injection, excessive permissions, credential
+        # persistence, unpinned or impostor actions). The token enables its online audits,
+        # which check that each pinned SHA belongs to the action's repository. It gates the
+        # workflow other repositories run; the older workflows have findings of their own
+        # and join the list as they are fixed. .github/zizmor.yml sets the policy.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: /tmp/zizmor --no-progress .github/workflows/reusable-deploy.yml
+
+  # The scripts reusable-deploy.yml runs, and the workflow's structure. actionlint
+  # shellchecks inline run: blocks only, so the scripts get their own shellcheck here.
+  deploy-tooling:
+    name: Deploy Tooling
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
+    # Runs code from the PR branch: don't hand it the workflow-level
+    # pull-requests: write token.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      # tag@commit: the commit is what installs, and git verifies it
+      # (scripts/ci/install-bats.sh). Bump both halves together.
+      BATS_CORE_REF: v1.14.0@eb7f42f8d608ac693d7a4b67474f6714ea68cfc5
+      # Bump both together: the checksum is GitHub's SHA-256 digest of the release asset
+      # shfmt_v<version>_linux_amd64.
+      SHFMT_VERSION: 3.14.1
+      SHFMT_SHA256: 76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
+        with:
+          persist-credentials: false
+
+      - name: Install bats
+        run: bash scripts/ci/install-bats.sh
+
+      - name: Install shfmt
+        run: |
+          set -euo pipefail
+          BINARY="shfmt_v${SHFMT_VERSION}_linux_amd64"
+          curl -fsSL --retry 3 -o "/tmp/$BINARY" \
+            "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/$BINARY"
+          echo "${SHFMT_SHA256}  /tmp/$BINARY" | sha256sum --check --strict
+          install -m 0755 "/tmp/$BINARY" /tmp/shfmt
+
+      - name: shellcheck
+        # The runner image's shellcheck, as actionlint uses. .shellcheckrc lets it
+        # follow `source` to scripts/deploy/lib.bash.
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          git ls-files -z 'scripts/deploy/*.sh' 'scripts/deploy/*.bash' 'scripts/ci/*.sh' \
+            'tests/deploy/*.bash' 'tests/deploy/*.bats' | xargs -0 shellcheck
+
+      - name: shfmt
+        run: |
+          set -euo pipefail
+          git ls-files -z 'scripts/deploy/*.sh' 'scripts/deploy/*.bash' 'scripts/ci/*.sh' \
+            'tests/deploy/*.bash' 'tests/deploy/*.bats' | xargs -0 /tmp/shfmt -d -i 2 -ci
+
+      - name: Unit tests (bats)
+        # yq (mikefarah v4) and python3-venv come with ubuntu-latest. The schema
+        # validation tests install the pinned jsonschema from PyPI.
+        run: bats --print-output-on-failure tests/deploy
 
   release-build:
     name: Release Build (dry run)
@@ -347,7 +446,7 @@ jobs:
   conclusion:
     if: always()
     name: CI Conclusion
-    needs: [changes, build-and-test, dependency-review, validate, lint-workflows, release-build]
+    needs: [changes, build-and-test, dependency-review, validate, lint-workflows, deploy-tooling, release-build]
     runs-on: ubuntu-latest
     steps:
       - run: exit 1

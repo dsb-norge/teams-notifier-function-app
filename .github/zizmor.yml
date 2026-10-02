@@ -1,0 +1,9 @@
+# zizmor configuration (CI: the Lint Workflows job). A suppression goes here, with a written
+# justification, and is reviewed like code.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # zizmor's default lets actions/* and github/* get away with a tag. This repository
+        # pins every action, theirs included, to a commit SHA.
+        "*": hash-pin
