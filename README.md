@@ -68,7 +68,9 @@ cd publish && func azure functionapp publish "<function-app-name>" --no-build --
 ```
 
 See [Deployment Guide — Step 3](docs/deployment-guide.md#step-3-deploy-function-app)
-for detailed instructions and building from source.
+for detailed instructions and building from source. To deploy from GitHub Actions,
+call the [reusable deploy workflow](docs/deployment-guide.md#deploy-with-the-reusable-workflow):
+it also checks your infrastructure matches the release and publishes your Teams app package.
 
 ### 4. Install Teams app
 
