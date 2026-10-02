@@ -53,6 +53,7 @@ jobs:
             deps:
               - '**/*.csproj'
               - 'global.json'
+              - 'scripts/deploy/requirements.txt'
               - '.github/workflows/ci.yml'
             requirements:
               - 'src/**'
@@ -60,6 +61,9 @@ jobs:
               - 'scripts/validate-requirements.sh'
               - 'teams-app-package/create-teams-app-package.sh'
               - 'teams-app-package/app-metadata.json'
+              - 'scripts/deploy/lib.bash'
+              - 'scripts/deploy/validate-manifest-schema.*'
+              - 'scripts/deploy/requirements.txt'
               - '.github/workflows/ci.yml'
             actions:
               - '.github/workflows/**'
@@ -255,44 +259,13 @@ jobs:
             --dry-run
 
       - name: Validate the manifest against the Teams app schema
-        # Fetches the schema URL from manifest.$schema and validates with
-        # Python's jsonschema. Fails the job on any schema error — keeps
-        # the manifest in sync with the schema declared in the file itself.
-        # If the schema ever introduces a new constraint we violate (or we
-        # accidentally add an unknown property), this step trips before the
-        # bad ZIP ever reaches a Teams Admin upload.
-        run: |
-          set -euo pipefail
-          SCHEMA_URL=$(jq -r '."$schema"' /tmp/manifest-ci/manifest.json)
-          if [ -z "$SCHEMA_URL" ] || [ "$SCHEMA_URL" = "null" ]; then
-            echo "::error::manifest.json has no \$schema field; nothing to validate against"
-            exit 1
-          fi
-          curl -fsSL --max-time 15 --retry 3 --retry-delay 2 \
-            "$SCHEMA_URL" -o /tmp/teams-schema.json
-          # `python3 -m pip` (not bare `pip`) so the installer matches the
-          # interpreter the next step uses. `--user` keeps the install out of
-          # the system path; `--break-system-packages` is required on
-          # ubuntu-latest (PEP 668) — `--user` alone is not enough on the
-          # current runner image.
-          python3 -m pip install --user --break-system-packages --quiet jsonschema
-          python3 - <<'PY'
-          import json, sys
-          from jsonschema import validators
-          schema = json.load(open('/tmp/teams-schema.json'))
-          manifest = json.load(open('/tmp/manifest-ci/manifest.json'))
-          Validator = validators.validator_for(schema)
-          Validator.check_schema(schema)
-          errors = sorted(Validator(schema).iter_errors(manifest), key=lambda e: list(e.absolute_path))
-          if not errors:
-              print('::notice title=Manifest validation::schema-valid against', schema.get('$id', 'Teams schema'))
-              sys.exit(0)
-          print(f'::error::Teams manifest schema validation failed ({len(errors)} error(s)):')
-          for e in errors:
-              path = '.'.join(str(p) for p in e.absolute_path) or '<root>'
-              print(f'::error::  at {path}: {e.message}')
-          sys.exit(1)
-          PY
+        # The same script, and the same hash-pinned jsonschema, that a deploy's
+        # package-manifest job runs. It reads the schema URL from manifest.$schema, so a
+        # schema bump in the generator is validated against whatever it now declares,
+        # and an unknown property trips here before a bad ZIP reaches a Teams Admin upload.
+        env:
+          MANIFEST: /tmp/manifest-ci/manifest.json
+        run: bash scripts/deploy/validate-manifest-schema.sh
 
   # Workflow and composite-action edits change the release path but touch none
   # of the code filters above, so without these two jobs they would merge with
