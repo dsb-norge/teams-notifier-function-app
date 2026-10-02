@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.3...teams-notifier-function-app-v2.1.0) (2026-10-02)
+
+
+### Features
+
+* **deploy:** add a reusable deploy workflow ([cd7783e](https://github.com/dsb-norge/teams-notifier-function-app/commit/cd7783ea52e75ea3c85d772ebdc4ff63c8782ca2))
+
 ## [2.0.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.2...teams-notifier-function-app-v2.0.3) (2026-09-30)
 
 
