@@ -527,44 +527,85 @@ creates that environment on first use. That is the subject your module's
 
 ### Autopilot caller
 
-A caller that picks the version itself passes it as `tag`. This one deploys the
-latest release whenever it is not already running, for example on a test
-instance that should always run the newest release:
+A caller that picks the version itself passes it as `tag`. This one keeps a test
+instance on the newest release. After each successful Terraform run on `main` it
+deploys the latest release, but only when `/api/health` reports a different
+version. A dispatch deploys the tag you give it, or the latest release, whatever
+is running:
 
 ```yaml
+name: Deploy the test instance
+
+on:
+  workflow_run:
+    workflows: ["Terraform CI/CD"] # the workflow that applies the module
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release or pre-release tag. Empty deploys the latest release.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  id-token: write # azure/login OIDC in the called workflow
+  contents: write # gh release create in publish-package
+
 jobs:
-  latest:
+  target:
+    # Infrastructure first: never deploy code whose infrastructure failed to apply.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      tag: ${{ steps.latest.outputs.tag }}
+      tag: ${{ steps.target.outputs.tag }}
     steps:
-      - id: latest
+      - id: target
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG=$(gh release view --repo dsb-norge/teams-notifier-function-app --json tagName --jq .tagName)
-          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          set -euo pipefail
+          tag="${INPUT_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release view --repo dsb-norge/teams-notifier-function-app --json tagName --jq .tagName)"
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
 
   deploy:
-    needs: latest
+    needs: target
     uses: dsb-norge/teams-notifier-function-app/.github/workflows/reusable-deploy.yml@teams-notifier-function-app-vX.Y.Z
     with:
-      tag: ${{ needs.latest.outputs.tag }}
-      skip_if_current: ${{ github.event_name != 'workflow_dispatch' }}
+      tag: ${{ needs.target.outputs.tag }}
+      skip_if_current: ${{ github.event_name == 'workflow_run' }}
       # ...the same inputs as the pinned caller
 ```
 
 With an explicit `tag`, the [version check](#preflight-checks) is skipped and
 only the hash gate applies: your `app-requirements.json` needs the same
-infrastructure hash as the release, not the same version. `gh release view`
-without a tag returns the release marked Latest, which is never a pre-release.
-Keep the `uses:` ref on a release tag and move it now and then to pick up
-workflow fixes; it does not have to match the `tag` you deploy.
+infrastructure hash as the release, not the same version. Replace it, verbatim,
+only when a release changes the hash; until then that release fails preflight
+with an infrastructure hash mismatch. `gh release view` without a tag returns
+the release marked Latest, which is never a pre-release.
 
-To deploy a **pre-release**, pass its tag, e.g.
-`teams-notifier-function-app-v2.1.1-pre.4`. A pre-release doesn't bump
-`.release-please-manifest.json`, so calling the workflow at a pre-release tag (or
-a branch) without `tag` deploys the last full release.
+Keep the `uses:` ref on a release tag and move it now and then to pick up
+workflow fixes; it does not have to match the `tag` you deploy. A newer release
+can't always be deployed by an older workflow, though: a release that changes
+what the workflow reads from it (asset names, file paths, the Teams package
+generator's options) is marked breaking, and its release notes say which ref to
+move to. Until you do, runs that target it fail.
+
+To deploy a **pre-release**, dispatch with its tag, e.g.
+`teams-notifier-function-app-v2.1.1-pre.4`. The next chained run puts the latest
+release back, because `/api/health` then reports a different version. A
+pre-release doesn't bump `.release-please-manifest.json`, so calling the
+workflow at a pre-release tag (or a branch) without `tag` deploys the last full
+release.
 
 ### Inputs
 
