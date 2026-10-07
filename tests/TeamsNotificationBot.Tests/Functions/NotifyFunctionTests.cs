@@ -14,6 +14,7 @@ namespace TeamsNotificationBot.Tests.Functions;
 public class NotifyFunctionTests
 {
     private readonly Mock<IAliasService> _aliasService = new();
+    private readonly Mock<IBotService> _botService = new();
     private readonly Mock<QueueClient> _queueClient = new();
     private readonly Mock<IIdempotencyService> _idempotencyService = new();
     private readonly NotifyFunction _function;
@@ -22,9 +23,13 @@ public class NotifyFunctionTests
     {
         _function = new NotifyFunction(
             _aliasService.Object,
+            _botService.Object,
             new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
             _idempotencyService.Object,
             NullLogger<NotifyFunction>.Instance);
+
+        // The alias's conversation exists unless a test says otherwise.
+        _botService.Setup(b => b.HasConversationAsync(It.IsAny<AliasEntity>())).ReturnsAsync(true);
     }
 
     [Fact]
@@ -212,5 +217,23 @@ public class NotifyFunctionTests
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Once);
         _idempotencyService.Verify(s => s.GetAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _idempotencyService.Verify(s => s.SetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AliasWhoseConversationIsGone_Returns404_AndQueuesNothing()
+    {
+        var orphan = new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" };
+        _aliasService.Setup(s => s.GetAliasAsync("ops")).ReturnsAsync(orphan);
+        _botService.Setup(b => b.HasConversationAsync(orphan)).ReturnsAsync(false);
+
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(
+            body: """{"message": "Hello", "format": "text"}"""), "ops");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Contains("no longer has the conversation", problem.Detail);
+        Assert.DoesNotContain("Unknown alias", problem.Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
     }
 }

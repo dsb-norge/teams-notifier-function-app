@@ -33,6 +33,13 @@ public interface IBotService
     Task<ConversationReferenceEntity?> GetConversationReferenceEntityAsync(string partitionKey, string rowKey);
 
     /// <summary>
+    /// Whether the bot still has the conversation reference <paramref name="alias"/> points to,
+    /// i.e. whether a message to it can be delivered at all. False for a malformed alias. Always
+    /// true when Teams integration is disabled, which stores no references.
+    /// </summary>
+    Task<bool> HasConversationAsync(AliasEntity alias);
+
+    /// <summary>
     /// Sets ChannelName on an existing conversationreferences row if — and only if — ChannelName
     /// is currently empty, refreshing LastUpdated with it. ETag-guarded; touches no other column,
     /// in particular never ConversationReference or InstalledAt. Best-effort: never throws.

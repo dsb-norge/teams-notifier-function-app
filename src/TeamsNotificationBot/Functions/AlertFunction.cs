@@ -14,15 +14,18 @@ namespace TeamsNotificationBot.Functions;
 public class AlertFunction
 {
     private readonly IAliasService _aliasService;
+    private readonly IBotService _botService;
     private readonly INotificationQueue _notificationQueue;
     private readonly ILogger<AlertFunction> _logger;
 
     public AlertFunction(
         IAliasService aliasService,
+        IBotService botService,
         INotificationQueue notificationQueue,
         ILogger<AlertFunction> logger)
     {
         _aliasService = aliasService;
+        _botService = botService;
         _notificationQueue = notificationQueue;
         _logger = logger;
     }
@@ -60,6 +63,14 @@ public class AlertFunction
                 Sanitize(alias), correlationId);
             return ApiResponse.Problem(404, "Not Found",
                 $"Unknown alias '{alias}'.", instance, correlationId);
+        }
+
+        if (!await _botService.HasConversationAsync(channelAlias))
+        {
+            _logger.LogWarning(
+                "Alias {Alias} points to a conversation the bot no longer has. CorrelationId={CorrelationId}",
+                Sanitize(alias), correlationId);
+            return ApiResponse.ConversationGone(alias, instance, correlationId);
         }
 
         // Parse Common Alert Schema payload

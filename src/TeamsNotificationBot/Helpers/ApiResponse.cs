@@ -31,6 +31,17 @@ public static class ApiResponse
         };
     }
 
+    /// <summary>
+    /// 404 for an alias that exists but whose conversation the bot no longer has, so a message to
+    /// it could never be delivered. The detail tells it apart from an unknown alias.
+    /// </summary>
+    public static IActionResult ConversationGone(string alias, string instance, string? correlationId) =>
+        Problem(404, "Not Found",
+            $"Alias '{alias}' exists, but the bot no longer has the conversation it points to " +
+            "(the bot may have been removed from that team or chat). Run set-alias in the " +
+            "conversation the alias should post to.",
+            instance, correlationId);
+
     public static async Task WriteProblemAsync(
         HttpResponse response,
         int status,

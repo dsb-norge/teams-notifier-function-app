@@ -167,7 +167,7 @@ Problem Details format. The exception is `401`, which the platform returns witho
 | 400 | Bad Request — invalid JSON, missing required fields, or validation failure |
 | 401 | Unauthorized — missing or invalid Bearer token (returned by EasyAuth, no problem+json body) |
 | 403 | Forbidden — valid token but missing required role or feature disabled |
-| 404 | Not Found — unknown alias or endpoint |
+| 404 | Not Found — unknown alias or endpoint, or an alias whose conversation the bot no longer has (the bot was removed from that team or chat) |
 | 413 | Payload Too Large — request body exceeds 28 KB |
 | 415 | Unsupported Media Type — Content-Type is not `application/json` |
 | 429 | Too Many Requests — rate limit exceeded |
@@ -244,6 +244,9 @@ For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 ```
 
 **Errors**: 400, 401, 404, 413, 415, 429
+
+A `404` means either that the alias doesn't exist or that the bot no longer has the conversation
+it points to; the `detail` says which. Both are checked before the message is queued.
 
 **Example**
 
