@@ -24,7 +24,7 @@ public class NotifyFunctionTests
         _function = new NotifyFunction(
             _aliasService.Object,
             _botService.Object,
-            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
+            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>()),
             _idempotencyService.Object,
             NullLogger<NotifyFunction>.Instance);
 

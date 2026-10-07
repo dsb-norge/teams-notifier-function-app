@@ -97,7 +97,8 @@ Channel- and team-name backfill (including the `teamlookup` name query), convers
 poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, delivery-event
 tracking (`DeliveryEvents`, which runs right after a message was queued or delivered),
 completing and releasing an idempotency claim (`IdempotencyService`, after the message was queued or
-while the request's own failure propagates), and best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
+while the request's own failure propagates), delivery-record writes after a send or a failure
+(`DeliveryRecords`), and best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
 whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
 into the `BotMessages` 500 envelope. Each catches broadly, logs at `Debug`/`Warning`, and continues.
 Narrowing them to specific exception types would convert an unforeseen SDK or Table Storage error

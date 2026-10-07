@@ -24,7 +24,7 @@ public class CheckInFunctionTests
         _function = new CheckInFunction(
             _aliasService.Object,
             _botService.Object,
-            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
+            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>()),
             NullLogger<CheckInFunction>.Instance);
 
         // The alias's conversation exists unless a test says otherwise.

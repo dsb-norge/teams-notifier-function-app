@@ -38,6 +38,7 @@ Functions available at:
 | Notify | `POST /api/v1/notify/{alias}` |
 | Alert | `POST /api/v1/alert/{alias}` |
 | Send | `POST /api/v1/send` |
+| GetMessage | `GET /api/v1/messages/{messageId}` |
 | GetAliases | `GET /api/v1/aliases` |
 | Health | `GET /api/health` |
 | CheckIn | `POST /api/v1/checkin/{alias}` |
@@ -46,6 +47,9 @@ Functions available at:
 | QueueProcessor | Queue trigger (automatic) |
 | PoisonQueueMonitor | Queue trigger (automatic) |
 | StorageCleanup | Timer trigger, daily at 02:30 UTC |
+
+Offline mode stores no conversation references and delivers nothing, so a message's delivery
+record stays `queued`.
 
 All HTTP endpoints are served at `http://localhost:7071`.
 
@@ -186,7 +190,7 @@ dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*Inte
 
 | Directory | What It Covers |
 |-----------|----------------|
-| `Functions/` | All HTTP triggers (Notify, Alert, Send, Health, CheckIn, GetAliases), queue triggers (QueueProcessor, BotOperations, PoisonQueueMonitor), and the StorageCleanup timer trigger |
+| `Functions/` | All HTTP triggers (Notify, Alert, Send, Health, CheckIn, GetMessage, GetAliases), queue triggers (QueueProcessor, BotOperations, PoisonQueueMonitor), and the StorageCleanup timer trigger |
 | `Models/` | Request validation (NotificationRequest) and Adaptive Card security (AdaptiveCardValidator) |
 | `Services/` | Alias CRUD, queue management, idempotency, bot handler command routing, and all card builders (Alert, Poison, SetupGuide, CreateAlias) |
 | `Middleware/` | EasyAuth header parsing, role-based authorization, and rate limiting |

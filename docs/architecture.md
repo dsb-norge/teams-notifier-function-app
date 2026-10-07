@@ -172,6 +172,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 | HTTP | CheckIn | `POST /api/v1/checkin/{alias}` | Deployment verification ping |
 | HTTP | Send | `POST /api/v1/send` | Direct-target send (by team/channel/user ID) |
 | HTTP | UpdownIngest | `POST /api/v1/ingest/updown/{token}` | **Anonymous** updown.io webhook ingress; token-authenticated, isolated trust zone |
+| HTTP | GetMessage | `GET /api/v1/messages/{messageId}` | Delivery status of a queued message |
 | HTTP | GetAliases | `GET /api/v1/aliases` | List aliases (debug mode only) |
 | HTTP | OpenApi | `GET /api/v1/openapi.yaml` | OpenAPI specification |
 | HTTP | BotMessages | `POST /api/messages` | Bot Framework messaging endpoint |
@@ -179,7 +180,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 | Queue | BotOperations | `botoperations` | Internal ops (channel enumeration on install) |
 | Queue | NotificationsPoisonMonitor | `notifications-poison` | Alert on failed notifications |
 | Queue | BotOperationsPoisonMonitor | `botoperations-poison` | Alert on failed bot operations |
-| Timer | StorageCleanup | daily, 02:30 UTC | Purge expired idempotency records |
+| Timer | StorageCleanup | daily, 02:30 UTC | Purge expired idempotency and delivery records |
 
 **Authentication layers:**
 
@@ -191,7 +192,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 
 Azure Storage with shared access keys disabled. All access via RBAC (User-Assigned Managed Identity).
 
-**Tables** (7):
+**Tables** (8):
 
 | Table | Purpose |
 |---|---|
@@ -199,6 +200,7 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 | `conversationreferences` | Stores Bot Framework conversation references (auto-populated on bot install) |
 | `teamlookup` | Maps team thread IDs to AAD group GUIDs and team names; written on install, updated on team rename. Channel events carry neither the GUID nor the team name, so this is where both come from |
 | `idempotencykeys` | `Idempotency-Key` records for `/v1/notify` and `/v1/send`, keyed by the SHA-256 of caller, target and key, plus updown webhook `(token,event,time)` dedupe markers. Expire after `Idempotency__ExpiryHours` (default 7 days); purged daily by the `StorageCleanup` timer |
+| `deliveryrecords` | One row per queued message: `queued` → `delivered` or `failed`, where it went, and its Teams activity ID. Served by `GET /v1/messages/{messageId}`; lets the queue processor skip a message already delivered. Kept `DeliveryRecords__RetentionDays` (default 180); purged daily by the `StorageCleanup` timer |
 | `ThrottlingTrollCounters` | Rate limiter fixed window counters |
 | `webhooktokens` | updown.io webhook capability tokens (SHA-256 hashed) → conversation target + event filter |
 | `updownipallowlist` | Cached updown source-IP allowlist (resolved from `ips.updown.io`) for the ingress source-IP filter; refreshed lazily-when-stale + on demand |
@@ -274,6 +276,23 @@ erDiagram
         string ResponseBody "cached JSON response"
         int StatusCode ""
         datetime CreatedAt "first use; expiry counts from here"
+    }
+
+    deliveryrecords {
+        string PartitionKey "messageId"
+        string RowKey "always empty"
+        string Status "queued | delivered | failed"
+        string Source "route that queued it"
+        string PrincipalId "calling principal"
+        string Alias "lowercase; null for /v1/send"
+        string PostedAs "post | reply | update"
+        string TargetType "channel | personal | groupChat"
+        string ConversationId "Teams conversation the activity lives in"
+        string ActivityId "Teams activity ID"
+        string ThreadActivityId "activity that roots the thread"
+        string Error "why it failed"
+        datetime EnqueuedAt "retention counts from here"
+        datetime DeliveredAt ""
     }
 
     ThrottlingTrollCounters {

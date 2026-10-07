@@ -41,7 +41,7 @@ public class AlertFunctionTests
         _function = new AlertFunction(
             _aliasService.Object,
             _botService.Object,
-            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
+            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>()),
             NullLogger<AlertFunction>.Instance);
 
         // The alias's conversation exists unless a test says otherwise.

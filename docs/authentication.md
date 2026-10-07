@@ -333,6 +333,7 @@ Optional with defaults in code, and not Terraform module inputs, like the webhoo
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `Idempotency__ExpiryHours` | `168` (7 days) | How long an `Idempotency-Key` (and an updown dedupe marker) counts. See [API Reference §7](api-reference.md#7-idempotency). |
+| `DeliveryRecords__RetentionDays` | `180` | How long a message's delivery record is kept, for `GET /v1/messages/{messageId}`. |
 
 ---
 

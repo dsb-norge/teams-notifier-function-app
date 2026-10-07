@@ -9,15 +9,18 @@ public class PoisonQueueMonitorFunction
 {
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
+    private readonly IDeliveryRecords _records;
     private readonly ILogger<PoisonQueueMonitorFunction> _logger;
 
     public PoisonQueueMonitorFunction(
         IBotService botService,
         IAliasService aliasService,
+        IDeliveryRecords records,
         ILogger<PoisonQueueMonitorFunction> logger)
     {
         _botService = botService;
         _aliasService = aliasService;
+        _records = records;
         _logger = logger;
     }
 
@@ -26,7 +29,30 @@ public class PoisonQueueMonitorFunction
         [QueueTrigger("notifications-poison")] string messageJson,
         FunctionContext context)
     {
+        await MarkFailedAsync(messageJson);
         await ProcessPoisonMessageAsync("notifications-poison", messageJson);
+    }
+
+    /// <summary>
+    /// Records a notification that used up its delivery attempts as failed, so its status says so.
+    /// Best-effort, and never throws: an exception here would create a -poison-poison queue.
+    /// </summary>
+    private async Task MarkFailedAsync(string messageJson)
+    {
+        try
+        {
+            var message = JsonSerializer.Deserialize<Models.QueueMessage>(messageJson);
+            if (message is { MessageId.Length: > 0 })
+            {
+                await _records.MarkFailedAsync(message,
+                    "Delivery failed on every attempt; the message was moved to the poison queue.");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Side concern (docs/contributing.md §5): the poison alert below must still go out.
+            _logger.LogWarning(ex, "Could not record a poison message as failed");
+        }
     }
 
     [Function("BotOperationsPoisonMonitor")]

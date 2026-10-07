@@ -10,14 +10,15 @@ namespace TeamsNotificationBot.Tests.Functions;
 public class StorageCleanupFunctionTests
 {
     [Fact]
-    public async Task Run_PurgesExpiredIdempotencyRecords()
+    public async Task Run_PurgesExpiredIdempotencyAndDeliveryRecords()
     {
         var idempotency = new Mock<IIdempotencyService>();
-        idempotency.Setup(s => s.PurgeExpiredAsync(It.IsAny<CancellationToken>())).ReturnsAsync(3);
+        var deliveries = new Mock<IDeliveryRecords>();
 
-        await new StorageCleanupFunction(idempotency.Object, NullLogger<StorageCleanupFunction>.Instance)
+        await new StorageCleanupFunction(idempotency.Object, deliveries.Object, NullLogger<StorageCleanupFunction>.Instance)
             .Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         idempotency.Verify(s => s.PurgeExpiredAsync(It.IsAny<CancellationToken>()), Times.Once);
+        deliveries.Verify(s => s.PurgeExpiredAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

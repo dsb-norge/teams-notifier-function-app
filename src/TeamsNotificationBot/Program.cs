@@ -246,6 +246,12 @@ var host = new HostBuilder()
                 idempotencyClient, TeamsNotificationBot.Helpers.IdempotencyConfig.Expiry, TimeProvider.System,
                 sp.GetRequiredService<ILogger<IdempotencyService>>()));
 
+            var deliveryRecordsClient = new TableClient(connectionString, "deliveryrecords");
+            deliveryRecordsClient.CreateIfNotExists();
+            services.AddSingleton<IDeliveryRecords>(sp => new DeliveryRecords(
+                deliveryRecordsClient, TeamsNotificationBot.Helpers.DeliveryRecordsConfig.Retention, TimeProvider.System,
+                sp.GetRequiredService<ILogger<DeliveryRecords>>()));
+
             var webhookClient = new TableClient(connectionString, "webhooktokens");
             webhookClient.CreateIfNotExists();
             services.AddSingleton<IWebhookService>(new WebhookService(webhookClient));
@@ -303,6 +309,12 @@ var host = new HostBuilder()
             services.AddSingleton<IIdempotencyService>(sp => new IdempotencyService(
                 idempotencyClient, TeamsNotificationBot.Helpers.IdempotencyConfig.Expiry, TimeProvider.System,
                 sp.GetRequiredService<ILogger<IdempotencyService>>()));
+
+            var deliveryRecordsClient = new TableClient(tableUri, "deliveryrecords", credential);
+            deliveryRecordsClient.CreateIfNotExists();
+            services.AddSingleton<IDeliveryRecords>(sp => new DeliveryRecords(
+                deliveryRecordsClient, TeamsNotificationBot.Helpers.DeliveryRecordsConfig.Retention, TimeProvider.System,
+                sp.GetRequiredService<ILogger<DeliveryRecords>>()));
 
             var webhookClient = new TableClient(tableUri, "webhooktokens", credential);
             webhookClient.CreateIfNotExists();
