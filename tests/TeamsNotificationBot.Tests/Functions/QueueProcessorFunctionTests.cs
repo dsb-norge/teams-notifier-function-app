@@ -15,8 +15,11 @@ namespace TeamsNotificationBot.Tests.Functions;
 [Collection("Azurite")]
 public class QueueProcessorFunctionTests : IDisposable
 {
+    private const string ChannelConversation = "19:channel-1@thread.tacv2";
+
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<IAliasService> _aliasService = new();
+    private readonly Mock<IDeliveryRecords> _records = new();
     private readonly Mock<FunctionContext> _functionContext = new();
     private readonly Mock<IDeliveryEvents> _events = new();
     private readonly QueueProcessorFunction _function;
@@ -26,8 +29,15 @@ public class QueueProcessorFunctionTests : IDisposable
         _function = new QueueProcessorFunction(
             _botService.Object,
             _aliasService.Object,
+            _records.Object,
             _events.Object,
             NullLogger<QueueProcessorFunction>.Instance);
+
+        // Every send lands; tests that need a failure override this.
+        _botService
+            .Setup(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync((string _, string _, string _, string _, string? thread) =>
+                new SentActivity(thread == null ? ChannelConversation : $"{ChannelConversation};messageid={thread}", "activity-new"));
 
         // Clean env
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
@@ -38,78 +48,114 @@ public class QueueProcessorFunctionTests : IDisposable
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
     }
 
-    private static string CreateQueueMessageJson(string format = "text", string message = "Hello", string alias = "test")
+    private void SetUpChannelAlias(string name = "test") =>
+        _aliasService.Setup(s => s.GetAliasAsync(name)).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+
+    private static QueueMessage NewMessage(string format = "text", string message = "Hello", string alias = "test") => new()
     {
-        var queueMessage = new QueueMessage
-        {
-            MessageId = "msg-test-123",
-            Alias = alias,
-            Message = message,
-            Format = format,
-            EnqueuedAt = DateTimeOffset.UtcNow
-        };
-        return JsonSerializer.Serialize(queueMessage);
+        MessageId = "msg-test-123",
+        Alias = alias,
+        Message = message,
+        Format = format,
+        EnqueuedAt = DateTimeOffset.UtcNow
+    };
+
+    private static string CreateQueueMessageJson(string format = "text", string message = "Hello", string alias = "test") =>
+        JsonSerializer.Serialize(NewMessage(format, message, alias));
+
+    private Task RunAsync(QueueMessage message) => _function.Run(JsonSerializer.Serialize(message), _functionContext.Object);
+
+    private void SetUpRecord(DeliveryRecordEntity record) =>
+        _records.Setup(r => r.GetAsync(record.PartitionKey)).ReturnsAsync(record);
+
+    // --- Plain posts ---
+
+    [Fact]
+    public async Task T4_TextMessage_IsSentToTheAliasConversation()
+    {
+        SetUpChannelAlias();
+
+        await _function.Run(CreateQueueMessageJson(format: "text", message: "Hello World"), _functionContext.Object);
+
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "Hello World", null), Times.Once);
     }
 
     [Fact]
-    public async Task T4_TextMessage_CallsSendMessageAsync()
+    public async Task T5_AdaptiveCard_IsSentAsACard()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-
-        var messageJson = CreateQueueMessageJson(format: "text", message: "Hello World");
-
-        await _function.Run(messageJson, _functionContext.Object);
-
-        _botService.Verify(b => b.SendMessageAsync("team-1", "channel-1", "Hello World"), Times.Once);
-    }
-
-    [Fact]
-    public async Task T5_AdaptiveCard_CallsSendAdaptiveCardAsync()
-    {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-
+        SetUpChannelAlias();
         var cardJson = """{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Hi"}]}""";
-        var messageJson = CreateQueueMessageJson(format: "adaptive-card", message: cardJson);
 
-        await _function.Run(messageJson, _functionContext.Object);
+        await _function.Run(CreateQueueMessageJson(format: "adaptive-card", message: cardJson), _functionContext.Object);
 
-        _botService.Verify(b => b.SendAdaptiveCardAsync(
-            "team-1", "channel-1",
-            It.IsAny<JsonElement>()), Times.Once);
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "adaptive-card", cardJson, null), Times.Once);
+    }
+
+    [Fact]
+    public async Task Post_IsRecordedAsDelivered_WithItsActivityAsThreadRoot()
+    {
+        SetUpChannelAlias();
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+
+        await RunAsync(NewMessage());
+
+        Assert.NotNull(outcome);
+        Assert.Equal(PostedAs.Post, outcome.PostedAs);
+        Assert.Equal(("team-1", "channel-1"), outcome.ConversationKey);
+        Assert.Equal(ChannelConversation, outcome.ConversationId);
+        Assert.Equal("activity-new", outcome.ActivityId);
+        Assert.Equal("activity-new", outcome.ThreadActivityId);
+    }
+
+    [Fact]
+    public async Task AlreadyDelivered_IsSkipped_SoAQueueRetryDoesNotPostTwice()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-test-123", Status = DeliveryStatus.Delivered });
+
+        await RunAsync(NewMessage());
+
+        _botService.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PreviouslyFailed_IsDelivered_WhenRetriedFromThePoisonQueue()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-test-123", Status = DeliveryStatus.Failed });
+
+        await RunAsync(NewMessage());
+
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "Hello", null), Times.Once);
     }
 
     [Fact]
     public async Task T6_DeliveryFailure_RethrowsException()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-
-        _botService.Setup(b => b.SendMessageAsync("team-1", "channel-1", It.IsAny<string>()))
+        SetUpChannelAlias();
+        _botService.Setup(b => b.SendAsync("team-1", "channel-1", It.IsAny<string>(), It.IsAny<string>(), null))
             .ThrowsAsync(new Exception("Delivery failed"));
 
-        var messageJson = CreateQueueMessageJson();
-
-        var ex = await Assert.ThrowsAsync<Exception>(() =>
-            _function.Run(messageJson, _functionContext.Object));
+        var ex = await Assert.ThrowsAsync<Exception>(() => RunAsync(NewMessage()));
 
         Assert.Equal("Delivery failed", ex.Message);
+        _records.Verify(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()), Times.Never);
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.IsAny<string>()), Times.Never); // retried
     }
 
     [Fact]
     public async Task TeamsDisabled_SkipsSending()
     {
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", "true");
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        SetUpChannelAlias();
 
-        var messageJson = CreateQueueMessageJson();
+        await RunAsync(NewMessage());
 
-        await _function.Run(messageJson, _functionContext.Object);
-
-        _botService.Verify(b => b.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _botService.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -117,21 +163,52 @@ public class QueueProcessorFunctionTests : IDisposable
     {
         await _function.Run("not-json{{{", _functionContext.Object);
 
-        _botService.Verify(b => b.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _botService.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task UnknownAlias_ReturnsWithoutProcessing()
+    public async Task UnknownAlias_FailsForGood_WithoutRetry()
     {
         _aliasService.Setup(s => s.GetAliasAsync("unknown")).ReturnsAsync((AliasEntity?)null);
 
-        var messageJson = CreateQueueMessageJson(alias: "unknown");
+        await RunAsync(NewMessage(alias: "unknown"));
 
-        await _function.Run(messageJson, _functionContext.Object);
+        _botService.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.Is<string>(e => e.Contains("unknown"))), Times.Once);
+    }
 
-        _botService.Verify(b => b.SendMessageAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    [Fact]
+    public async Task DirectTarget_Channel_IsSentToTheTarget()
+    {
+        var queueMessage = new QueueMessage
+        {
+            MessageId = "msg-direct-1",
+            Target = new MessageTarget { Type = "channel", TeamId = "team-1", ChannelId = "channel-1" },
+            Message = "Direct message",
+            Format = "text",
+            EnqueuedAt = DateTimeOffset.UtcNow
+        };
+
+        await RunAsync(queueMessage);
+
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "Direct message", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task DirectTarget_Personal_IsSentToTheUser()
+    {
+        var queueMessage = new QueueMessage
+        {
+            MessageId = "msg-direct-2",
+            Target = new MessageTarget { Type = "personal", UserId = "user-abc" },
+            Message = "Personal message",
+            Format = "text",
+            EnqueuedAt = DateTimeOffset.UtcNow
+        };
+
+        await RunAsync(queueMessage);
+
+        _botService.Verify(b => b.SendAsync("user", "user-abc", "text", "Personal message", null), Times.Once);
     }
 
     // --- Delivery events ---
@@ -147,11 +224,10 @@ public class QueueProcessorFunctionTests : IDisposable
     [Fact]
     public async Task Delivered_EmitsDeliveredEvent_WithConversationAndDequeueCount()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        SetUpChannelAlias();
         SetDequeueCount(2);
 
-        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+        await RunAsync(NewMessage());
 
         _events.Verify(e => e.Delivered(
             It.Is<QueueMessage>(m => m.MessageId == "msg-test-123"), "team-1", "channel-1", 2), Times.Once);
@@ -162,14 +238,12 @@ public class QueueProcessorFunctionTests : IDisposable
     [Fact]
     public async Task DeliveryFailure_EmitsFailedEvent_ThenRethrows()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-        _botService.Setup(b => b.SendMessageAsync("team-1", "channel-1", It.IsAny<string>()))
+        SetUpChannelAlias();
+        _botService.Setup(b => b.SendAsync("team-1", "channel-1", It.IsAny<string>(), It.IsAny<string>(), null))
             .ThrowsAsync(new InvalidOperationException("No conversation reference"));
         SetDequeueCount(5);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _function.Run(CreateQueueMessageJson(), _functionContext.Object));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(NewMessage()));
 
         _events.Verify(e => e.DeliveryFailed(
             It.IsAny<QueueMessage>(), 5, "InvalidOperationException", "No conversation reference"), Times.Once);
@@ -182,7 +256,7 @@ public class QueueProcessorFunctionTests : IDisposable
     {
         _aliasService.Setup(s => s.GetAliasAsync("gone")).ReturnsAsync((AliasEntity?)null);
 
-        await _function.Run(CreateQueueMessageJson(alias: "gone"), _functionContext.Object);
+        await RunAsync(NewMessage(alias: "gone"));
 
         _events.Verify(e => e.DeliveryFailed(
             It.IsAny<QueueMessage>(), It.IsAny<long>(), "UnknownAlias", It.Is<string>(s => s.Contains("gone"))), Times.Once);
@@ -212,7 +286,7 @@ public class QueueProcessorFunctionTests : IDisposable
 
         _events.Verify(e => e.DeliveryFailed(
             It.IsAny<QueueMessage>(), It.IsAny<long>(), "InvalidOperationException", It.Is<string>(m => m.Contains("no valid target"))), Times.Once);
-        _botService.Verify(b => b.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
@@ -230,10 +304,9 @@ public class QueueProcessorFunctionTests : IDisposable
     public async Task TeamsDisabled_EmitsNoDeliveryEvent()
     {
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", "true");
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        SetUpChannelAlias();
 
-        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+        await RunAsync(NewMessage());
 
         _events.VerifyNoOtherCalls();
     }
@@ -241,47 +314,10 @@ public class QueueProcessorFunctionTests : IDisposable
     [Fact]
     public async Task MissingBindingData_ReportsDequeueCountZero()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        SetUpChannelAlias();
 
-        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+        await RunAsync(NewMessage());
 
         _events.Verify(e => e.Delivered(It.IsAny<QueueMessage>(), "team-1", "channel-1", 0), Times.Once);
-    }
-
-    [Fact]
-    public async Task DirectTarget_Channel_CallsSendMessageAsync()
-    {
-        var queueMessage = new QueueMessage
-        {
-            MessageId = "msg-direct-1",
-            Target = new MessageTarget { Type = "channel", TeamId = "team-1", ChannelId = "channel-1" },
-            Message = "Direct message",
-            Format = "text",
-            EnqueuedAt = DateTimeOffset.UtcNow
-        };
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-
-        await _function.Run(messageJson, _functionContext.Object);
-
-        _botService.Verify(b => b.SendMessageAsync("team-1", "channel-1", "Direct message"), Times.Once);
-    }
-
-    [Fact]
-    public async Task DirectTarget_Personal_CallsSendMessageAsync()
-    {
-        var queueMessage = new QueueMessage
-        {
-            MessageId = "msg-direct-2",
-            Target = new MessageTarget { Type = "personal", UserId = "user-abc" },
-            Message = "Personal message",
-            Format = "text",
-            EnqueuedAt = DateTimeOffset.UtcNow
-        };
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-
-        await _function.Run(messageJson, _functionContext.Object);
-
-        _botService.Verify(b => b.SendMessageAsync("user", "user-abc", "Personal message"), Times.Once);
     }
 }

@@ -11,18 +11,26 @@ namespace TeamsNotificationBot.Functions;
 public class StorageCleanupFunction
 {
     private readonly IIdempotencyService _idempotencyService;
+    private readonly IDeliveryRecords _deliveryRecords;
     private readonly ILogger<StorageCleanupFunction> _logger;
 
-    public StorageCleanupFunction(IIdempotencyService idempotencyService, ILogger<StorageCleanupFunction> logger)
+    public StorageCleanupFunction(
+        IIdempotencyService idempotencyService,
+        IDeliveryRecords deliveryRecords,
+        ILogger<StorageCleanupFunction> logger)
     {
         _idempotencyService = idempotencyService;
+        _deliveryRecords = deliveryRecords;
         _logger = logger;
     }
 
     [Function("StorageCleanup")]
     public async Task Run([TimerTrigger("0 30 2 * * *")] TimerInfo timer, CancellationToken cancellationToken)
     {
-        var purged = await _idempotencyService.PurgeExpiredAsync(cancellationToken);
-        _logger.LogInformation("Storage cleanup purged {Count} expired idempotency records", purged);
+        var idempotency = await _idempotencyService.PurgeExpiredAsync(cancellationToken);
+        var deliveries = await _deliveryRecords.PurgeExpiredAsync(cancellationToken);
+        _logger.LogInformation(
+            "Storage cleanup purged {IdempotencyCount} idempotency records and {DeliveryCount} delivery records",
+            idempotency, deliveries);
     }
 }

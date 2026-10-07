@@ -27,7 +27,8 @@ public class NotifyFlowTests : IDisposable
         _mockBotService = new Mock<IBotService>();
         var mockLogger = new Mock<ILogger<QueueProcessorFunction>>();
 
-        _processor = new QueueProcessorFunction(_mockBotService.Object, _aliasService, Mock.Of<IDeliveryEvents>(), mockLogger.Object);
+        _processor = new QueueProcessorFunction(_mockBotService.Object, _aliasService,
+            Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>(), mockLogger.Object);
 
         // QueueProcessorFunction checks TEAMS_INTEGRATION_DISABLED internally
         _origTeamsDisabled = Environment.GetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED");
@@ -80,7 +81,7 @@ public class NotifyFlowTests : IDisposable
         //    the test proves the alias→(PK,RK) lookup works against real storage.
         //    BotService.Send* is NOT called because of the env var guard.
         _mockBotService.Verify(
-            b => b.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
             Times.Never);
     }
 
@@ -112,7 +113,7 @@ public class NotifyFlowTests : IDisposable
         // Direct target resolved — no alias lookup needed.
         // Again, TEAMS_INTEGRATION_DISABLED prevents actual send.
         _mockBotService.Verify(
-            b => b.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()),
+            b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
             Times.Never);
     }
 }

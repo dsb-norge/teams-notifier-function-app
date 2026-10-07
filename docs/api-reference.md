@@ -478,6 +478,50 @@ curl -sS -X POST \
 
 ---
 
+### GET /v1/messages/{messageId}
+
+What happened to a message the API queued, and where it went. Works for every `messageId` a
+`POST` route returned (`/v1/notify`, `/v1/alert`, `/v1/checkin`, `/v1/send`).
+
+**Response — 200 OK**
+
+```json
+{
+  "messageId": "msg-a1b2c3d4e5f67890abcdef1234567890",
+  "status": "delivered",
+  "postedAs": "post",
+  "target": {
+    "type": "channel",
+    "teamId": "<team-guid>",
+    "channelId": "19:<channel-thread-id>@thread.tacv2",
+    "userId": null,
+    "chatId": null
+  },
+  "unresolvedMentions": [],
+  "enqueuedAt": "2026-01-15T14:30:00.000Z",
+  "deliveredAt": "2026-01-15T14:30:02.000Z",
+  "error": null
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | `queued` (waiting or being retried), `delivered`, or `failed` |
+| `postedAs` | How it was posted: `post`, `reply` (in an earlier message's thread) or `update` (replaced an earlier message). Null until delivered. |
+| `target` | The conversation it went to. Null until delivered. Check it to confirm that an alias still points where you expect. |
+| `unresolvedMentions` | Mentions not found in the roster. Always empty until mentions are supported. |
+| `error` | Why it failed, when `status` is `failed` |
+
+A message is `failed` when it can't ever be delivered (its alias was removed), or when every
+delivery attempt failed and it went to the poison queue. Records are kept for 180 days (the `DeliveryRecords__RetentionDays` app setting,
+see [Authentication §7](authentication.md#7-configuration-reference)).
+
+Status reads count against the per-principal [rate limit](#4-rate-limiting), so poll sparingly.
+
+**Errors**: 401, 404 (unknown or expired `messageId`), 429
+
+---
+
 ### GET /v1/aliases
 
 List all registered aliases. This endpoint is only available when the application setting

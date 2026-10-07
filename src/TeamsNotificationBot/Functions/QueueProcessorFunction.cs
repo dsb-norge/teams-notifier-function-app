@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
 
@@ -10,17 +11,20 @@ public class QueueProcessorFunction
 {
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
+    private readonly IDeliveryRecords _records;
     private readonly IDeliveryEvents _events;
     private readonly ILogger<QueueProcessorFunction> _logger;
 
     public QueueProcessorFunction(
         IBotService botService,
         IAliasService aliasService,
+        IDeliveryRecords records,
         IDeliveryEvents events,
         ILogger<QueueProcessorFunction> logger)
     {
         _botService = botService;
         _aliasService = aliasService;
+        _records = records;
         _events = events;
         _logger = logger;
     }
@@ -52,22 +56,13 @@ public class QueueProcessorFunction
             "Processing queue message. MessageId={MessageId}, Alias={Alias}, Format={Format}, DequeueCount={DequeueCount}",
             queueMessage.MessageId, queueMessage.Alias, queueMessage.Format, dequeueCount);
 
-        // Resolve the target inside the failure report too: a storage error or a malformed alias
-        // is retried like a failed send, and the delivery trail must show it.
-        (string PartitionKey, string RowKey)? destination;
-        try
+        // The queue delivers at least once: a retry after a successful send must not post twice.
+        var record = await _records.GetAsync(queueMessage.MessageId);
+        if (record?.Status == DeliveryStatus.Delivered)
         {
-            destination = await ResolveDestinationAsync(queueMessage, dequeueCount);
+            _logger.LogInformation("Already delivered; skipping. MessageId={MessageId}", queueMessage.MessageId);
+            return;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to resolve the target. MessageId={MessageId}", queueMessage.MessageId);
-            _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
-            throw;
-        }
-        if (destination is not { } key)
-            return; // failed for good, already reported
-        var (partitionKey, rowKey) = key;
 
         var teamsDisabled = string.Equals(
             Environment.GetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED"),
@@ -76,44 +71,75 @@ public class QueueProcessorFunction
 
         if (teamsDisabled)
         {
-            _logger.LogInformation(
-                "Teams integration disabled. Message would be sent to {PK}/{RK}. MessageId={MessageId}, Format={Format}",
-                partitionKey, rowKey, queueMessage.MessageId, queueMessage.Format);
+            // Offline mode: resolve and log where the message would go, and stop.
+            if (await ResolveReportingFailuresAsync(queueMessage, dequeueCount) is { } offline)
+            {
+                _logger.LogInformation(
+                    "Teams integration disabled. Message would be sent to {PK}/{RK}. MessageId={MessageId}, Format={Format}",
+                    offline.PartitionKey, offline.RowKey, queueMessage.MessageId, queueMessage.Format);
+            }
             return;
         }
 
+        if (await ResolveReportingFailuresAsync(queueMessage, dequeueCount) is not { } key)
+            return; // failed for good, already reported
+
+        SentActivity sent = null!;
+        await DeliverAsync(queueMessage, dequeueCount, key, async () => sent = await _botService.SendAsync(
+            key.PartitionKey, key.RowKey, queueMessage.Format, queueMessage.Message));
+        var outcome = new DeliveryOutcome(PostedAs.Post, key, sent.ConversationId, sent.ActivityId, sent.ActivityId);
+
+        _logger.LogInformation(
+            "Message delivered successfully. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}, PostedAs={PostedAs}",
+            queueMessage.MessageId, outcome.ConversationKey.PartitionKey, outcome.ConversationKey.RowKey,
+            queueMessage.Format, outcome.PostedAs);
+        await _records.MarkDeliveredAsync(queueMessage, outcome);
+        _events.Delivered(queueMessage, outcome.ConversationKey.PartitionKey, outcome.ConversationKey.RowKey, dequeueCount);
+    }
+
+    /// <summary>
+    /// Runs the Teams call. A failure is reported and rethrown, so the queue retries it and, after
+    /// the last attempt, moves it to the poison queue.
+    /// </summary>
+    private async Task DeliverAsync(
+        QueueMessage queueMessage, long dequeueCount, (string PartitionKey, string RowKey) key, Func<Task> send)
+    {
         try
         {
-            if (queueMessage.Format == "adaptive-card")
-            {
-                using var cardDoc = JsonDocument.Parse(queueMessage.Message);
-                var card = cardDoc.RootElement.Clone();
-                await _botService.SendAdaptiveCardAsync(partitionKey, rowKey, card);
-            }
-            else
-            {
-                await _botService.SendMessageAsync(partitionKey, rowKey, queueMessage.Message);
-            }
-
-            _logger.LogInformation(
-                "Message delivered successfully. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}",
-                queueMessage.MessageId, partitionKey, rowKey, queueMessage.Format);
+            await send();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
                 "Failed to deliver message. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}",
-                queueMessage.MessageId, partitionKey, rowKey, queueMessage.Format);
+                queueMessage.MessageId, key.PartitionKey, key.RowKey, queueMessage.Format);
             _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
             throw;
         }
-
-        _events.Delivered(queueMessage, partitionKey, rowKey, dequeueCount);
     }
 
     /// <summary>
-    /// The conversation the message goes to: the direct target, or the alias's conversation. Null,
-    /// after reporting the failure, when the message has no target or its alias no longer exists.
+    /// <see cref="ResolveDestinationAsync"/>, inside the failure report: a storage error or a
+    /// malformed alias is retried like a failed send, and the delivery trail must show it.
+    /// </summary>
+    private async Task<(string PartitionKey, string RowKey)?> ResolveReportingFailuresAsync(
+        QueueMessage queueMessage, long dequeueCount)
+    {
+        try
+        {
+            return await ResolveDestinationAsync(queueMessage, dequeueCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve the target. MessageId={MessageId}", queueMessage.MessageId);
+            _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The conversation a new post goes to: the direct target, or the alias's conversation. Null
+    /// when the message has no target or its alias no longer exists, which fails it for good.
     /// </summary>
     private async Task<(string PartitionKey, string RowKey)?> ResolveDestinationAsync(QueueMessage queueMessage, long dequeueCount)
     {
@@ -128,9 +154,7 @@ public class QueueProcessorFunction
 
         if (string.IsNullOrEmpty(queueMessage.Alias))
         {
-            _logger.LogError("Queue message has neither Target nor Alias. MessageId={MessageId}",
-                queueMessage.MessageId);
-            _events.DeliveryFailed(queueMessage, dequeueCount, "NoTarget",
+            await FailPermanentlyAsync(queueMessage, dequeueCount, "NoTarget",
                 "The message has neither a target nor an alias.");
             return null;
         }
@@ -138,10 +162,7 @@ public class QueueProcessorFunction
         var alias = await _aliasService.GetAliasAsync(queueMessage.Alias);
         if (alias == null)
         {
-            _logger.LogError(
-                "Unknown alias in queue message: {Alias}. MessageId={MessageId}",
-                queueMessage.Alias, queueMessage.MessageId);
-            _events.DeliveryFailed(queueMessage, dequeueCount, "UnknownAlias",
+            await FailPermanentlyAsync(queueMessage, dequeueCount, "UnknownAlias",
                 $"Alias '{queueMessage.Alias}' no longer exists; the message was dropped.");
             return null;
         }
@@ -152,6 +173,14 @@ public class QueueProcessorFunction
             "Alias resolved. Alias={Alias}, Type={Type}, PK={PK}, RK={RK}, MessageId={MessageId}",
             queueMessage.Alias, alias.TargetType, aliasKey.PartitionKey, aliasKey.RowKey, queueMessage.MessageId);
         return aliasKey;
+    }
+
+    /// <summary>A failure no retry can fix: recorded as failed, with no retry and no poison-queue alert.</summary>
+    private async Task FailPermanentlyAsync(QueueMessage queueMessage, long dequeueCount, string errorType, string error)
+    {
+        _logger.LogError("{Error} MessageId={MessageId}", LogSanitizer.Sanitize(error), queueMessage.MessageId);
+        await _records.MarkFailedAsync(queueMessage, error);
+        _events.DeliveryFailed(queueMessage, dequeueCount, errorType, error);
     }
 
     /// <summary>

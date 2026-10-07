@@ -15,6 +15,7 @@ public class PoisonQueueMonitorFunctionTests : IDisposable
 {
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<IAliasService> _aliasService = new();
+    private readonly Mock<IDeliveryRecords> _records = new();
     private readonly Mock<FunctionContext> _functionContext = new();
     private readonly PoisonQueueMonitorFunction _function;
 
@@ -23,6 +24,7 @@ public class PoisonQueueMonitorFunctionTests : IDisposable
         _function = new PoisonQueueMonitorFunction(
             _botService.Object,
             _aliasService.Object,
+            _records.Object,
             NullLogger<PoisonQueueMonitorFunction>.Instance);
 
         Environment.SetEnvironmentVariable("PoisonAlertAlias", "alert-channel");
@@ -205,5 +207,40 @@ public class PoisonQueueMonitorFunctionTests : IDisposable
 
         // Should still attempt to send alert
         _botService.Verify(b => b.SendAdaptiveCardAsync("t1", "c1", It.IsAny<JsonElement>()), Times.Once);
+    }
+
+    // --- Delivery records ---
+
+    [Fact]
+    public async Task NotificationsPoison_MarksTheMessageFailed()
+    {
+        var messageJson = """{"messageId":"msg-0123456789abcdef0123456789abcdef","alias":"test","message":"Hello"}""";
+
+        await _function.RunNotifications(messageJson, _functionContext.Object);
+
+        _records.Verify(r => r.MarkFailedAsync(
+            It.Is<QueueMessage>(m => m.MessageId == "msg-0123456789abcdef0123456789abcdef"),
+            It.Is<string>(e => e.Contains("poison queue"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotificationsPoison_RecordFailure_StillSendsTheAlert()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("alert-channel")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "t1", ChannelId = "c1" });
+        _records.Setup(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.IsAny<string>()))
+            .ThrowsAsync(new InvalidOperationException("storage down"));
+
+        await _function.RunNotifications("""{"messageId":"msg-1","message":"Hello"}""", _functionContext.Object);
+
+        _botService.Verify(b => b.SendAdaptiveCardAsync("t1", "c1", It.IsAny<JsonElement>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task BotOperationsPoison_TouchesNoDeliveryRecord()
+    {
+        await _function.RunBotOperations("""{"operation":"send"}""", _functionContext.Object);
+
+        _records.VerifyNoOtherCalls();
     }
 }
