@@ -251,10 +251,7 @@ components:
           default: text
           example: text
         metadata:
-          type: object
-          additionalProperties:
-            type: string
-          description: Optional key-value metadata
+          $ref: '#/components/schemas/Metadata'
 
     SendRequest:
       type: object
@@ -291,10 +288,18 @@ components:
           enum: [text, adaptive-card]
           default: text
         metadata:
-          type: object
-          additionalProperties:
-            type: string
-          description: Optional key-value metadata
+          $ref: '#/components/schemas/Metadata'
+
+    Metadata:
+      type: object
+      maxProperties: 10
+      additionalProperties:
+        type: string
+        maxLength: 256
+      description: >-
+        Optional key-value pairs for tracing. Logged with the delivery events (as meta.<key>),
+        so never put secrets here. At most 10 entries; keys are 1-64 characters of letters,
+        digits, '.', '_' and '-'; values are strings of at most 256 characters.
 
     CommonAlertPayload:
       type: object

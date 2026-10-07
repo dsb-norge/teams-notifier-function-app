@@ -82,6 +82,12 @@ public class SendFunction
                 "Invalid format. Expected 'text' or 'adaptive-card'.", instance, correlationId);
         }
 
+        var metadataError = MetadataRules.Validate(request.Metadata);
+        if (metadataError != null)
+        {
+            return ApiResponse.Problem(400, "Bad Request", metadataError, instance, correlationId);
+        }
+
         // Validate adaptive card if applicable
         if (request.Format == "adaptive-card")
         {

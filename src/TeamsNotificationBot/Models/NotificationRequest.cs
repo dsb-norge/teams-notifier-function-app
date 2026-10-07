@@ -40,7 +40,7 @@ public class NotificationRequest
             return false;
         }
 
-        error = null;
-        return true;
+        error = MetadataRules.Validate(Metadata);
+        return error == null;
     }
 }

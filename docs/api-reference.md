@@ -204,7 +204,7 @@ Send a notification message to the Teams conversation identified by `{alias}`.
 |-------|------|----------|-------------|
 | `message` | string or object | Yes | Message content. String for `text` format; object for `adaptive-card` format. |
 | `format` | string | No | `"text"` (default) or `"adaptive-card"` |
-| `metadata` | object | No | Key-value pairs (string values only) attached to the message for tracing |
+| `metadata` | object | No | Key-value pairs for tracing, logged with the message's delivery events (see [Size Limits](#8-size-limits)). Never put secrets here. |
 
 For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 
@@ -386,7 +386,7 @@ the target type and IDs. This endpoint bypasses alias resolution.
 | `target.chatId` | string | Conditional | Required for `groupChat` type |
 | `message` | string | Yes | Message content (plain text or Adaptive Card JSON string) |
 | `format` | string | No | `"text"` (default) or `"adaptive-card"` |
-| `metadata` | object | No | Key-value pairs (string values only) attached to the message for tracing |
+| `metadata` | object | No | Key-value pairs for tracing, logged with the message's delivery events (see [Size Limits](#8-size-limits)). Never put secrets here. |
 
 **Response — 202 Accepted**
 
@@ -582,10 +582,17 @@ curl -s -X POST \
 | Maximum request body | 28 KB |
 | Alias name length | 2 -- 50 characters |
 | Alias name format | Lowercase letters, digits, hyphens. Must start and end with a letter or digit. |
-| Metadata keys | String keys, string values only |
+| Metadata entries | At most 10 |
+| Metadata keys | 1 -- 64 characters: letters, digits, `.`, `_`, `-` |
+| Metadata values | Strings of at most 256 characters |
 | Idempotency key length | 1 -- 256 characters |
 
-Requests exceeding the 28 KB body limit receive a `413 Payload Too Large` response.
+Requests exceeding the 28 KB body limit receive a `413 Payload Too Large` response. A request
+whose `metadata` breaks a limit receives `400 Bad Request`.
+
+Each `metadata` entry is copied into the message's delivery events in Application Insights as a
+`meta.<key>` property, which is what the limits keep bounded. See
+[Troubleshooting](troubleshooting.md#notification-delivery-trail) for querying them.
 
 ---
 

@@ -151,4 +151,24 @@ public class SendFunctionTests
         Assert.Equal(400, objectResult.StatusCode);
         Assert.IsType<ProblemDetails>(objectResult.Value);
     }
+
+    [Fact]
+    public async Task OversizedMetadata_Returns400_AndQueuesNothing()
+    {
+        var req = HttpRequestHelper.CreatePostRequest(body: """
+            {
+                "target": { "type": "channel", "teamId": "team-1", "channelId": "channel-1" },
+                "message": "hi",
+                "metadata": { "bad key": "v" }
+            }
+            """);
+
+        var result = await _function.Run(req);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(400, objectResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Contains("metadata key", problem.Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
 }
