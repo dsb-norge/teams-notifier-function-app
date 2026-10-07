@@ -14,6 +14,7 @@ namespace TeamsNotificationBot.Tests.Functions;
 public class AlertFunctionTests
 {
     private readonly Mock<IAliasService> _aliasService = new();
+    private readonly Mock<IBotService> _botService = new();
     private readonly Mock<QueueClient> _queueClient = new();
     private readonly AlertFunction _function;
 
@@ -39,8 +40,12 @@ public class AlertFunctionTests
     {
         _function = new AlertFunction(
             _aliasService.Object,
+            _botService.Object,
             new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
             NullLogger<AlertFunction>.Instance);
+
+        // The alias's conversation exists unless a test says otherwise.
+        _botService.Setup(b => b.HasConversationAsync(It.IsAny<AliasEntity>())).ReturnsAsync(true);
     }
 
     [Fact]
@@ -128,5 +133,22 @@ public class AlertFunctionTests
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(400, objectResult.StatusCode);
         Assert.IsType<ProblemDetails>(objectResult.Value);
+    }
+
+    [Fact]
+    public async Task AliasWhoseConversationIsGone_Returns404_AndQueuesNothing()
+    {
+        var orphan = new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" };
+        _aliasService.Setup(s => s.GetAliasAsync("ops")).ReturnsAsync(orphan);
+        _botService.Setup(b => b.HasConversationAsync(orphan)).ReturnsAsync(false);
+
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(body: ValidAlertPayload), "ops");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Contains("no longer has the conversation", problem.Detail);
+        Assert.DoesNotContain("Unknown alias", problem.Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
     }
 }

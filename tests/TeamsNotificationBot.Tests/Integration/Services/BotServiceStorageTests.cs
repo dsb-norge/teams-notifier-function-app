@@ -324,4 +324,54 @@ public class BotServiceStorageTests
         Assert.Equal(3, results.Count);
         Assert.All(results, e => Assert.Equal("NewName", e.TeamName));
     }
+
+    // --- HasConversationAsync: whether an alias can still be delivered to ---
+
+    private BotService NewBotService(bool teamsDisabled = false)
+    {
+        var previous = Environment.GetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED");
+        Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", teamsDisabled ? "true" : null);
+        try
+        {
+            // The ctor captures the flag; CloudAdapter and the HTTP pieces aren't touched here.
+            return new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", previous);
+        }
+    }
+
+    [Fact]
+    public async Task HasConversation_ChannelAliasWithStoredReference_IsTrue()
+    {
+        await _tableClient.UpsertEntityAsync(MakeEntity("team-has-conv", "19:has@thread.tacv2"));
+        var alias = new AliasEntity { TargetType = "channel", TeamId = "team-has-conv", ChannelId = "19:has@thread.tacv2" };
+
+        Assert.True(await NewBotService().HasConversationAsync(alias));
+    }
+
+    [Fact]
+    public async Task HasConversation_ReferenceRemoved_IsFalse()
+    {
+        var alias = new AliasEntity { TargetType = "channel", TeamId = "team-removed", ChannelId = "19:gone@thread.tacv2" };
+
+        Assert.False(await NewBotService().HasConversationAsync(alias));
+    }
+
+    [Fact]
+    public async Task HasConversation_MalformedAlias_IsFalse()
+    {
+        var alias = new AliasEntity { TargetType = "channel", TeamId = "team-1" };
+
+        Assert.False(await NewBotService().HasConversationAsync(alias));
+    }
+
+    [Fact]
+    public async Task HasConversation_TeamsDisabled_IsTrue_BecauseOfflineModeStoresNoReferences()
+    {
+        var alias = new AliasEntity { TargetType = "channel", TeamId = "team-offline", ChannelId = "19:none@thread.tacv2" };
+
+        Assert.True(await NewBotService(teamsDisabled: true).HasConversationAsync(alias));
+    }
 }

@@ -375,6 +375,16 @@ public class BotService : IBotService
         }
     }
 
+    public async Task<bool> HasConversationAsync(AliasEntity alias)
+    {
+        // Offline local mode stores no references, so every alias would look orphaned.
+        if (_teamsDisabled)
+            return true;
+
+        return alias.ConversationKey() is { } key &&
+               await GetConversationReferenceEntityAsync(key.PartitionKey, key.RowKey) != null;
+    }
+
     private async Task<ConversationReference?> GetConversationReferenceAsync(string partitionKey, string rowKey)
     {
         try

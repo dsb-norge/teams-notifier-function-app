@@ -14,17 +14,20 @@ namespace TeamsNotificationBot.Functions;
 public class NotifyFunction
 {
     private readonly IAliasService _aliasService;
+    private readonly IBotService _botService;
     private readonly INotificationQueue _notificationQueue;
     private readonly IIdempotencyService _idempotencyService;
     private readonly ILogger<NotifyFunction> _logger;
 
     public NotifyFunction(
         IAliasService aliasService,
+        IBotService botService,
         INotificationQueue notificationQueue,
         IIdempotencyService idempotencyService,
         ILogger<NotifyFunction> logger)
     {
         _aliasService = aliasService;
+        _botService = botService;
         _notificationQueue = notificationQueue;
         _idempotencyService = idempotencyService;
         _logger = logger;
@@ -67,6 +70,14 @@ public class NotifyFunction
                 Sanitize(alias), messageId, Sanitize(sourceIp), correlationId);
             return ApiResponse.Problem(404, "Not Found",
                 $"Unknown alias '{alias}'.", instance, correlationId);
+        }
+
+        if (!await _botService.HasConversationAsync(channelAlias))
+        {
+            _logger.LogWarning(
+                "Alias {Alias} points to a conversation the bot no longer has. CorrelationId={CorrelationId}",
+                Sanitize(alias), correlationId);
+            return ApiResponse.ConversationGone(alias, instance, correlationId);
         }
 
         // Parse request body

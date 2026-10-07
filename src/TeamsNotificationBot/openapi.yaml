@@ -411,7 +411,9 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     NotFound:
-      description: Unknown channel alias
+      description: >-
+        Unknown alias, or an alias whose conversation the bot no longer has (the bot was removed
+        from that team or chat); the detail says which
       content:
         application/problem+json:
           schema:
