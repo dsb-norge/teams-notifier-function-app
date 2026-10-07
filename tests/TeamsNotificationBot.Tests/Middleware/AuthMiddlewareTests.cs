@@ -48,6 +48,40 @@ public class AuthMiddlewareTests
         return httpContext;
     }
 
+    // --- Validated principal handed to the functions ---
+
+    [Fact]
+    public async Task AuthorizedRequest_StoresValidatedPrincipal()
+    {
+        var httpContext = AuthorizedPost(10);
+
+        Assert.True(await InvokeAsync(httpContext));
+        Assert.Equal("caller-object-id", AuthMiddleware.GetPrincipalId(httpContext));
+    }
+
+    [Fact]
+    public async Task ExemptRoute_NeverStoresPrincipal_EvenWhenHeaderIsSent()
+    {
+        // EasyAuth passes a client-forged principal header through on its excluded paths.
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/v1/ingest/updown/some-token";
+        httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"] = "forged-object-id";
+
+        Assert.True(await InvokeAsync(httpContext));
+        Assert.Null(AuthMiddleware.GetPrincipalId(httpContext));
+    }
+
+    [Fact]
+    public async Task CallerWithoutRole_DoesNotStorePrincipal()
+    {
+        var httpContext = AuthorizedPost(10);
+        httpContext.Request.Headers[PrincipalHeader] = EncodeEasyAuthPrincipal(
+            new[] { new { typ = "roles", val = "Some.Other.Role" } });
+
+        Assert.False(await InvokeAsync(httpContext));
+        Assert.Null(AuthMiddleware.GetPrincipalId(httpContext));
+    }
+
     // --- Request body size limit (28 KB, the Teams message size limit) ---
 
     [Fact]

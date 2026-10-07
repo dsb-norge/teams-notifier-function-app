@@ -33,7 +33,7 @@ public class UpdownIngestFlowTests
         var ipAllowlist = new UpdownIpAllowlistService(
             _azurite.CreateTableClient("updownipallowlist"),
             (_, _) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
-        var fn = new UpdownIngestFunction(_webhookService, queue, _idempotency, ipAllowlist,
+        var fn = new UpdownIngestFunction(_webhookService, new NotificationQueue(queue), _idempotency, ipAllowlist,
             NullLogger<UpdownIngestFunction>.Instance);
         return (fn, queue);
     }

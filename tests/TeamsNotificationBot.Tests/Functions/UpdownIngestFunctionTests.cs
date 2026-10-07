@@ -42,7 +42,7 @@ public class UpdownIngestFunctionTests
             .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
 
         return new UpdownIngestFunction(
-            _webhookService.Object, _queueClient.Object, _idempotency.Object, _ipAllowlist.Object,
+            _webhookService.Object, new NotificationQueue(_queueClient.Object), _idempotency.Object, _ipAllowlist.Object,
             logger ?? NullLogger<UpdownIngestFunction>.Instance);
     }
 

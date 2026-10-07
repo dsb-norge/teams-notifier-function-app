@@ -22,7 +22,7 @@ public class CheckInFunctionTests
     {
         _function = new CheckInFunction(
             _aliasService.Object,
-            _queueClient.Object,
+            new NotificationQueue(_queueClient.Object),
             NullLogger<CheckInFunction>.Instance);
     }
 

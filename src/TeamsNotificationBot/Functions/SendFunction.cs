@@ -1,22 +1,23 @@
 using System.Text.Json;
-using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
+using TeamsNotificationBot.Middleware;
 using TeamsNotificationBot.Models;
+using TeamsNotificationBot.Services;
 
 namespace TeamsNotificationBot.Functions;
 
 public class SendFunction
 {
-    private readonly QueueClient _queueClient;
+    private readonly INotificationQueue _notificationQueue;
     private readonly ILogger<SendFunction> _logger;
 
-    public SendFunction(QueueClient queueClient, ILogger<SendFunction> logger)
+    public SendFunction(INotificationQueue notificationQueue, ILogger<SendFunction> logger)
     {
-        _queueClient = queueClient;
+        _notificationQueue = notificationQueue;
         _logger = logger;
     }
 
@@ -108,11 +109,12 @@ public class SendFunction
             Message = request.Message,
             Format = request.Format,
             Metadata = request.Metadata,
-            EnqueuedAt = DateTimeOffset.UtcNow
+            EnqueuedAt = DateTimeOffset.UtcNow,
+            Source = "send",
+            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
         };
 
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-        await _queueClient.SendMessageAsync(messageJson);
+        await _notificationQueue.EnqueueAsync(queueMessage);
 
         _logger.LogInformation(
             "Send message queued. MessageId={MessageId}, TargetType={Type}, Format={Format}, CorrelationId={CorrelationId}",

@@ -22,7 +22,7 @@ public class NotifyFunctionTests
     {
         _function = new NotifyFunction(
             _aliasService.Object,
-            _queueClient.Object,
+            new NotificationQueue(_queueClient.Object),
             _idempotencyService.Object,
             NullLogger<NotifyFunction>.Instance);
     }

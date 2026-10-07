@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
+using TeamsNotificationBot.Middleware;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
 using static TeamsNotificationBot.Helpers.LogSanitizer;
@@ -14,16 +14,16 @@ namespace TeamsNotificationBot.Functions;
 public class AlertFunction
 {
     private readonly IAliasService _aliasService;
-    private readonly QueueClient _queueClient;
+    private readonly INotificationQueue _notificationQueue;
     private readonly ILogger<AlertFunction> _logger;
 
     public AlertFunction(
         IAliasService aliasService,
-        QueueClient queueClient,
+        INotificationQueue notificationQueue,
         ILogger<AlertFunction> logger)
     {
         _aliasService = aliasService;
-        _queueClient = queueClient;
+        _notificationQueue = notificationQueue;
         _logger = logger;
     }
 
@@ -104,11 +104,12 @@ public class AlertFunction
             Alias = alias,
             Message = cardJson,
             Format = "adaptive-card",
-            EnqueuedAt = DateTimeOffset.UtcNow
+            EnqueuedAt = DateTimeOffset.UtcNow,
+            Source = "alert",
+            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
         };
 
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-        await _queueClient.SendMessageAsync(messageJson);
+        await _notificationQueue.EnqueueAsync(queueMessage);
 
         _logger.LogInformation(
             "Alert queued. Alias={Alias}, MessageId={MessageId}, AlertRule={AlertRule}, Severity={Severity}, CorrelationId={CorrelationId}",

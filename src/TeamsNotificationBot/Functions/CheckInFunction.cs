@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
+using TeamsNotificationBot.Middleware;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
 using static TeamsNotificationBot.Helpers.LogSanitizer;
@@ -14,16 +14,16 @@ namespace TeamsNotificationBot.Functions;
 public class CheckInFunction
 {
     private readonly IAliasService _aliasService;
-    private readonly QueueClient _queueClient;
+    private readonly INotificationQueue _notificationQueue;
     private readonly ILogger<CheckInFunction> _logger;
 
     public CheckInFunction(
         IAliasService aliasService,
-        QueueClient queueClient,
+        INotificationQueue notificationQueue,
         ILogger<CheckInFunction> logger)
     {
         _aliasService = aliasService;
-        _queueClient = queueClient;
+        _notificationQueue = notificationQueue;
         _logger = logger;
     }
 
@@ -83,11 +83,12 @@ public class CheckInFunction
             Alias = alias,
             Message = checkinText,
             Format = "text",
-            EnqueuedAt = timestamp
+            EnqueuedAt = timestamp,
+            Source = "checkin",
+            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
         };
 
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-        await _queueClient.SendMessageAsync(messageJson);
+        await _notificationQueue.EnqueueAsync(queueMessage);
 
         _logger.LogInformation(
             "CheckIn message queued. Alias={Alias}, MessageId={MessageId}, Version={Version}, Source={Source}, CorrelationId={CorrelationId}",
