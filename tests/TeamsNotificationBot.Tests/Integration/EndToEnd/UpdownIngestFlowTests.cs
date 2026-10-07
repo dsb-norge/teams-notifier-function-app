@@ -2,6 +2,7 @@ using System.Text.Json;
 using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using TeamsNotificationBot.Functions;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
@@ -33,7 +34,7 @@ public class UpdownIngestFlowTests
         var ipAllowlist = new UpdownIpAllowlistService(
             _azurite.CreateTableClient("updownipallowlist"),
             (_, _) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
-        var fn = new UpdownIngestFunction(_webhookService, new NotificationQueue(queue), _idempotency, ipAllowlist,
+        var fn = new UpdownIngestFunction(_webhookService, new NotificationQueue(queue, Mock.Of<IDeliveryEvents>()), _idempotency, ipAllowlist,
             NullLogger<UpdownIngestFunction>.Instance);
         return (fn, queue);
     }
@@ -108,6 +109,7 @@ public class UpdownIngestFlowTests
             var processor = new QueueProcessorFunction(
                 new Moq.Mock<IBotService>().Object,
                 new AliasService(aliasTable),
+                Mock.Of<IDeliveryEvents>(),
                 NullLogger<QueueProcessorFunction>.Instance);
 
             var ex = await Record.ExceptionAsync(() =>

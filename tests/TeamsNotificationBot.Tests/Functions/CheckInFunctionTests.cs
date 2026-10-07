@@ -22,7 +22,7 @@ public class CheckInFunctionTests
     {
         _function = new CheckInFunction(
             _aliasService.Object,
-            new NotificationQueue(_queueClient.Object),
+            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
             NullLogger<CheckInFunction>.Instance);
     }
 
