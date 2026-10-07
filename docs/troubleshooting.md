@@ -135,6 +135,29 @@ AppTraces
 | order by TimeGenerated desc
 ```
 
+### Notification Delivery Trail
+
+Every message on the `notifications` queue produces custom events that are never sampled:
+`NotificationQueued` when a route queues it, then `NotificationDelivered` or one
+`NotificationDeliveryFailed` per failed attempt. Each carries `MessageId`, `Source` (the route),
+`PrincipalId` (the caller; empty for updown), `Alias` or the target IDs, and every `metadata`
+entry as `meta.<key>`. Delivery events add `DequeueCount`, and failures `ErrorType` and `Error`.
+Ingestion sampling, if it is turned on in the portal, still applies to them.
+
+```kql
+AppEvents
+| where TimeGenerated > ago(24h)
+| where Name in ("NotificationQueued", "NotificationDelivered", "NotificationDeliveryFailed")
+| extend MessageId = tostring(Properties.MessageId), Source = tostring(Properties.Source),
+         Caller = tostring(Properties.PrincipalId), Alias = tostring(Properties.Alias),
+         DequeueCount = toint(Properties.DequeueCount), Error = tostring(Properties.Error)
+| project TimeGenerated, Name, MessageId, Source, Alias, Caller, DequeueCount, Error
+| order by MessageId, TimeGenerated asc
+```
+
+To follow one caller's run, filter on a `metadata` entry it sends, for example
+`| where tostring(Properties["meta.run"]) == "1234"`.
+
 ### Bot Channel Traffic (Bot Service Diagnostics)
 
 Requires `ABSBotRequests` diagnostic setting enabled on the Bot Service resource.

@@ -94,7 +94,8 @@ should **not** be narrowed. The rule in this codebase is:
 > A failure in a *side concern* must never break notification delivery.
 
 Channel- and team-name backfill (including the `teamlookup` name query), conversation-reference auto-refresh, `LastUpdated` stamping, the
-poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, and
+poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, delivery-event
+tracking (`DeliveryEvents`, which runs right after a message was queued or delivered), and
 best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
 whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
 into the `BotMessages` 500 envelope. Each catches broadly, logs at `Debug`/`Warning`, and continues.
@@ -409,7 +410,7 @@ These are pinned via `ignore:` entries in `.github/dependabot.yml`. Don't lift t
 
 Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.x at runtime (`TypeLoadException` on Flex Consumption).
 
-**To revisit**: the Functions Worker ApplicationInsights package must ship a release that targets the AI 3.x API.
+**To revisit**: the Functions Worker ApplicationInsights package must ship a release that targets the AI 3.x API. The move also touches `Services/DeliveryEvents.cs`, which keeps its events out of sampling through the 2.x `ISupportSampling.SamplingPercentage`; `DeliveryEventsTests` checks that they survive a sampling pipeline.
 
 **Last checked (2026-09-30)**: still blocking. `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.51.0 is still the latest release and still depends on `Microsoft.ApplicationInsights.PerfCounterCollector >= 2.23.0`, so the condition is unmet. On 2026-08-14, building against `Microsoft.ApplicationInsights.WorkerService` 3.1.2 (still the latest 3.x) failed with `CS0246: ITelemetryInitializer could not be found` in `Helpers/TokenRedactingTelemetryInitializer.cs`. Keep the ignore.
 

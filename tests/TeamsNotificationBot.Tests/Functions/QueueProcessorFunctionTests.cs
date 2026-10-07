@@ -18,6 +18,7 @@ public class QueueProcessorFunctionTests : IDisposable
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<IAliasService> _aliasService = new();
     private readonly Mock<FunctionContext> _functionContext = new();
+    private readonly Mock<IDeliveryEvents> _events = new();
     private readonly QueueProcessorFunction _function;
 
     public QueueProcessorFunctionTests()
@@ -25,6 +26,7 @@ public class QueueProcessorFunctionTests : IDisposable
         _function = new QueueProcessorFunction(
             _botService.Object,
             _aliasService.Object,
+            _events.Object,
             NullLogger<QueueProcessorFunction>.Instance);
 
         // Clean env
@@ -130,6 +132,121 @@ public class QueueProcessorFunctionTests : IDisposable
 
         _botService.Verify(b => b.SendMessageAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    // --- Delivery events ---
+
+    private void SetDequeueCount(long count)
+    {
+        var bindingContext = new Mock<BindingContext>();
+        bindingContext.Setup(b => b.BindingData).Returns(
+            new Dictionary<string, object?> { ["DequeueCount"] = count.ToString() });
+        _functionContext.Setup(c => c.BindingContext).Returns(bindingContext.Object);
+    }
+
+    [Fact]
+    public async Task Delivered_EmitsDeliveredEvent_WithConversationAndDequeueCount()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        SetDequeueCount(2);
+
+        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+
+        _events.Verify(e => e.Delivered(
+            It.Is<QueueMessage>(m => m.MessageId == "msg-test-123"), "team-1", "channel-1", 2), Times.Once);
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeliveryFailure_EmitsFailedEvent_ThenRethrows()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        _botService.Setup(b => b.SendMessageAsync("team-1", "channel-1", It.IsAny<string>()))
+            .ThrowsAsync(new InvalidOperationException("No conversation reference"));
+        SetDequeueCount(5);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _function.Run(CreateQueueMessageJson(), _functionContext.Object));
+
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), 5, "InvalidOperationException", "No conversation reference"), Times.Once);
+        _events.Verify(e => e.Delivered(
+            It.IsAny<QueueMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UnknownAlias_EmitsFailedEvent_BecauseTheMessageIsDropped()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("gone")).ReturnsAsync((AliasEntity?)null);
+
+        await _function.Run(CreateQueueMessageJson(alias: "gone"), _functionContext.Object);
+
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), "UnknownAlias", It.Is<string>(s => s.Contains("gone"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task AliasLookupFailure_EmitsFailedEvent_ThenRethrows()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test"))
+            .ThrowsAsync(new Azure.RequestFailedException(503, "storage unavailable"));
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() =>
+            _function.Run(CreateQueueMessageJson(), _functionContext.Object));
+
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), "RequestFailedException", "storage unavailable"), Times.Once);
+    }
+
+    [Fact]
+    public async Task MalformedAlias_EmitsFailedEvent_ThenRethrows()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { RowKey = "test", TargetType = "channel", TeamId = "team-1" });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _function.Run(CreateQueueMessageJson(), _functionContext.Object));
+
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), "InvalidOperationException", It.IsAny<string>()), Times.Once);
+        _botService.Verify(b => b.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UnknownAlias_EmitsExactlyOneFailedEvent()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("gone")).ReturnsAsync((AliasEntity?)null);
+
+        await _function.Run(CreateQueueMessageJson(alias: "gone"), _functionContext.Object);
+
+        _events.Verify(e => e.DeliveryFailed(
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task TeamsDisabled_EmitsNoDeliveryEvent()
+    {
+        Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", "true");
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+
+        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+
+        _events.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task MissingBindingData_ReportsDequeueCountZero()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+
+        await _function.Run(CreateQueueMessageJson(), _functionContext.Object);
+
+        _events.Verify(e => e.Delivered(It.IsAny<QueueMessage>(), "team-1", "channel-1", 0), Times.Once);
     }
 
     [Fact]

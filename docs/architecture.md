@@ -224,7 +224,7 @@ The updown webhook ingress adds one **DNS-only** requirement: resolving `ips.upd
 
 ### Monitoring
 
-Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines.
+Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines. Every queued notification also produces unsampled `NotificationQueued`, `NotificationDelivered` and `NotificationDeliveryFailed` custom events with the caller and its `metadata`; see [Troubleshooting](troubleshooting.md#notification-delivery-trail).
 
 ---
 

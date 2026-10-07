@@ -18,7 +18,7 @@ public class SendFunctionTests
     public SendFunctionTests()
     {
         _function = new SendFunction(
-            new NotificationQueue(_queueClient.Object),
+            new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
             NullLogger<SendFunction>.Instance);
     }
 
