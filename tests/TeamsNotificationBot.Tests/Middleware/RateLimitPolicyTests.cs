@@ -52,6 +52,19 @@ public class RateLimitPolicyTests
         Assert.Equal("oid-123", RateLimitPolicy.PrincipalKey("oid-123"));
     }
 
+    // Callers honour Retry-After only as delta-seconds, so it is never an HTTP date or a fraction,
+    // and never 0 (which would invite an immediate retry into the same window).
+    [Theory]
+    [InlineData(12, 12)]
+    [InlineData(11.2, 12)]
+    [InlineData(0.4, 1)]
+    [InlineData(0, 1)]
+    [InlineData(-3, 1)]
+    public void RetryAfterSeconds_IsWholeSecondsRoundedUp_AndAtLeastOne(double input, int expected)
+    {
+        Assert.Equal(expected, RateLimitPolicy.RetryAfterSeconds(input));
+    }
+
     // Build a header accessor from a single header (or from a name→value map).
     private static Func<string, string?> Hdr(string name, string? value) =>
         n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase) ? value : null;
