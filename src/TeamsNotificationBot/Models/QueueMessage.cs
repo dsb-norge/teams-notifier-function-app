@@ -24,4 +24,15 @@ public class QueueMessage
 
     [JsonPropertyName("enqueuedAt")]
     public DateTimeOffset EnqueuedAt { get; set; }
+
+    /// <summary>The route that queued the message: notify, send, alert, checkin or updown.</summary>
+    [JsonPropertyName("source")]
+    public string? Source { get; set; }
+
+    /// <summary>
+    /// The calling principal's object ID, as EasyAuth validated it. Null for anonymous sources
+    /// (updown) and for messages queued before this field existed.
+    /// </summary>
+    [JsonPropertyName("principalId")]
+    public string? PrincipalId { get; set; }
 }

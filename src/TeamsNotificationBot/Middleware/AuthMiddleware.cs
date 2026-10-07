@@ -13,6 +13,18 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
 {
     private const int MaxRequestBodyBytes = 28 * 1024; // 28 KB — Teams message size limit
     private const string RequiredRole = "Notifications.Send";
+
+    /// <summary>
+    /// <c>HttpContext.Items</c> key for the calling principal's object ID. Set only after EasyAuth
+    /// has validated the caller and the role check passed, so it is never set on the exempt routes,
+    /// where a client could forge the principal header. Functions read the principal from here,
+    /// never from the header.
+    /// </summary>
+    public const string PrincipalIdItemKey = "PrincipalId";
+
+    /// <summary>The validated calling principal of an API request, or null.</summary>
+    public static string? GetPrincipalId(HttpContext httpContext) =>
+        httpContext.Items[PrincipalIdItemKey] as string;
     private readonly ILogger<AuthMiddleware> _logger;
 
     public AuthMiddleware(ILogger<AuthMiddleware> logger)
@@ -68,6 +80,7 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
             _logger.LogInformation(
                 "Authentication succeeded via EasyAuth. Endpoint={Endpoint}, Principal={Principal}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
                 Sanitize(path), Sanitize(easyAuthPrincipal), Sanitize(sourceIp), correlationId);
+            httpContext.Items[PrincipalIdItemKey] = easyAuthPrincipal;
             await ValidateRequestSizeAndProceed(httpContext, path, correlationId, context, next);
             return;
         }

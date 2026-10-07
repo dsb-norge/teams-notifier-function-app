@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -32,20 +31,20 @@ public class UpdownIngestFunction
     private const int DefaultMaxBodyBytes = 28 * 1024;
 
     private readonly IWebhookService _webhookService;
-    private readonly QueueClient _queueClient;
+    private readonly INotificationQueue _notificationQueue;
     private readonly IIdempotencyService _idempotency;
     private readonly IUpdownIpAllowlistService _ipAllowlist;
     private readonly ILogger<UpdownIngestFunction> _logger;
 
     public UpdownIngestFunction(
         IWebhookService webhookService,
-        QueueClient queueClient,
+        INotificationQueue notificationQueue,
         IIdempotencyService idempotency,
         IUpdownIpAllowlistService ipAllowlist,
         ILogger<UpdownIngestFunction> logger)
     {
         _webhookService = webhookService;
-        _queueClient = queueClient;
+        _notificationQueue = notificationQueue;
         _idempotency = idempotency;
         _ipAllowlist = ipAllowlist;
         _logger = logger;
@@ -199,12 +198,13 @@ public class UpdownIngestFunction
                 Target = ToTarget(webhook),
                 Message = card,
                 Format = "adaptive-card",
-                EnqueuedAt = DateTimeOffset.UtcNow
+                EnqueuedAt = DateTimeOffset.UtcNow,
+                Source = "updown"
             };
 
             try
             {
-                await _queueClient.SendMessageAsync(JsonSerializer.Serialize(queueMessage));
+                await _notificationQueue.EnqueueAsync(queueMessage);
             }
             catch (Azure.RequestFailedException ex)
             {

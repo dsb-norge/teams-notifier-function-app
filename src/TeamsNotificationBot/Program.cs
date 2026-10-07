@@ -309,6 +309,9 @@ var host = new HostBuilder()
             services.AddSingleton<IUpdownIpAllowlistService>(new UpdownIpAllowlistService(ipAllowlistClient));
         }
 
+        // The one way onto the notifications queue, for every route that queues a message
+        services.AddSingleton<INotificationQueue, NotificationQueue>();
+
         // Queue management service (for queue commands + poison queue monitoring)
         services.AddSingleton<IQueueManagementService, QueueManagementService>();
 

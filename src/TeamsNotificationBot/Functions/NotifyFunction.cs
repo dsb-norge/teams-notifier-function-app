@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Azure.Storage.Queues;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Helpers;
+using TeamsNotificationBot.Middleware;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
 using static TeamsNotificationBot.Helpers.LogSanitizer;
@@ -14,18 +14,18 @@ namespace TeamsNotificationBot.Functions;
 public class NotifyFunction
 {
     private readonly IAliasService _aliasService;
-    private readonly QueueClient _queueClient;
+    private readonly INotificationQueue _notificationQueue;
     private readonly IIdempotencyService _idempotencyService;
     private readonly ILogger<NotifyFunction> _logger;
 
     public NotifyFunction(
         IAliasService aliasService,
-        QueueClient queueClient,
+        INotificationQueue notificationQueue,
         IIdempotencyService idempotencyService,
         ILogger<NotifyFunction> logger)
     {
         _aliasService = aliasService;
-        _queueClient = queueClient;
+        _notificationQueue = notificationQueue;
         _idempotencyService = idempotencyService;
         _logger = logger;
     }
@@ -139,12 +139,12 @@ public class NotifyFunction
                 : request.Message.GetRawText(),
             Format = request.Format,
             Metadata = request.Metadata,
-            EnqueuedAt = DateTimeOffset.UtcNow
+            EnqueuedAt = DateTimeOffset.UtcNow,
+            Source = "notify",
+            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
         };
 
-        // Enqueue message
-        var messageJson = JsonSerializer.Serialize(queueMessage);
-        await _queueClient.SendMessageAsync(messageJson);
+        await _notificationQueue.EnqueueAsync(queueMessage);
 
         var duration = (DateTimeOffset.UtcNow - startTime).TotalMilliseconds;
         _logger.LogInformation(

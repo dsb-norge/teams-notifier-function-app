@@ -39,7 +39,7 @@ public class AlertFunctionTests
     {
         _function = new AlertFunction(
             _aliasService.Object,
-            _queueClient.Object,
+            new NotificationQueue(_queueClient.Object),
             NullLogger<AlertFunction>.Instance);
     }
 

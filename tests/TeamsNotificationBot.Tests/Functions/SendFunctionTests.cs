@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TeamsNotificationBot.Functions;
+using TeamsNotificationBot.Services;
 using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
@@ -17,7 +18,7 @@ public class SendFunctionTests
     public SendFunctionTests()
     {
         _function = new SendFunction(
-            _queueClient.Object,
+            new NotificationQueue(_queueClient.Object),
             NullLogger<SendFunction>.Instance);
     }
 
