@@ -20,12 +20,7 @@ paths:
         identified by the alias. Returns 202 immediately; delivery is asynchronous.
       parameters:
         - $ref: '#/components/parameters/alias'
-        - name: Idempotency-Key
-          in: header
-          required: false
-          description: Optional idempotency key. Duplicate requests with the same key return the cached response.
-          schema:
-            type: string
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -45,6 +40,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
@@ -129,6 +126,8 @@ paths:
         Enqueues a message for delivery to a specific Teams channel, personal chat,
         or group chat identified by target type and IDs. Returns 202 immediately;
         delivery is asynchronous.
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
       requestBody:
         required: true
         content:
@@ -146,6 +145,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
@@ -232,6 +233,20 @@ components:
       schema:
         type: string
         example: my-channel
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Makes a retry safe. A repeat of a completed request with the same key, from the same
+        caller to the same alias or target, returns the original response and queues nothing.
+        Keys count for 7 days by default.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+        pattern: '^[\x20-\x7E]+$'
+        example: deploy-run-42-notification
 
   schemas:
     NotificationRequest:
@@ -426,6 +441,12 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
     UnsupportedMediaType:
       description: Content-Type must be application/json
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    IdempotencyConflict:
+      description: Another request with the same Idempotency-Key is still being processed; retry shortly
       content:
         application/problem+json:
           schema:

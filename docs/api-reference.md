@@ -89,7 +89,7 @@ For a complete guide on setting up authentication, registering callers, and assi
 |--------|----------|-------------|
 | `Authorization` | Yes on the Entra ID routes (`/v1/notify`, `/alert`, `/send`, `/checkin`, `/aliases`). Not used on `/health`, `/v1/openapi.yaml`, `/messages` (Bot Framework sends its own JWT) or `/v1/ingest/updown/{token}` (the path token is the credential) | `Bearer <token>` — Entra ID access token with `Notifications.Send` role |
 | `Content-Type` | Yes (POST requests) | Must be `application/json` |
-| `Idempotency-Key` | No | Client-generated deduplication key. See [Idempotency](#7-idempotency). |
+| `Idempotency-Key` | No | Client-generated deduplication key on `/v1/notify` and `/v1/send`. See [Idempotency](#7-idempotency). |
 
 ### Response Headers
 
@@ -168,6 +168,7 @@ Problem Details format. The exception is `401`, which the platform returns witho
 | 401 | Unauthorized — missing or invalid Bearer token (returned by EasyAuth, no problem+json body) |
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint, or an alias whose conversation the bot no longer has (the bot was removed from that team or chat) |
+| 409 | Conflict — another request with the same `Idempotency-Key` is still being processed |
 | 413 | Payload Too Large — request body exceeds 28 KB |
 | 415 | Unsupported Media Type — Content-Type is not `application/json` |
 | 429 | Too Many Requests — rate limit exceeded |
@@ -243,7 +244,7 @@ For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 }
 ```
 
-**Errors**: 400, 401, 404, 413, 415, 429
+**Errors**: 400, 401, 404, 409, 413, 415, 429
 
 A `404` means either that the alias doesn't exist or that the bot no longer has the conversation
 it points to; the `detail` says which. Both are checked before the message is queued.
@@ -395,7 +396,9 @@ the target type and IDs. This endpoint bypasses alias resolution.
 
 Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).
 
-**Errors**: 400, 401, 429
+**Errors**: 400, 401, 409, 429
+
+Takes an `Idempotency-Key` like `/v1/notify`; the key is scoped to the caller and the whole target.
 
 ---
 
@@ -546,8 +549,8 @@ paths:
 
 ## 7. Idempotency
 
-To prevent duplicate message delivery, callers can include an `Idempotency-Key` header with a
-unique client-generated value (e.g., a UUID).
+To make a retry safe, `POST /v1/notify/{alias}` and `POST /v1/send` take an `Idempotency-Key`
+header with a client-generated value (a UUID, or a hash of whatever identifies the event).
 
 ```bash
 curl -s -X POST \
@@ -560,21 +563,31 @@ curl -s -X POST \
 
 **Behavior:**
 
-- If the same `Idempotency-Key` is sent again, the API returns the cached response from the
-  original request (same `messageId`, `correlationId`, and status code).
-- The key is scoped per operation type (e.g., `notify`). The same key used across different
-  aliases within the same operation type will match.
+- **Replay.** A request with a key that already completed returns the original response (same
+  status code, `messageId` and `correlationId`) and queues nothing, even if the alias or its
+  conversation has gone since. The body is not compared: a different body under the same key still
+  gets the original response. Only an invalid request (`400`, `415`) is rejected before the key is
+  looked at.
+- **Scope.** A key belongs to the calling principal and the target: the alias on `/v1/notify`,
+  the whole `target` on `/v1/send`. The same key from another caller, or for another alias or
+  target, is a different key.
+- **Concurrency.** The key is claimed before the message is queued. A duplicate that arrives
+  while the first request is still running gets `409 Conflict`, and should retry after a moment.
+- **Failure.** If queuing fails, the claim is released, so a retry with the same key is processed.
+- **Expiry.** A key counts for 7 days from its first use (the `Idempotency__ExpiryHours` app
+  setting, see [Authentication §7](authentication.md#7-configuration-reference)). After that the
+  same key is processed as new. Expired records are deleted daily.
+- **Format.** 1 to 256 printable ASCII characters, else `400`. Any printable character is fine,
+  including `/`, `#` and `?`. An empty header counts as absent.
 - If no `Idempotency-Key` header is provided, every request is processed independently.
-- Idempotency records are stored in Azure Table Storage. There is currently no automatic
-  expiry — keys persist until manually cleaned up.
 
 **Recommended key formats:**
 
 | Use case | Example key |
 |----------|-------------|
-| CI/CD pipeline | `pipeline-<run-id>-<stage>` |
+| CI/CD pipeline | `pipeline-<run-id>-<attempt>-<stage>` |
 | Scheduled job | `daily-report-2026-01-15` |
-| Alert forwarding | `alert-<alert-id>` |
+| Anything long or composite | a SHA-256 hex digest of the parts |
 
 ---
 
@@ -588,7 +601,7 @@ curl -s -X POST \
 | Metadata entries | At most 10 |
 | Metadata keys | 1 -- 64 characters: letters, digits, `.`, `_`, `-` |
 | Metadata values | Strings of at most 256 characters |
-| Idempotency key length | 1 -- 256 characters |
+| Idempotency key | 1 -- 256 printable ASCII characters |
 
 Requests exceeding the 28 KB body limit receive a `413 Payload Too Large` response. A request
 whose `metadata` breaks a limit receives `400 Bad Request`.

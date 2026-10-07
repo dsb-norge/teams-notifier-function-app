@@ -242,7 +242,9 @@ var host = new HostBuilder()
                     new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 }));
             var idempotencyClient = new TableClient(connectionString, "idempotencykeys");
             idempotencyClient.CreateIfNotExists();
-            services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
+            services.AddSingleton<IIdempotencyService>(sp => new IdempotencyService(
+                idempotencyClient, TeamsNotificationBot.Helpers.IdempotencyConfig.Expiry, TimeProvider.System,
+                sp.GetRequiredService<ILogger<IdempotencyService>>()));
 
             var webhookClient = new TableClient(connectionString, "webhooktokens");
             webhookClient.CreateIfNotExists();
@@ -298,7 +300,9 @@ var host = new HostBuilder()
 
             var idempotencyClient = new TableClient(tableUri, "idempotencykeys", credential);
             idempotencyClient.CreateIfNotExists();
-            services.AddSingleton<IIdempotencyService>(new IdempotencyService(idempotencyClient));
+            services.AddSingleton<IIdempotencyService>(sp => new IdempotencyService(
+                idempotencyClient, TeamsNotificationBot.Helpers.IdempotencyConfig.Expiry, TimeProvider.System,
+                sp.GetRequiredService<ILogger<IdempotencyService>>()));
 
             var webhookClient = new TableClient(tableUri, "webhooktokens", credential);
             webhookClient.CreateIfNotExists();

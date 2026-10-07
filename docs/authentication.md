@@ -326,6 +326,14 @@ config appsettings set ...`) only when you need to deviate from the default.
 | `UpdownWebhook__DebugLogPayload` | `false` | When `true`, logs the raw webhook body (sanitized, no token) at Debug. Turn off after troubleshooting. |
 | `UpdownWebhook__MaxBodyBytes` | `28672` (28 KB) | Ingress body cap; keeps the Base64-encoded queue message under Storage's 64 KB limit. |
 
+### API settings (optional)
+
+Optional with defaults in code, and not Terraform module inputs, like the webhook settings above.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `Idempotency__ExpiryHours` | `168` (7 days) | How long an `Idempotency-Key` (and an updown dedupe marker) counts. See [API Reference §7](api-reference.md#7-idempotency). |
+
 ---
 
 *Last updated: 2026-07-02*

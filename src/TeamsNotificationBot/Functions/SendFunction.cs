@@ -7,17 +7,25 @@ using TeamsNotificationBot.Helpers;
 using TeamsNotificationBot.Middleware;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using static TeamsNotificationBot.Helpers.LogSanitizer;
 
 namespace TeamsNotificationBot.Functions;
 
 public class SendFunction
 {
+    private const string IdempotencyScope = "send";
+
     private readonly INotificationQueue _notificationQueue;
+    private readonly IIdempotencyService _idempotencyService;
     private readonly ILogger<SendFunction> _logger;
 
-    public SendFunction(INotificationQueue notificationQueue, ILogger<SendFunction> logger)
+    public SendFunction(
+        INotificationQueue notificationQueue,
+        IIdempotencyService idempotencyService,
+        ILogger<SendFunction> logger)
     {
         _notificationQueue = notificationQueue;
+        _idempotencyService = idempotencyService;
         _logger = logger;
     }
 
@@ -108,6 +116,34 @@ public class SendFunction
             }
         }
 
+        // Idempotency: the key is scoped to the caller and the target, and claimed before queuing,
+        // so a concurrent duplicate can't queue a second copy.
+        if (!IdempotencyKeys.TryRead(req, out var idempotencyKey, out var keyError))
+        {
+            return ApiResponse.Problem(400, "Bad Request", keyError!, instance, correlationId);
+        }
+
+        var principalId = AuthMiddleware.GetPrincipalId(req.HttpContext);
+        IdempotencyClaim? claim = null;
+        if (idempotencyKey != null)
+        {
+            claim = await _idempotencyService.ClaimAsync(IdempotencyScope,
+                IdempotencyKeys.Scope(principalId, idempotencyKey, request.Target.Type, request.Target.TeamId,
+                    request.Target.ChannelId, request.Target.UserId, request.Target.ChatId));
+            if (claim.Status == IdempotencyClaimStatus.Completed)
+            {
+                // The caller's key isn't logged: the correlation ID ties the replay to this request.
+                _logger.LogInformation("Idempotent replay. CorrelationId={CorrelationId}", correlationId);
+                return IdempotencyKeys.Replay(claim.Result!);
+            }
+            if (claim.Status == IdempotencyClaimStatus.InProgress)
+            {
+                _logger.LogWarning(
+                    "Idempotency key in use by a concurrent request. CorrelationId={CorrelationId}", correlationId);
+                return IdempotencyKeys.InProgress(instance, correlationId);
+            }
+        }
+
         var queueMessage = new QueueMessage
         {
             MessageId = messageId,
@@ -117,22 +153,39 @@ public class SendFunction
             Metadata = request.Metadata,
             EnqueuedAt = DateTimeOffset.UtcNow,
             Source = "send",
-            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
+            PrincipalId = principalId
         };
 
-        await _notificationQueue.EnqueueAsync(queueMessage);
+        try
+        {
+            await _notificationQueue.EnqueueAsync(queueMessage);
+        }
+        catch when (claim != null)
+        {
+            // Nothing was queued: free the key so the caller can retry with it.
+            await _idempotencyService.ReleaseAsync(claim);
+            throw;
+        }
 
         _logger.LogInformation(
             "Send message queued. MessageId={MessageId}, TargetType={Type}, Format={Format}, CorrelationId={CorrelationId}",
-            messageId, request.Target.Type, request.Format, correlationId);
+            messageId, Sanitize(request.Target.Type), Sanitize(request.Format), correlationId);
 
-        return new ObjectResult(new
+        var responseBody = new
         {
             status = "queued",
             messageId,
             correlationId,
             timestamp = DateTimeOffset.UtcNow.ToString("o")
-        })
+        };
+
+        if (claim != null)
+        {
+            await _idempotencyService.CompleteAsync(claim,
+                StatusCodes.Status202Accepted, JsonSerializer.Serialize(responseBody));
+        }
+
+        return new ObjectResult(responseBody)
         { StatusCode = StatusCodes.Status202Accepted };
     }
 
