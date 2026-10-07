@@ -1,0 +1,210 @@
+# Design: threads, delivery status, mentions and direct messages
+
+| Field | Value |
+|---|---|
+| Status | Approved for implementation |
+| Audience | app developers (this repo) and API consumers |
+| First client | the notifications in [`dsb-norge/github-actions-terraform`](https://github.com/dsb-norge/github-actions-terraform) (unapplied default branch, nightly drift) |
+
+This document records the design agreed with the first client. Every feature here is generic:
+nothing in the API knows about GitHub, workflows, incidents or escalation. When a feature
+lands, its behaviour moves into the permanent docs ([api-reference.md](../api-reference.md),
+[architecture.md](../architecture.md)), which are the source of truth from then on.
+
+---
+
+## 1. Goal
+
+Let a caller run one Teams thread per incident: open it with a post, add to it with replies,
+and mark it resolved by updating the first post. Let the caller mention people and tags
+safely, and reach a person directly. The bot stays a relay.
+
+## 2. Principles
+
+- **The bot relays.** No reminders, digests, deduplication or "is this worth sending" in the
+  bot. That lives with the caller.
+- **The bot knows nothing about the caller's domain.** Callers hand the bot Teams and Entra
+  identities only.
+- **Holding `Notifications.Send` is the whole permission** to post to any alias on an instance,
+  and to read or change any message on it. There is no per-alias authorization.
+- **Alias management from Teams stays open by design.** Anyone who can talk to the bot can
+  create, repoint or remove any alias. Tracking an owner per alias, and handling owners who
+  leave, costs more than it protects for now.
+- **All API changes are additive.** Existing callers keep working, and no change to the
+  Terraform module is needed: no new queues, required app settings, well-known routes or
+  EasyAuth exclusions. New tables are created by the app.
+
+## 3. Decisions
+
+| # | Decision |
+|---|---|
+| D1 | Every message on the `notifications` queue gets a **delivery record**, whichever route queued it. |
+| D2 | `GET /v1/messages/{messageId}` returns `status` (`queued`, `delivered`, `failed`), `postedAs` (`post`, `reply`, `update`), `target`, `unresolvedMentions`, `enqueuedAt`, `deliveredAt` and `error`. |
+| D3 | `replyTo` and `update` on `POST /v1/notify/{alias}`, mutually exclusive. A reply waits for a parent that is still queued (§5.3). |
+| D4 | `replyTo` is lenient and `update` is strict (§5.3). A parent sent to a different alias is `409` for both. |
+| D5 | A thread stays where its parent went, even if the alias is repointed later. |
+| D6 | Delivery records are kept 180 days by default; idempotency keys 7 days. Both are optional settings. |
+| D7 | Permanent failures fail at once, without retries or a poison-queue alert. Transient failures retry as before. |
+| D8 | Idempotency is scoped per caller, route and target, claimed atomically before queuing, expires, and is supported on `/v1/send` too. |
+| D9 | Posting to an alias whose conversation the bot no longer has returns `404`, not `202` followed by the poison queue. |
+| D10 | Every queued, delivered and failed message is logged as a custom event that is never sampled, with the calling principal and `metadata`. `metadata` is limited in size. |
+| D11 | Mentions are placed with `<at>key</at>` and declared in a `mentions` array. Each person is checked against the roster before posting; the roster's display name is shown (§6). |
+| D12 | Tag mentions use the same array. Tag IDs come with each request; the bot stores none. |
+| D13 | Direct messages go through `/v1/send` with a personal target that accepts an object ID or a UPN, found through the roster of a team the bot is installed in (§7). |
+| D14 | `Retry-After` on `429` is always a whole number of seconds, never an HTTP date. |
+
+## 4. Releases
+
+1. **Release 1**, in two pull requests:
+   - **A:** idempotency rework (D8), `404` on a missing conversation (D9), unsampled delivery
+     events and `metadata` limits (D10), `Retry-After` (D14), and the documentation corrections
+     the first client found.
+   - **B:** delivery records, the status endpoint, `replyTo` and `update` (D1–D7).
+2. **Release 2:** mentions and tag mentions (D11, D12).
+3. **Release 3:** direct messages (D13).
+
+## 5. Release 1
+
+### 5.1 Idempotency (A)
+
+- **Scope.** A record is keyed by the route (`notify`, `send`) and the SHA-256 of the calling
+  principal, the target (the alias, or the `/v1/send` target) and the caller's key. The same key
+  from two callers, or for two aliases, never collides. Hashing also makes any printable key
+  safe as a Table Storage row key, which rejects `/ \ # ?`.
+- **Key rules.** 1–256 printable ASCII characters (`0x20`–`0x7E`), else `400`. An empty header
+  counts as absent, as before.
+- **Atomic claim.** The record is inserted as *pending* before the message is queued. A
+  concurrent duplicate finds it pending and gets `409`. A pending record older than the function
+  timeout (5 minutes) is abandoned and can be claimed again. When queuing fails, the claim is
+  released so the caller can retry with the same key.
+- **Replay.** A completed record replays the original status and body, including the original
+  `messageId`. A different body under the same key is not detected.
+- **Expiry.** A record older than `Idempotency__ExpiryHours` (default 168) reads as absent and
+  can be claimed again. A daily timer deletes expired records, including those the updown
+  ingress writes to deduplicate retries.
+
+### 5.2 Missing conversation (A)
+
+`/v1/notify`, `/v1/alert` and `/v1/checkin` check that the bot still has a conversation
+reference for the alias's target. Without one they return `404` with a detail that tells the
+two cases apart. The check is skipped when Teams integration is disabled (offline local mode),
+which stores no references. A conversation lost between the request and delivery still fails
+in the queue, as before.
+
+### 5.3 Delivery events and `metadata` (A)
+
+- **Events.** `NotificationQueued`, `NotificationDelivered` and `NotificationDeliveryFailed`
+  are App Insights custom events. Each carries the message ID, source route, calling principal,
+  alias or target, format and every `metadata` entry as a `meta.<key>` property. Delivery events
+  add the dequeue count. Each event has its sampling percentage pinned to 100, which the
+  App Insights SDK documents as the way to keep an item out of SDK sampling. Portal ingestion
+  sampling, if someone turns it on, still applies.
+- **Limits.** At most 10 `metadata` keys. Keys are 1–64 characters of letters, digits, `.`,
+  `_` and `-`; values are strings of at most 256 characters. Otherwise `400`. `metadata` is
+  logged, so it must not carry secrets.
+
+### 5.4 Delivery records and the status endpoint (B)
+
+- **Record.** One row per `messageId`: status, source route, calling principal, alias, target
+  conversation, Teams activity ID, `postedAs`, error and timestamps. Written as `queued` when
+  queued, `delivered` with the activity ID on success, and `failed` with the error on a
+  permanent failure or when the poison-queue monitor sees the message. Retention
+  `DeliveryRecords__RetentionDays` (default 180), purged by the same daily timer.
+- **No double posts.** The queue processor skips a message whose record is already
+  `delivered`, so a queue retry after a successful send no longer posts twice.
+- **Status endpoint.** `GET /v1/messages/{messageId}` returns the record. Unknown or expired
+  IDs return `404`. It counts against the per-principal rate limit like any other API call.
+
+### 5.5 `replyTo` and `update` (B)
+
+| Parent state | `replyTo` | `update` |
+|---|---|---|
+| Delivered | Reply in the parent's thread | Message replaced |
+| Still queued | Held until the parent is delivered or failed, at most 10 minutes, then as below | Held, the same way |
+| Failed | New top-level post | Fails, with no new post |
+| Unknown or expired | New top-level post | `404` at request time |
+| Sent to a different alias | `409` at request time | `409` at request time |
+
+- **Holding.** A held message is put back on the queue with a visibility delay rather than
+  failed, so waiting doesn't use up its retries or end in the poison queue.
+- **Threads.** A reply goes to `<channel>;messageid=<parent activity>` in the parent's
+  conversation (D5). Chats have no threads, so a reply there is a normal message with
+  `postedAs: "post"`. `update` works in channels and chats.
+- **Updates.** An update replaces the whole message; the format may change. It gets its own
+  `messageId` for its status, but further replies and updates reference the original root.
+
+## 6. Release 2: mentions and tags
+
+```json
+{
+  "format": "text",
+  "message": "Apply failed after merge. <at>merger</at>, please take a look.",
+  "mentions": [
+    { "key": "merger", "id": "jane.doe@example.com", "name": "Jane Doe" },
+    { "key": "oncall", "tag": "<tag ID>", "name": "On call" }
+  ]
+}
+```
+
+- **Placement.** Every `<at>…</at>` must match a declared key, and every key must be used, else
+  `400`. No orphaned `<at>` tag can reach Teams: an unmatched tag makes Teams shift the other
+  mentions onto the wrong people. Matching runs on the raw text; HTML entities are not decoded
+  first.
+- **People.** `id` is an Entra object ID or a UPN. It is checked against the roster in the queue
+  processor: the team's roster for a channel alias, the chat's members for a group chat.
+  Mentions on a personal alias are `400`. A match is rendered as `<at>roster name</at>` with a
+  mention entity; a miss as the caller's `name` in plain text, listed in `unresolvedMentions`.
+  The roster's name is shown so the person displayed is always the person pinged. Lookups are
+  cached in memory for a few minutes. At most 20 person mentions per message.
+- **Tags.** `tag` is the tag ID, `name` is required, and `id` and `tag` are exclusive. Tags are
+  not validated (that needs Graph). Channel aliases only, at most 10 per message, else `400`.
+  Teams limits tag mentions to 2 messages per 5 seconds and 5 per minute per thread; the bot
+  doesn't enforce that, and Teams throttling delays a burst rather than losing it.
+- **Raw entities.** A card that uses `mentions` may not also carry mention entities in
+  `msteams.entities` (`400`). A card without `mentions` is forwarded unchanged, as today, and
+  its entities are not checked.
+- **Updates and replies** take `mentions` too.
+
+## 7. Release 3: direct messages
+
+```json
+{
+  "target": { "type": "personal", "userId": "jane.doe@example.com" },
+  "format": "text",
+  "message": "Apply failed in production."
+}
+```
+
+- `userId` accepts an object ID or a UPN. A stored one-to-one conversation is used if one
+  exists. Otherwise the bot searches the rosters of the teams it is installed in (first match
+  wins, or only `target.teamId` when given), creates the conversation from the roster's
+  `29:` user ID, and stores it for next time. No personal installation and no Graph permission
+  are needed.
+- A person found in no roster is a permanent failure (D7).
+- `update` works for direct messages with the rules in §5.5. `replyTo` doesn't apply.
+- One request is one delivery, so a failed direct message can't make a retry post the channel
+  message twice.
+
+## 8. Settings
+
+All optional, with defaults in code, so none is added to `app-requirements.json`:
+
+| Setting | Default | Release |
+|---|---|---|
+| `Idempotency__ExpiryHours` | `168` (7 days) | 1A |
+| `DeliveryRecords__RetentionDays` | `180` | 1B |
+
+## 9. To verify on dev
+
+- Replies land in the thread and updates replace the card, through the API (B).
+- What Teams does with an invalid tag ID, in particular whether it shifts other mentions (2).
+- Whether Teams renders a backslash-escaped `\*` literally in a bot's text message, and how
+  escaped `<` and `>` render (2).
+- Mentions in private and shared channels, for someone in the team but not the channel (2).
+
+## 10. Out of scope
+
+- **`Action.OpenUrl` allow-list:** withdrawn by the client.
+- **Aliases as code** and **per-alias authorization:** not now (§2). `target` in the status
+  lets a caller check that a delivery went where it expected.
+- **Escalation, reminders, digests and deduplication:** the caller's job.
