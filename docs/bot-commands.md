@@ -80,11 +80,18 @@ Aliases map a human-readable name to a specific Teams conversation, allowing ext
 send notifications via the API without needing internal conversation identifiers. See the
 [API Reference](api-reference.md) for the corresponding HTTP endpoints.
 
+**Aliases have no owner.** Anyone who can talk to the bot can create, repoint or remove any alias,
+from any conversation. This is by design: tracking an owner per alias, and handling owners who
+leave, would cost more than it protects. The bot logs who set or removed an alias, and every
+delivery is logged with the conversation it went to (see
+[Troubleshooting](troubleshooting.md#notification-delivery-trail)). Use names that are hard to
+collide with by accident, for example `<team>-<purpose>`.
+
 ### set-alias `<name>` `[description]`
 
-Creates or updates an alias that points to the current conversation (channel, personal chat, or
-group chat). If the alias already exists in this conversation, its description is updated. If the
-alias exists in a different conversation, the command fails with an error.
+Creates an alias that points to the current conversation (channel, personal chat, or group chat).
+If the alias already exists, it is replaced: it now points here, with the new description, even
+if it pointed to a different conversation before.
 
 **Arguments:**
 
@@ -104,14 +111,12 @@ alias exists in a different conversation, the command fails with an error.
 ```
 Alias ops-alerts set for this channel.
 Notify: https://<function-app-name>.azurewebsites.net/api/v1/notify/ops-alerts
-Alert:  https://<function-app-name>.azurewebsites.net/api/v1/alert/ops-alerts
 ```
 
 **Validation errors:**
 
-- `"Alias name must be 2-50 characters, lowercase letters, digits, and hyphens only."` — invalid
-  format
-- `"Alias 'ops-alerts' is already assigned to a different conversation."` — alias exists elsewhere
+- `"Invalid alias name. Use 2-50 characters: lowercase letters, digits, hyphens. Must start and end
+  with a letter or digit."` — invalid format
 
 ---
 
@@ -126,13 +131,14 @@ The card includes:
 - **Description** text input
 - **Submit** button
 
-This command provides the same functionality as `set-alias` but with a guided form experience.
+This command provides the same functionality as `set-alias` but with a guided form experience,
+including replacing an alias that already exists.
 
 ---
 
 ### remove-alias `<name>`
 
-Deletes the specified alias. The alias must be assigned to the current conversation.
+Deletes the specified alias, wherever it points. It can be run from any conversation.
 
 **Example:**
 
@@ -148,8 +154,7 @@ Alias ops-alerts removed.
 
 **Errors:**
 
-- `"Alias 'ops-alerts' not found."` — alias does not exist
-- `"Alias 'ops-alerts' belongs to a different conversation."` — alias exists but is not assigned here
+- `"Alias ops-alerts not found."` — alias does not exist
 
 ---
 

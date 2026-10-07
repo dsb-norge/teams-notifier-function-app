@@ -153,7 +153,7 @@ az role assignment create \
 
 **When:** Creating Entra ID app registrations for the solution. Two registrations are needed:
 1. **API app registration** (required) — Used by EasyAuth (`auth_settings_v2`) to validate Bearer tokens on API endpoints.
-2. **Bot app registration** (optional) — Only needed for local Dev Tunnels testing. In production, the bot authenticates via User-Assigned Managed Identity (UAMI), not an app registration.
+2. **Bot app registration** (required) — The bot's identity with Bot Framework. In production it has no client secret: a federated identity credential (FIC) on it trusts the bot's user-assigned managed identity (UAMI), which MSAL uses to get Bot Framework tokens (see [Authentication §2](authentication.md#2-identity-map)). A client secret is needed only for local Dev Tunnels testing.
 
 **Required Role:** One of the following:
 - **Application Administrator** (recommended for least privilege)
@@ -166,7 +166,7 @@ az role assignment create \
 
 | Operation | Required Permission | Reason |
 |-----------|-------------------|--------|
-| Create App Registration | `microsoft.directory/applications/create` | Register API app (and optionally bot app for local dev) |
+| Create App Registration | `microsoft.directory/applications/create` | Register the API app and the bot app |
 | Create client secret | `microsoft.directory/applications/credentials/update` | Generate authentication secret (bot app only, for local dev) |
 | Read directory data | `microsoft.directory/applications/read` | Verify app registration |
 
@@ -209,7 +209,7 @@ az role assignment create \
 **Secret Rotation Reminder:**
 - Client secrets expire after 90 days (as configured in setup script)
 - Only the bot app registration secret needs rotation (for local Dev Tunnels testing). The API app registration does not use a client secret (EasyAuth validates tokens server-side).
-- In production, the bot uses UAMI — no client secrets to rotate.
+- In production, the bot authenticates through the FIC — no client secret to rotate.
 
 ---
 
@@ -217,35 +217,25 @@ az role assignment create \
 
 **When:** Bot authenticates to Azure Bot Service at runtime
 
-**Identity:** User-Assigned Managed Identity (`<managed-identity>`), configured as `UserAssignedMSI` on the Bot Service resource. The bot does not use an Entra ID app registration for runtime authentication.
+**Identity:** The bot app registration, on a `SingleTenant` Bot Service resource. It has no client
+secret in production: MSAL gets its Bot Framework tokens through the federated identity credential
+(FIC) that trusts the bot's user-assigned managed identity (`<managed-identity>`). The same managed
+identity holds the Storage roles in §1.2. See [Authentication §2](authentication.md#2-identity-map)
+and [§4](authentication.md#4-bot-framework-authentication).
 
 **Required API Permissions:** **NONE**
 
 **Explanation:**
-- The bot uses **Resource-Specific Consent (RSC)** permissions defined in the Teams App manifest
-- RSC permissions are granted when the Teams App is installed in a team
-- No Graph API permissions or delegated permissions are required
-- The UAMI authenticates via the Azure Instance Metadata Service (IMDS) — no client secrets needed
-
-**Teams App Manifest RSC Permissions:**
-
-```json
-"authorization": {
-  "permissions": {
-    "resourceSpecific": [
-      {
-        "name": "ChannelMessage.Send.Group",
-        "type": "Application"
-      }
-    ]
-  }
-}
-```
+- No Microsoft Graph permissions, delegated or application, and no admin consent
+- The Teams app manifest requests no resource-specific consent (RSC) permissions: its only
+  `permissions` entry is `identity`
+- The bot can post in a team because the Teams app is installed in that team, which also delivers
+  the team's conversation events to the bot
 
 **What this means:**
-- Installing the Teams App grants the bot permission to send messages to channels in that specific team only
+- Installing the Teams App in a team lets the bot post to that team's channels only
 - No tenant-wide permissions required
-- No admin consent flow needed (consent is per-team)
+- No consent flow beyond installing the app
 
 ---
 
@@ -267,7 +257,7 @@ az role assignment create \
 |-----------|-------------------|--------|
 | Upload custom app | Teams admin center access | Publish app to org catalog |
 | Manage org apps | Teams apps policy management | Enable/disable app for org |
-| Review app permissions | App permission review | Verify RSC permissions |
+| Review app permissions | App permission review | Confirm the app requests no permissions beyond `identity` |
 
 **How to Upload:**
 1. Navigate to **Teams Admin Center** (https://admin.teams.microsoft.com)
@@ -296,7 +286,6 @@ az role assignment create \
 | Operation | Required Permission | Reason |
 |-----------|-------------------|--------|
 | Install app in team | Team owner permissions | Add bot to team's apps |
-| Grant RSC consent | Automatic (team owner action) | Grant `ChannelMessage.Send.Group` permission |
 | View installed apps | Team member (any member) | See bot in team's app list |
 
 **How to Install:**
@@ -452,7 +441,7 @@ az ad sp create-for-rbac \
 
 **Coordination Required:**
 - Identity Team creates API App Registration (for EasyAuth) → provides `API_APP_ID` to DevOps
-- DevOps deploys infrastructure (Terraform creates UAMI and Bot Service with `UserAssignedMSI`)
+- DevOps deploys infrastructure (Terraform creates the UAMI and a `SingleTenant` Bot Service for the bot app registration), then adds the FIC that lets the UAMI authenticate as the bot app
 - DevOps generates Teams App manifest using `scripts/generate-requirements.sh` + `teams-app-package/create-teams-app-package.sh` → builds ZIP package
 - Microsoft 365 Admin uploads Teams App package
 - Team Owners install app in their teams and provide Team/Channel IDs to DevOps
