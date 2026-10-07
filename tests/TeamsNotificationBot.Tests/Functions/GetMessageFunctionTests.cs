@@ -84,4 +84,15 @@ public class GetMessageFunctionTests
         Assert.Equal(404, Assert.IsType<ObjectResult>(result).StatusCode);
         _records.VerifyNoOtherCalls();
     }
+
+    [Fact]
+    public async Task Sending_IsShownAsQueued()
+    {
+        _records.Setup(r => r.GetAsync(MessageId)).ReturnsAsync(
+            new DeliveryRecordEntity { PartitionKey = MessageId, Status = DeliveryStatus.Sending });
+
+        var ok = Assert.IsType<OkObjectResult>(await _function.Run(HttpRequestHelper.CreateGetRequest(), MessageId));
+
+        Assert.Equal("queued", JsonDocument.Parse(JsonSerializer.Serialize(ok.Value)).RootElement.GetProperty("status").GetString());
+    }
 }

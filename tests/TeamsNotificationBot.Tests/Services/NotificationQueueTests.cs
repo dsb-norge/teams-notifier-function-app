@@ -50,7 +50,7 @@ public class NotificationQueueTests
         await Assert.ThrowsAsync<RequestFailedException>(() =>
             _queue.EnqueueAsync(new QueueMessage { MessageId = "msg-2" }));
 
-        _records.Verify(r => r.DeleteAsync("msg-2"), Times.Once);
+        _records.Verify(r => r.DeleteAsync("msg-2", It.IsAny<Azure.ETag>()), Times.Once);
         _events.Verify(e => e.Queued(It.IsAny<QueueMessage>()), Times.Never);
     }
 
@@ -64,5 +64,19 @@ public class NotificationQueueTests
             _queue.EnqueueAsync(new QueueMessage { MessageId = "msg-3" }));
 
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Requeue_SendsWithTheDelay_WithoutANewRecordOrEvent()
+    {
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>(), It.IsAny<TimeSpan?>(), It.IsAny<TimeSpan?>(), default))
+            .ReturnsAsync(Mock.Of<Response<SendReceipt>>());
+
+        await _queue.RequeueAsync(new QueueMessage { MessageId = "msg-4" }, TimeSpan.FromSeconds(20));
+
+        _queueClient.Verify(q => q.SendMessageAsync(
+            It.Is<string>(s => s.Contains("msg-4")), TimeSpan.FromSeconds(20), It.IsAny<TimeSpan?>(), default), Times.Once);
+        _records.VerifyNoOtherCalls();
+        _events.VerifyNoOtherCalls();
     }
 }

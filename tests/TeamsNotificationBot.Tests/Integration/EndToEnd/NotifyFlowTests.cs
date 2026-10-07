@@ -28,7 +28,7 @@ public class NotifyFlowTests : IDisposable
         var mockLogger = new Mock<ILogger<QueueProcessorFunction>>();
 
         _processor = new QueueProcessorFunction(_mockBotService.Object, _aliasService,
-            Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>(), mockLogger.Object);
+            Mock.Of<IDeliveryRecords>(), Mock.Of<INotificationQueue>(), Mock.Of<IDeliveryEvents>(), mockLogger.Object);
 
         // QueueProcessorFunction checks TEAMS_INTEGRATION_DISABLED internally
         _origTeamsDisabled = Environment.GetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED");

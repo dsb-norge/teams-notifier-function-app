@@ -5,7 +5,8 @@ namespace TeamsNotificationBot.Models;
 
 /// <summary>
 /// One row per queued message in the <c>deliveryrecords</c> table: what happened to it and where
-/// it went in Teams. Read by <c>GET /v1/messages/{messageId}</c>.
+/// it went in Teams. Read by <c>GET /v1/messages/{messageId}</c>, and by replies and updates to
+/// find the message they refer to.
 /// </summary>
 public class DeliveryRecordEntity : ITableEntity
 {
@@ -16,6 +17,8 @@ public class DeliveryRecordEntity : ITableEntity
     public string? Source { get; set; }
     public string? PrincipalId { get; set; }
     public string? Alias { get; set; }       // lowercase; null for /v1/send and updown
+    public string? ReplyTo { get; set; }     // the messageId the request asked to reply to
+    public string? Update { get; set; }      // the messageId the request asked to replace
 
     // Set on delivery.
     public string? PostedAs { get; set; }    // post | reply | update
@@ -30,6 +33,7 @@ public class DeliveryRecordEntity : ITableEntity
     public string? Error { get; set; }
 
     public DateTimeOffset EnqueuedAt { get; set; }
+    public DateTimeOffset? SendingAt { get; set; } // when a processor claimed the send (status sending)
     public DateTimeOffset? DeliveredAt { get; set; }
 
     public DateTimeOffset? Timestamp { get; set; }
@@ -51,6 +55,13 @@ public class DeliveryRecordEntity : ITableEntity
 public static class DeliveryStatus
 {
     public const string Queued = "queued";
+
+    /// <summary>
+    /// Internal: a processor has claimed the send and is talking to Teams. Shown as <c>queued</c>
+    /// by the status endpoint.
+    /// </summary>
+    public const string Sending = "sending";
+
     public const string Delivered = "delivered";
     public const string Failed = "failed";
 }

@@ -9,9 +9,19 @@ namespace TeamsNotificationBot.Functions;
 
 public class QueueProcessorFunction
 {
+    /// <summary>How long a reply or update waits for a parent that is still queued.</summary>
+    public static readonly TimeSpan MaxParentWait = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long a held message stays invisible before it looks again: a reply or update waiting for
+    /// its parent, or a copy waiting while another copy of the same message is being sent.
+    /// </summary>
+    public static readonly TimeSpan HoldDelay = TimeSpan.FromSeconds(20);
+
     private readonly IBotService _botService;
     private readonly IAliasService _aliasService;
     private readonly IDeliveryRecords _records;
+    private readonly INotificationQueue _queue;
     private readonly IDeliveryEvents _events;
     private readonly ILogger<QueueProcessorFunction> _logger;
 
@@ -19,12 +29,14 @@ public class QueueProcessorFunction
         IBotService botService,
         IAliasService aliasService,
         IDeliveryRecords records,
+        INotificationQueue queue,
         IDeliveryEvents events,
         ILogger<QueueProcessorFunction> logger)
     {
         _botService = botService;
         _aliasService = aliasService;
         _records = records;
+        _queue = queue;
         _events = events;
         _logger = logger;
     }
@@ -56,7 +68,26 @@ public class QueueProcessorFunction
             "Processing queue message. MessageId={MessageId}, Alias={Alias}, Format={Format}, DequeueCount={DequeueCount}",
             queueMessage.MessageId, queueMessage.Alias, queueMessage.Format, dequeueCount);
 
+        // Every failure of this attempt is reported exactly once, here: reading records, resolving
+        // the target, holding, claiming and sending alike. The queue then retries the message, and
+        // after the last attempt moves it to the poison queue.
+        try
+        {
+            await ProcessAsync(queueMessage, dequeueCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deliver message. MessageId={MessageId}, Format={Format}",
+                queueMessage.MessageId, queueMessage.Format);
+            _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
+            throw;
+        }
+    }
+
+    private async Task ProcessAsync(QueueMessage queueMessage, long dequeueCount)
+    {
         // The queue delivers at least once: a retry after a successful send must not post twice.
+        // (Two copies racing are handled by the send claim below.)
         var record = await _records.GetAsync(queueMessage.MessageId);
         if (record?.Status == DeliveryStatus.Delivered)
         {
@@ -71,8 +102,9 @@ public class QueueProcessorFunction
 
         if (teamsDisabled)
         {
-            // Offline mode: resolve and log where the message would go, and stop.
-            if (await ResolveReportingFailuresAsync(queueMessage, dequeueCount) is { } offline)
+            // Offline mode: resolve and log where a new post would go, and stop. Replies and updates
+            // aren't simulated; nothing is ever delivered, so their parents would never be.
+            if (await ResolveDestinationAsync(queueMessage, dequeueCount) is { } offline)
             {
                 _logger.LogInformation(
                     "Teams integration disabled. Message would be sent to {PK}/{RK}. MessageId={MessageId}, Format={Format}",
@@ -81,13 +113,79 @@ public class QueueProcessorFunction
             return;
         }
 
-        if (await ResolveReportingFailuresAsync(queueMessage, dequeueCount) is not { } key)
-            return; // failed for good, already reported
+        // A reply or an update depends on the message it refers to (its parent).
+        DeliveryRecordEntity? parent = null;
+        var parentId = queueMessage.Update ?? queueMessage.ReplyTo;
+        if (parentId != null)
+        {
+            parent = await _records.GetAsync(parentId);
+            if (parent?.Status is DeliveryStatus.Queued or DeliveryStatus.Sending)
+            {
+                if (DateTimeOffset.UtcNow - queueMessage.EnqueuedAt < MaxParentWait)
+                {
+                    // Put back with a delay rather than throw, so waiting doesn't use up delivery
+                    // attempts or end in the poison queue.
+                    await _queue.RequeueAsync(queueMessage, HoldDelay);
+                    _logger.LogInformation(
+                        "Parent {ParentId} not delivered yet; holding. MessageId={MessageId}",
+                        parentId, queueMessage.MessageId);
+                    return;
+                }
 
-        SentActivity sent = null!;
-        await DeliverAsync(queueMessage, dequeueCount, key, async () => sent = await _botService.SendAsync(
-            key.PartitionKey, key.RowKey, queueMessage.Format, queueMessage.Message));
-        var outcome = new DeliveryOutcome(PostedAs.Post, key, sent.ConversationId, sent.ActivityId, sent.ActivityId);
+                _logger.LogWarning(
+                    "Parent {ParentId} still not delivered after {MaxWait}; going ahead without it. MessageId={MessageId}",
+                    parentId, MaxParentWait, queueMessage.MessageId);
+            }
+        }
+
+        DeliveryOutcome outcome;
+        if (queueMessage.Update != null)
+        {
+            if (parent is not { Status: DeliveryStatus.Delivered, ActivityId: { } activityId, ConversationId: { } conversationId }
+                || parent.ConversationKey() is not { } parentKey)
+            {
+                await FailPermanentlyAsync(queueMessage, dequeueCount, "UpdateTargetNotDelivered",
+                    $"Message '{queueMessage.Update}' was never delivered, so there is nothing to update.");
+                return;
+            }
+
+            if (await ClaimSendAsync(queueMessage, record) is not { } claim)
+                return;
+            await SendUnderClaimAsync(queueMessage, claim, () => _botService.UpdateAsync(
+                parentKey.PartitionKey, parentKey.RowKey, conversationId, activityId, queueMessage.Format, queueMessage.Message));
+            outcome = new DeliveryOutcome(PostedAs.Update, parentKey, conversationId, activityId, parent.ThreadActivityId);
+        }
+        else
+        {
+            (string PartitionKey, string RowKey) key;
+            string? threadActivityId = null;
+            if (queueMessage.ReplyTo != null && parent is { Status: DeliveryStatus.Delivered } &&
+                parent.ConversationKey() is { } parentKey)
+            {
+                // The thread stays where its parent went, even if the alias has been repointed since.
+                // Only channels have threads; in a chat the reply is an ordinary message.
+                key = parentKey;
+                if (parent.TargetType == "channel")
+                    threadActivityId = parent.ThreadActivityId ?? parent.ActivityId;
+            }
+            else if (await ResolveDestinationAsync(queueMessage, dequeueCount) is { } destination)
+            {
+                key = destination;
+            }
+            else
+            {
+                return; // failed permanently
+            }
+
+            if (await ClaimSendAsync(queueMessage, record) is not { } claim)
+                return;
+            SentActivity sent = null!;
+            await SendUnderClaimAsync(queueMessage, claim, async () => sent = await _botService.SendAsync(
+                key.PartitionKey, key.RowKey, queueMessage.Format, queueMessage.Message, threadActivityId));
+            outcome = new DeliveryOutcome(
+                threadActivityId != null ? PostedAs.Reply : PostedAs.Post,
+                key, sent.ConversationId, sent.ActivityId, threadActivityId ?? sent.ActivityId);
+        }
 
         _logger.LogInformation(
             "Message delivered successfully. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}, PostedAs={PostedAs}",
@@ -98,41 +196,40 @@ public class QueueProcessorFunction
     }
 
     /// <summary>
-    /// Runs the Teams call. A failure is reported and rethrown, so the queue retries it and, after
-    /// the last attempt, moves it to the poison queue.
+    /// Claims the send right before the Teams call, so two copies of one queue message can't both
+    /// post it. Null when this invocation must not send: another copy delivered it already
+    /// (skipped), or is sending it right now (held, to look again later).
     /// </summary>
-    private async Task DeliverAsync(
-        QueueMessage queueMessage, long dequeueCount, (string PartitionKey, string RowKey) key, Func<Task> send)
+    private async Task<SendClaim?> ClaimSendAsync(QueueMessage queueMessage, DeliveryRecordEntity? record)
+    {
+        var claim = await _records.ClaimSendAsync(queueMessage, record);
+        switch (claim.Status)
+        {
+            case SendClaimStatus.Claimed:
+                return claim;
+            case SendClaimStatus.AlreadyDelivered:
+                _logger.LogInformation("Delivered by another copy; skipping. MessageId={MessageId}", queueMessage.MessageId);
+                return null;
+            default:
+                await _queue.RequeueAsync(queueMessage, HoldDelay);
+                _logger.LogInformation("Another copy is sending it; holding. MessageId={MessageId}", queueMessage.MessageId);
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// The Teams call, under the send claim. A failure gives the claim back, so the queue's retry
+    /// can claim it at once instead of waiting out the lease.
+    /// </summary>
+    private async Task SendUnderClaimAsync(QueueMessage queueMessage, SendClaim claim, Func<Task> send)
     {
         try
         {
             await send();
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(ex,
-                "Failed to deliver message. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}",
-                queueMessage.MessageId, key.PartitionKey, key.RowKey, queueMessage.Format);
-            _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// <see cref="ResolveDestinationAsync"/>, inside the failure report: a storage error or a
-    /// malformed alias is retried like a failed send, and the delivery trail must show it.
-    /// </summary>
-    private async Task<(string PartitionKey, string RowKey)?> ResolveReportingFailuresAsync(
-        QueueMessage queueMessage, long dequeueCount)
-    {
-        try
-        {
-            return await ResolveDestinationAsync(queueMessage, dequeueCount);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to resolve the target. MessageId={MessageId}", queueMessage.MessageId);
-            _events.DeliveryFailed(queueMessage, dequeueCount, ex.GetType().Name, ex.Message);
+            await _records.ReleaseSendAsync(queueMessage, claim);
             throw;
         }
     }

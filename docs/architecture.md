@@ -442,6 +442,25 @@ cap), so the cap only binds once the attempt count is raised.
 This smooths short bursts without burning the queue's dequeue budget (a persistent throttle would
 otherwise reach `maxDequeueCount` and poison the card).
 
+**Delivery records, replies and updates:** before sending, the processor reads the message's
+delivery record and skips it if it is already `delivered` (the queue delivers at least once).
+Right before the Teams call it claims the send on the record (`sending`, ETag-guarded, with a
+5-minute lease), so two copies of one message can't both post it: a copy that finds the claim taken
+is held and looks again, and a failed send gives the claim back. Every failure of an attempt,
+whether reading records, holding, claiming or sending, is reported once as
+`NotificationDeliveryFailed`. Delivery stays at least once: if the write that records a delivery
+(or gives back a failed claim) fails after the Azure SDK's own retries, the row stays `sending`,
+and after the lease another copy may post again, or the status stays `queued`. Teams can't be asked
+whether a proactive post already happened, so there is nothing to reconcile against; these need a
+storage outage right after a send. A
+reply or update reads the record of the message it refers to. If that message is still queued, the
+processor puts the reply back on the queue with a 20-second visibility delay rather than throwing,
+so waiting doesn't use up delivery attempts; after 10 minutes it stops waiting. A reply to a
+delivered channel message is sent to `<channel>;messageid=<thread root>` in that message's
+conversation; an update calls `UpdateActivity` on its activity ID. A failure no retry can fix (an
+update to a message that was never delivered, a removed alias) marks the record `failed` without
+throwing, so it raises no poison alert. See [API Reference](api-reference.md#threads-and-updates).
+
 **Poison queue monitoring:**
 
 When a message exceeds `maxDequeueCount`, it moves to the corresponding `-poison` queue. The `PoisonQueueMonitorFunction` triggers on poison queue messages and sends an Adaptive Card alert to the channel configured by the `PoisonAlertAlias` environment variable. To prevent cascading failures (creating `-poison-poison` queues), the monitor function catches all exceptions internally.

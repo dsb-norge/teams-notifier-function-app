@@ -35,4 +35,12 @@ public class QueueMessage
     /// </summary>
     [JsonPropertyName("principalId")]
     public string? PrincipalId { get; set; }
+
+    /// <summary>The messageId this message replies to, in that message's thread.</summary>
+    [JsonPropertyName("replyTo")]
+    public string? ReplyTo { get; set; }
+
+    /// <summary>The messageId whose Teams message this message replaces.</summary>
+    [JsonPropertyName("update")]
+    public string? Update { get; set; }
 }

@@ -110,6 +110,7 @@ public class UpdownIngestFlowTests
                 new Moq.Mock<IBotService>().Object,
                 new AliasService(aliasTable),
                 Mock.Of<IDeliveryRecords>(),
+                Mock.Of<INotificationQueue>(),
                 Mock.Of<IDeliveryEvents>(),
                 NullLogger<QueueProcessorFunction>.Instance);
 

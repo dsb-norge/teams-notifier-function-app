@@ -302,6 +302,18 @@ components:
           example: text
         metadata:
           $ref: '#/components/schemas/Metadata'
+        replyTo:
+          type: string
+          description: >-
+            A messageId from an earlier notify to this alias: post in that message's thread.
+            Falls back to a new post if that message was never delivered.
+          example: msg-a1b2c3d4e5f67890abcdef1234567890
+        update:
+          type: string
+          description: >-
+            A messageId from an earlier notify to this alias: replace that message instead of
+            posting. Not together with replyTo.
+          example: msg-a1b2c3d4e5f67890abcdef1234567890
 
     SendRequest:
       type: object
