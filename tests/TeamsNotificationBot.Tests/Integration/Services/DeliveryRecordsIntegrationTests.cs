@@ -22,20 +22,21 @@ public class DeliveryRecordsIntegrationTests
         _records = new DeliveryRecords(_tableClient, Retention, _time, NullLogger<DeliveryRecords>.Instance);
     }
 
-    private QueueMessage NewMessage() => new()
+    private QueueMessage NewMessage(string? replyTo = null) => new()
     {
         MessageId = $"msg-{Guid.NewGuid():N}",
         Alias = "Ops-Alerts",
         Source = "notify",
         PrincipalId = "caller-a",
         Message = "hi",
+        ReplyTo = replyTo,
         EnqueuedAt = _time.GetUtcNow()
     };
 
     [Fact]
     public async Task Create_ThenGet_IsQueued_WithTheCallerAndALowercaseAlias()
     {
-        var message = NewMessage();
+        var message = NewMessage(replyTo: "msg-0123456789abcdef0123456789abcdef");
 
         await _records.CreateAsync(message);
         var record = await _records.GetAsync(message.MessageId);
@@ -45,6 +46,7 @@ public class DeliveryRecordsIntegrationTests
         Assert.Equal("ops-alerts", record.Alias);
         Assert.Equal("caller-a", record.PrincipalId);
         Assert.Equal("notify", record.Source);
+        Assert.Equal("msg-0123456789abcdef0123456789abcdef", record.ReplyTo);
         Assert.Null(record.TargetType);
     }
 
@@ -143,12 +145,145 @@ public class DeliveryRecordsIntegrationTests
     public async Task Delete_RemovesTheRecord_AndToleratesAMissingOne()
     {
         var message = NewMessage();
-        await _records.CreateAsync(message);
+        var created = await _records.CreateAsync(message);
 
-        await _records.DeleteAsync(message.MessageId);
-        await _records.DeleteAsync(message.MessageId);
+        await _records.DeleteAsync(message.MessageId, created);
+        await _records.DeleteAsync(message.MessageId, created);
 
         Assert.Null(await _records.GetAsync(message.MessageId));
+    }
+
+    [Fact]
+    public async Task Delete_AfterTheMessageWasClaimed_KeepsTheRecord()
+    {
+        // The enqueue reported failure but had queued the message, and a processor claimed it.
+        var message = NewMessage();
+        var created = await _records.CreateAsync(message);
+        await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId));
+
+        await _records.DeleteAsync(message.MessageId, created);
+
+        Assert.Equal(DeliveryStatus.Sending, (await _records.GetAsync(message.MessageId))!.Status);
+    }
+
+    [Fact]
+    public async Task Delete_AfterTheMessageWasDelivered_KeepsTheRecord()
+    {
+        var message = NewMessage();
+        var created = await _records.CreateAsync(message);
+        await _records.MarkDeliveredAsync(message,
+            new DeliveryOutcome(PostedAs.Post, ("team-1", "19:c@thread.tacv2"), "conv-1", "a", "a"));
+
+        await _records.DeleteAsync(message.MessageId, created);
+
+        Assert.Equal(DeliveryStatus.Delivered, (await _records.GetAsync(message.MessageId))!.Status);
+    }
+
+    // --- Send claims ---
+
+    [Fact]
+    public async Task ClaimSend_ConcurrentCopies_ExactlyOneMaySend()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        var current = await _records.GetAsync(message.MessageId);
+
+        var claims = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => _records.ClaimSendAsync(message, current)));
+
+        Assert.Single(claims, c => c.Status == SendClaimStatus.Claimed);
+        Assert.All(claims.Where(c => c.Status != SendClaimStatus.Claimed),
+            c => Assert.Equal(SendClaimStatus.InProgress, c.Status));
+    }
+
+    [Fact]
+    public async Task ClaimSend_WithoutARecord_ClaimsIt()
+    {
+        // A message queued before delivery records existed.
+        Assert.Equal(SendClaimStatus.Claimed, (await _records.ClaimSendAsync(NewMessage(), null)).Status);
+    }
+
+    [Fact]
+    public async Task ClaimSend_AfterDelivery_SaysAlreadyDelivered()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        var stale = await _records.GetAsync(message.MessageId); // read before the other copy delivered
+        await _records.MarkDeliveredAsync(message,
+            new DeliveryOutcome(PostedAs.Post, ("team-1", "19:c@thread.tacv2"), "conv-1", "a", "a"));
+
+        Assert.Equal(SendClaimStatus.AlreadyDelivered, (await _records.ClaimSendAsync(message, stale)).Status);
+    }
+
+    [Fact]
+    public async Task ClaimSend_AbandonedClaim_IsTakenOverAfterTheLease()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        Assert.Equal(SendClaimStatus.Claimed,
+            (await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId))).Status);
+
+        Assert.Equal(SendClaimStatus.InProgress,
+            (await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId))).Status);
+        _time.Advance(DeliveryRecords.SendLease);
+        Assert.Equal(SendClaimStatus.Claimed,
+            (await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId))).Status);
+    }
+
+    [Fact]
+    public async Task MarkFailed_DuringALiveSend_KeepsTheClaim()
+    {
+        // A leftover poison copy reaches the monitor while a retried copy is sending.
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        Assert.Equal(SendClaimStatus.Claimed,
+            (await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId))).Status);
+
+        await _records.MarkFailedAsync(message, "moved to the poison queue");
+
+        Assert.Equal(DeliveryStatus.Sending, (await _records.GetAsync(message.MessageId))!.Status);
+        Assert.Equal(SendClaimStatus.InProgress,
+            (await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId))).Status);
+    }
+
+    [Fact]
+    public async Task MarkFailed_AfterAnAbandonedSend_RecordsTheFailure()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId));
+        _time.Advance(DeliveryRecords.SendLease);
+
+        await _records.MarkFailedAsync(message, "moved to the poison queue");
+
+        Assert.Equal(DeliveryStatus.Failed, (await _records.GetAsync(message.MessageId))!.Status);
+    }
+
+    [Fact]
+    public async Task ReleaseSend_LetsTheRetryClaimAtOnce()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        var claim = await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId));
+
+        await _records.ReleaseSendAsync(message, claim);
+
+        var record = await _records.GetAsync(message.MessageId);
+        Assert.Equal(DeliveryStatus.Queued, record!.Status);
+        Assert.Equal(SendClaimStatus.Claimed, (await _records.ClaimSendAsync(message, record)).Status);
+    }
+
+    [Fact]
+    public async Task ReleaseSend_AfterATakeover_LeavesTheNewClaimAlone()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        var stale = await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId));
+        _time.Advance(DeliveryRecords.SendLease);
+        await _records.ClaimSendAsync(message, await _records.GetAsync(message.MessageId));
+
+        await _records.ReleaseSendAsync(message, stale);
+
+        Assert.Equal(DeliveryStatus.Sending, (await _records.GetAsync(message.MessageId))!.Status);
     }
 
     [Fact]
@@ -167,6 +302,51 @@ public class DeliveryRecordsIntegrationTests
         Assert.False((await _tableClient.GetEntityIfExistsAsync<TableEntity>(old.MessageId, string.Empty,
             cancellationToken: TestContext.Current.CancellationToken)).HasValue);
         Assert.NotNull(await _records.GetAsync(fresh.MessageId));
+    }
+
+    [Fact]
+    public async Task Purge_KeepsAnExpiredRecordWithALiveSendClaim()
+    {
+        // A message delayed past the retention, being sent right now.
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        _time.Advance(Retention);
+        await _records.ClaimSendAsync(message, null); // GetAsync hides the expired row; the claim takes it over
+
+        await _records.PurgeExpiredAsync(TestContext.Current.CancellationToken);
+
+        Assert.True((await _tableClient.GetEntityIfExistsAsync<TableEntity>(message.MessageId, string.Empty,
+            cancellationToken: TestContext.Current.CancellationToken)).HasValue);
+    }
+
+    [Fact]
+    public async Task Purge_KeepsARecordClaimedWhileThePurgeRan()
+    {
+        var message = NewMessage();
+        await _records.CreateAsync(message);
+        _time.Advance(Retention);
+
+        // A TableClient that lets a copy claim the expired record between the purge's query and
+        // its delete.
+        var racing = new Moq.Mock<TableClient>();
+        racing.Setup(t => t.QueryAsync<TableEntity>(
+                Moq.It.IsAny<string>(), Moq.It.IsAny<int?>(), Moq.It.IsAny<IEnumerable<string>>(), Moq.It.IsAny<CancellationToken>()))
+            .Returns((string filter, int? max, IEnumerable<string> select, CancellationToken ct) =>
+                _tableClient.QueryAsync<TableEntity>(filter, max, select, ct));
+        racing.Setup(t => t.DeleteEntityAsync(
+                Moq.It.IsAny<string>(), Moq.It.IsAny<string>(), Moq.It.IsAny<Azure.ETag>(), Moq.It.IsAny<CancellationToken>()))
+            .Returns(async (string pk, string rk, Azure.ETag ifMatch, CancellationToken ct) =>
+            {
+                if (pk == message.MessageId)
+                    Assert.Equal(SendClaimStatus.Claimed, (await _records.ClaimSendAsync(message, null)).Status);
+                return await _tableClient.DeleteEntityAsync(pk, rk, ifMatch, ct);
+            });
+        var purging = new DeliveryRecords(racing.Object, Retention, _time, NullLogger<DeliveryRecords>.Instance);
+
+        await purging.PurgeExpiredAsync(TestContext.Current.CancellationToken);
+
+        Assert.True((await _tableClient.GetEntityIfExistsAsync<TableEntity>(message.MessageId, string.Empty,
+            cancellationToken: TestContext.Current.CancellationToken)).HasValue);
     }
 
     private sealed class ManualTime(DateTimeOffset start) : TimeProvider

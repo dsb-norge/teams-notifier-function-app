@@ -168,7 +168,7 @@ Problem Details format. The exception is `401`, which the platform returns witho
 | 401 | Unauthorized — missing or invalid Bearer token (returned by EasyAuth, no problem+json body) |
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint, or an alias whose conversation the bot no longer has (the bot was removed from that team or chat) |
-| 409 | Conflict — another request with the same `Idempotency-Key` is still being processed |
+| 409 | Conflict — another request with the same `Idempotency-Key` is still being processed, or `replyTo`/`update` refers to a message sent to another alias |
 | 413 | Payload Too Large — request body exceeds 28 KB |
 | 415 | Unsupported Media Type — Content-Type is not `application/json` |
 | 429 | Too Many Requests — rate limit exceeded |
@@ -206,6 +206,8 @@ Send a notification message to the Teams conversation identified by `{alias}`.
 | `message` | string or object | Yes | Message content. String for `text` format; object for `adaptive-card` format. |
 | `format` | string | No | `"text"` (default) or `"adaptive-card"` |
 | `metadata` | object | No | Key-value pairs for tracing, logged with the message's delivery events (see [Size Limits](#8-size-limits)). Never put secrets here. |
+| `replyTo` | string | No | A `messageId` from an earlier `/v1/notify` to this alias: post in that message's thread. See [Threads and updates](#threads-and-updates). |
+| `update` | string | No | A `messageId` from an earlier `/v1/notify` to this alias: replace that message instead of posting. Not together with `replyTo`. |
 
 For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 
@@ -248,6 +250,28 @@ For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 
 A `404` means either that the alias doesn't exist or that the bot no longer has the conversation
 it points to; the `detail` says which. Both are checked before the message is queued.
+
+#### Threads and updates
+
+`replyTo` and `update` let a caller keep one thread per incident: open it with a post, add to it
+with replies, and mark it resolved by updating the first post. Both take a `messageId` that an
+earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
+
+| The referenced message | `replyTo` | `update` |
+|---|---|---|
+| Was delivered | Posted in its thread (`postedAs: "reply"`) | Replaced in place (`postedAs: "update"`) |
+| Is still queued | Held until it is delivered or failed, at most 10 minutes, then as below | Held the same way |
+| Failed | Posted as a new message (`postedAs: "post"`) | Fails, with nothing posted |
+| Is unknown or expired | Posted as a new message | `404` |
+
+- A reply goes to the conversation the referenced message went to, even if the alias has been
+  repointed since. Replying to a reply stays in the same thread.
+- Chats have no threads: a reply to a message in a personal or group chat is an ordinary message
+  in that chat (`postedAs: "post"`). `update` works in channels and chats.
+- An update replaces the whole message, and may change its format. It gets its own `messageId`;
+  further replies and updates should keep referring to the original.
+- A reply that fell back to a new message starts a new thread: refer to it for later replies.
+  `GET /v1/messages/{messageId}` shows which happened.
 
 **Example**
 
@@ -506,15 +530,21 @@ What happened to a message the API queued, and where it went. Works for every `m
 
 | Field | Description |
 |-------|-------------|
-| `status` | `queued` (waiting or being retried), `delivered`, or `failed` |
+| `status` | `queued` (waiting, being sent, or being retried), `delivered`, or `failed` |
 | `postedAs` | How it was posted: `post`, `reply` (in an earlier message's thread) or `update` (replaced an earlier message). Null until delivered. |
 | `target` | The conversation it went to. Null until delivered. Check it to confirm that an alias still points where you expect. |
 | `unresolvedMentions` | Mentions not found in the roster. Always empty until mentions are supported. |
 | `error` | Why it failed, when `status` is `failed` |
 
-A message is `failed` when it can't ever be delivered (its alias was removed), or when every
-delivery attempt failed and it went to the poison queue. Records are kept for 180 days (the `DeliveryRecords__RetentionDays` app setting,
+A message is `failed` when it can't ever be delivered (its alias was removed, or it updates a
+message that was never delivered), or when every delivery attempt failed and it went to the
+poison queue. Records are kept for 180 days (the `DeliveryRecords__RetentionDays` app setting,
 see [Authentication §7](authentication.md#7-configuration-reference)).
+
+Delivery is at least once. Two copies of a message can't post it at the same time, but if Table
+Storage is unavailable right after a send, the message can be posted a second time a few minutes
+later, or its status can stay `queued` although its retries ran out. Teams offers no way to check
+whether a post already happened, so this can't be reconciled.
 
 Status reads count against the per-principal [rate limit](#4-rate-limiting), so poll sparingly.
 

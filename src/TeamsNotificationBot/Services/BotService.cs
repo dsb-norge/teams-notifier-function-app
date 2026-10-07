@@ -406,15 +406,13 @@ public class BotService : IBotService
         }
     }
 
-    public async Task<bool> HasConversationAsync(AliasEntity alias)
-    {
-        // Offline local mode stores no references, so every alias would look orphaned.
-        if (_teamsDisabled)
-            return true;
+    public async Task<bool> HasConversationAsync(AliasEntity alias) =>
+        _teamsDisabled ||
+        (alias.ConversationKey() is { } key && await HasConversationAsync(key.PartitionKey, key.RowKey));
 
-        return alias.ConversationKey() is { } key &&
-               await GetConversationReferenceEntityAsync(key.PartitionKey, key.RowKey) != null;
-    }
+    public async Task<bool> HasConversationAsync(string partitionKey, string rowKey) =>
+        // Offline local mode stores no references, so every conversation would look gone.
+        _teamsDisabled || await GetConversationReferenceEntityAsync(partitionKey, rowKey) != null;
 
     private async Task<ConversationReference?> GetConversationReferenceAsync(string partitionKey, string rowKey)
     {

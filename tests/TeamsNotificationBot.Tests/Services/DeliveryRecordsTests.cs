@@ -57,6 +57,6 @@ public class DeliveryRecordsTests
         _tableClient.Setup(t => t.DeleteEntityAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ETag>(), default))
             .ThrowsAsync(failure);
 
-        await _records.DeleteAsync("msg-0123456789abcdef0123456789abcdef");
+        await _records.DeleteAsync("msg-0123456789abcdef0123456789abcdef", new ETag("W/\"1\""));
     }
 }

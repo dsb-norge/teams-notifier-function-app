@@ -17,6 +17,7 @@ public class NotifyFunctionTests
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<QueueClient> _queueClient = new();
     private readonly Mock<IIdempotencyService> _idempotencyService = new();
+    private readonly Mock<IDeliveryRecords> _deliveryRecords = new();
     private readonly NotifyFunction _function;
 
     public NotifyFunctionTests()
@@ -26,6 +27,7 @@ public class NotifyFunctionTests
             _botService.Object,
             new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryRecords>(), Mock.Of<IDeliveryEvents>()),
             _idempotencyService.Object,
+            _deliveryRecords.Object,
             NullLogger<NotifyFunction>.Instance);
 
         // The alias's conversation exists unless a test says otherwise.
@@ -363,5 +365,126 @@ public class NotifyFunctionTests
         Assert.Contains("no longer has the conversation", problem.Detail);
         Assert.DoesNotContain("Unknown alias", problem.Detail);
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    // --- replyTo / update ---
+
+    private const string ParentId = "msg-0123456789abcdef0123456789abcdef";
+
+    private static Microsoft.AspNetCore.Http.HttpRequest RequestWith(string extraJson) =>
+        HttpRequestHelper.CreatePostRequest(body: $$"""{"message": "Hello", "format": "text", {{extraJson}}}""");
+
+    [Fact]
+    public async Task ReplyTo_KnownMessageOfThisAlias_IsQueuedWithTheReference()
+    {
+        SetUpDeliverableAlias();
+        _deliveryRecords.Setup(r => r.GetAsync(ParentId)).ReturnsAsync(
+            new DeliveryRecordEntity { PartitionKey = ParentId, Alias = "test", Status = DeliveryStatus.Delivered });
+
+        var result = await _function.Run(RequestWith($"\"replyTo\": \"{ParentId}\""), "Test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.Is<string>(s => s.Contains($"\"replyTo\":\"{ParentId}\""))), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplyTo_UnknownMessage_IsAccepted_BecauseItBecomesANewPost()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(RequestWith($"\"replyTo\": \"{ParentId}\""), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_UnknownMessage_Returns404()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(RequestWith($"\"update\": \"{ParentId}\""), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
+        Assert.Contains("nothing to update", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("replyTo")]
+    [InlineData("update")]
+    public async Task Reference_ToAnotherAlias_Returns409(string field)
+    {
+        SetUpDeliverableAlias();
+        _deliveryRecords.Setup(r => r.GetAsync(ParentId)).ReturnsAsync(
+            new DeliveryRecordEntity { PartitionKey = ParentId, Alias = "other-alias", Status = DeliveryStatus.Delivered });
+
+        var result = await _function.Run(RequestWith($"\"{field}\": \"{ParentId}\""), "test");
+
+        Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplyToAndUpdate_Together_Returns400()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(
+            RequestWith($"\"replyTo\": \"{ParentId}\", \"update\": \"{ParentId}\""), "test");
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task MalformedReference_Returns400_WithoutALookup()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(RequestWith("\"replyTo\": \"msg-../../x\""), "test");
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(result).StatusCode);
+        _deliveryRecords.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("replyTo")]
+    [InlineData("update")]
+    public async Task Reference_ToADeliveredMessage_ChecksItsConversation_NotTheAliasesCurrentOne(string field)
+    {
+        // The alias was repointed to a conversation the bot has since lost; the parent's is fine.
+        var repointed = new AliasEntity { TargetType = "channel", TeamId = "team-new", ChannelId = "channel-new" };
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(repointed);
+        _botService.Setup(b => b.HasConversationAsync(repointed)).ReturnsAsync(false);
+        _botService.Setup(b => b.HasConversationAsync("team-old", "channel-old")).ReturnsAsync(true);
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        _deliveryRecords.Setup(r => r.GetAsync(ParentId)).ReturnsAsync(new DeliveryRecordEntity
+        {
+            PartitionKey = ParentId, Alias = "test", Status = DeliveryStatus.Delivered,
+            TargetType = "channel", TeamId = "team-old", ChannelId = "channel-old"
+        });
+
+        var result = await _function.Run(RequestWith($"\"{field}\": \"{ParentId}\""), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Reference_ToADeliveredMessage_WhoseConversationIsGone_Returns404()
+    {
+        SetUpDeliverableAlias();
+        _botService.Setup(b => b.HasConversationAsync("team-old", "channel-old")).ReturnsAsync(false);
+        _deliveryRecords.Setup(r => r.GetAsync(ParentId)).ReturnsAsync(new DeliveryRecordEntity
+        {
+            PartitionKey = ParentId, Alias = "test", Status = DeliveryStatus.Delivered,
+            TargetType = "channel", TeamId = "team-old", ChannelId = "channel-old"
+        });
+
+        var result = await _function.Run(RequestWith($"\"update\": \"{ParentId}\""), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
+        Assert.Contains(ParentId, Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
     }
 }

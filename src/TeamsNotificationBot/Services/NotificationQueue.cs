@@ -20,16 +20,21 @@ public class NotificationQueue : INotificationQueue
     public async Task EnqueueAsync(QueueMessage message)
     {
         // The record first, so a status read right after the 202 finds the message.
-        await _records.CreateAsync(message);
+        var created = await _records.CreateAsync(message);
         try
         {
             await _queueClient.SendMessageAsync(JsonSerializer.Serialize(message));
         }
         catch
         {
-            await _records.DeleteAsync(message.MessageId);
+            await _records.DeleteAsync(message.MessageId, created);
             throw;
         }
         _events.Queued(message);
+    }
+
+    public async Task RequeueAsync(QueueMessage message, TimeSpan delay)
+    {
+        await _queueClient.SendMessageAsync(JsonSerializer.Serialize(message), visibilityTimeout: delay);
     }
 }

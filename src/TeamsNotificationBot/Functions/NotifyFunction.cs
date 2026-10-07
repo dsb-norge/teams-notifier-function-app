@@ -19,6 +19,7 @@ public class NotifyFunction
     private readonly IBotService _botService;
     private readonly INotificationQueue _notificationQueue;
     private readonly IIdempotencyService _idempotencyService;
+    private readonly IDeliveryRecords _deliveryRecords;
     private readonly ILogger<NotifyFunction> _logger;
 
     public NotifyFunction(
@@ -26,12 +27,14 @@ public class NotifyFunction
         IBotService botService,
         INotificationQueue notificationQueue,
         IIdempotencyService idempotencyService,
+        IDeliveryRecords deliveryRecords,
         ILogger<NotifyFunction> logger)
     {
         _aliasService = aliasService;
         _botService = botService;
         _notificationQueue = notificationQueue;
         _idempotencyService = idempotencyService;
+        _deliveryRecords = deliveryRecords;
         _logger = logger;
     }
 
@@ -110,8 +113,8 @@ public class NotifyFunction
 
         // Idempotency: the key is scoped to the caller and the alias, and claimed before queuing,
         // so a concurrent duplicate can't queue a second copy. Claimed before the checks that depend
-        // on current state (alias, conversation), so a retry of a request that completed replays its
-        // response even if the alias or its conversation has gone since.
+        // on current state (alias, conversation, the message replied to or updated), so a retry of a
+        // request that completed replays its response even if any of those has changed since.
         if (!IdempotencyKeys.TryRead(req, out var idempotencyKey, out var keyError))
         {
             return ApiResponse.Problem(400, "Bad Request", keyError!, instance, correlationId);
@@ -152,13 +155,15 @@ public class NotifyFunction
             Metadata = request.Metadata,
             EnqueuedAt = DateTimeOffset.UtcNow,
             Source = "notify",
-            PrincipalId = principalId
+            PrincipalId = principalId,
+            ReplyTo = request.ReplyTo,
+            Update = request.Update
         };
 
         IActionResult? rejection;
         try
         {
-            rejection = await CheckDeliverableAsync(alias, instance, correlationId, messageId, sourceIp);
+            rejection = await CheckDeliverableAsync(alias, request, instance, correlationId, messageId, sourceIp);
             if (rejection == null)
                 await _notificationQueue.EnqueueAsync(queueMessage);
         }
@@ -200,11 +205,12 @@ public class NotifyFunction
     }
 
     /// <summary>
-    /// The checks that depend on current state: the alias exists and the bot still has its
-    /// conversation. Null when the message can be queued, else the 404 to return.
+    /// The checks that depend on current state: the alias exists, a reply or update refers to a
+    /// message sent to this alias, and the bot still has the conversation the message will go to.
+    /// Null when the message can be queued, else the 404 or 409 to return.
     /// </summary>
     private async Task<IActionResult?> CheckDeliverableAsync(
-        string alias, string instance, string? correlationId, string messageId, string sourceIp)
+        string alias, NotificationRequest request, string instance, string? correlationId, string messageId, string sourceIp)
     {
         var channelAlias = await _aliasService.GetAliasAsync(alias);
         if (channelAlias == null)
@@ -216,7 +222,42 @@ public class NotifyFunction
                 $"Unknown alias '{alias}'.", instance, correlationId);
         }
 
-        if (!await _botService.HasConversationAsync(channelAlias))
+        // An unknown or expired parent is fine for a reply (it becomes a new post) but not for an
+        // update, which has nothing to replace.
+        DeliveryRecordEntity? referenced = null;
+        var referencedId = request.Update ?? request.ReplyTo;
+        if (referencedId != null)
+        {
+            referenced = await _deliveryRecords.GetAsync(referencedId);
+            if (referenced == null && request.Update != null)
+            {
+                return ApiResponse.Problem(404, "Not Found",
+                    $"Unknown or expired message '{request.Update}'; there is nothing to update.",
+                    instance, correlationId);
+            }
+            if (referenced != null && !string.Equals(referenced.Alias, alias.ToLowerInvariant(), StringComparison.Ordinal))
+            {
+                return ApiResponse.Problem(409, "Conflict",
+                    $"Message '{referencedId}' was sent to a different alias or target.", instance, correlationId);
+            }
+        }
+
+        // Check the conversation the message will actually go to: a reply or an update to a
+        // delivered message goes where that message went, even if the alias has been repointed since.
+        if (referenced is { Status: DeliveryStatus.Delivered } && referenced.ConversationKey() is { } parentKey)
+        {
+            if (!await _botService.HasConversationAsync(parentKey.PartitionKey, parentKey.RowKey))
+            {
+                _logger.LogWarning(
+                    "Message {ReferencedId} went to a conversation the bot no longer has. CorrelationId={CorrelationId}",
+                    Sanitize(referencedId), correlationId);
+                return ApiResponse.Problem(404, "Not Found",
+                    $"The bot no longer has the conversation message '{referencedId}' went to " +
+                    "(the bot may have been removed from that team or chat).",
+                    instance, correlationId);
+            }
+        }
+        else if (!await _botService.HasConversationAsync(channelAlias))
         {
             _logger.LogWarning(
                 "Alias {Alias} points to a conversation the bot no longer has. CorrelationId={CorrelationId}",

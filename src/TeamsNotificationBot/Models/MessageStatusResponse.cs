@@ -36,7 +36,7 @@ public sealed class MessageStatusResponse
     public static MessageStatusResponse From(DeliveryRecordEntity record) => new()
     {
         MessageId = record.PartitionKey,
-        Status = record.Status,
+        Status = record.Status == DeliveryStatus.Sending ? DeliveryStatus.Queued : record.Status,
         PostedAs = record.PostedAs,
         Target = record.TargetType == null ? null : new MessageTarget
         {

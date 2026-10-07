@@ -14,6 +14,14 @@ public class NotificationRequest
     [JsonPropertyName("metadata")]
     public Dictionary<string, string>? Metadata { get; set; }
 
+    /// <summary>Post in the thread of this earlier message (a messageId from this API).</summary>
+    [JsonPropertyName("replyTo")]
+    public string? ReplyTo { get; set; }
+
+    /// <summary>Replace this earlier message (a messageId from this API) instead of posting.</summary>
+    [JsonPropertyName("update")]
+    public string? Update { get; set; }
+
     public bool IsValid(out string? error)
     {
         if (Message.ValueKind == JsonValueKind.Undefined)
@@ -37,6 +45,24 @@ public class NotificationRequest
         if (Format != "text" && Format != "adaptive-card")
         {
             error = $"Unsupported format '{Format}'. Use 'text' or 'adaptive-card'.";
+            return false;
+        }
+
+        if (ReplyTo != null && Update != null)
+        {
+            error = "Use either 'replyTo' or 'update', not both.";
+            return false;
+        }
+
+        if (ReplyTo != null && !MessageIds.IsValid(ReplyTo))
+        {
+            error = "'replyTo' must be a messageId returned by this API.";
+            return false;
+        }
+
+        if (Update != null && !MessageIds.IsValid(Update))
+        {
+            error = "'update' must be a messageId returned by this API.";
             return false;
         }
 

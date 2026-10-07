@@ -15,4 +15,11 @@ public interface INotificationQueue
     /// reported as queued.
     /// </summary>
     Task EnqueueAsync(QueueMessage message);
+
+    /// <summary>
+    /// Puts a message the processor isn't ready to deliver back on the queue, invisible for
+    /// <paramref name="delay"/>. Unlike throwing, this doesn't use up one of the message's
+    /// delivery attempts. No record or event: the message is already recorded.
+    /// </summary>
+    Task RequeueAsync(QueueMessage message, TimeSpan delay);
 }

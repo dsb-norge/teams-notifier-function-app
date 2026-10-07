@@ -20,6 +20,7 @@ public class QueueProcessorFunctionTests : IDisposable
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<IAliasService> _aliasService = new();
     private readonly Mock<IDeliveryRecords> _records = new();
+    private readonly Mock<INotificationQueue> _queue = new();
     private readonly Mock<FunctionContext> _functionContext = new();
     private readonly Mock<IDeliveryEvents> _events = new();
     private readonly QueueProcessorFunction _function;
@@ -30,6 +31,7 @@ public class QueueProcessorFunctionTests : IDisposable
             _botService.Object,
             _aliasService.Object,
             _records.Object,
+            _queue.Object,
             _events.Object,
             NullLogger<QueueProcessorFunction>.Instance);
 
@@ -38,6 +40,10 @@ public class QueueProcessorFunctionTests : IDisposable
             .Setup(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
             .ReturnsAsync((string _, string _, string _, string _, string? thread) =>
                 new SentActivity(thread == null ? ChannelConversation : $"{ChannelConversation};messageid={thread}", "activity-new"));
+
+        // Every send claim is granted; tests about racing copies override this.
+        _records.Setup(r => r.ClaimSendAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryRecordEntity?>()))
+            .ReturnsAsync(new SendClaim(SendClaimStatus.Claimed, new Azure.ETag("W/\"claim\"")));
 
         // Clean env
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
@@ -52,19 +58,39 @@ public class QueueProcessorFunctionTests : IDisposable
         _aliasService.Setup(s => s.GetAliasAsync(name)).ReturnsAsync(
             new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
 
-    private static QueueMessage NewMessage(string format = "text", string message = "Hello", string alias = "test") => new()
+    private static QueueMessage NewMessage(
+        string format = "text", string message = "Hello", string alias = "test",
+        string? replyTo = null, string? update = null, DateTimeOffset? enqueuedAt = null) => new()
     {
         MessageId = "msg-test-123",
         Alias = alias,
         Message = message,
         Format = format,
-        EnqueuedAt = DateTimeOffset.UtcNow
+        ReplyTo = replyTo,
+        Update = update,
+        EnqueuedAt = enqueuedAt ?? DateTimeOffset.UtcNow
     };
 
     private static string CreateQueueMessageJson(string format = "text", string message = "Hello", string alias = "test") =>
         JsonSerializer.Serialize(NewMessage(format, message, alias));
 
     private Task RunAsync(QueueMessage message) => _function.Run(JsonSerializer.Serialize(message), _functionContext.Object);
+
+    private static DeliveryRecordEntity DeliveredParent(
+        string messageId = "msg-parent", string targetType = "channel", string activityId = "activity-root",
+        string? threadActivityId = "activity-root") => new()
+    {
+        PartitionKey = messageId,
+        Status = DeliveryStatus.Delivered,
+        Alias = "test",
+        TargetType = targetType,
+        TeamId = targetType == "channel" ? "team-old" : null,
+        ChannelId = targetType == "channel" ? "channel-old" : null,
+        ChatId = targetType == "groupChat" ? "19:chat@thread.v2" : null,
+        ConversationId = targetType == "channel" ? "19:channel-old@thread.tacv2" : "19:chat@thread.v2",
+        ActivityId = activityId,
+        ThreadActivityId = threadActivityId
+    };
 
     private void SetUpRecord(DeliveryRecordEntity record) =>
         _records.Setup(r => r.GetAsync(record.PartitionKey)).ReturnsAsync(record);
@@ -211,6 +237,145 @@ public class QueueProcessorFunctionTests : IDisposable
         _botService.Verify(b => b.SendAsync("user", "user-abc", "text", "Personal message", null), Times.Once);
     }
 
+    // --- Replies ---
+
+    [Fact]
+    public async Task Reply_ToDeliveredChannelPost_GoesIntoItsThread_WhereTheParentWent()
+    {
+        SetUpChannelAlias(); // the alias now points elsewhere than the parent's conversation
+        SetUpRecord(DeliveredParent());
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _botService.Verify(b => b.SendAsync("team-old", "channel-old", "text", "Hello", "activity-root"), Times.Once);
+        Assert.Equal(PostedAs.Reply, outcome!.PostedAs);
+        Assert.Equal("activity-root", outcome.ThreadActivityId);
+    }
+
+    [Fact]
+    public async Task Reply_ToAReply_StaysInTheSameThread()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(DeliveredParent(activityId: "activity-reply", threadActivityId: "activity-root"));
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _botService.Verify(b => b.SendAsync("team-old", "channel-old", "text", "Hello", "activity-root"), Times.Once);
+    }
+
+    [Fact]
+    public async Task Reply_ToAChatMessage_IsAnOrdinaryPostInThatChat()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(DeliveredParent(targetType: "groupChat"));
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _botService.Verify(b => b.SendAsync("chat", "19:chat@thread.v2", "text", "Hello", null), Times.Once);
+        Assert.Equal(PostedAs.Post, outcome!.PostedAs);
+    }
+
+    [Theory]
+    [InlineData(DeliveryStatus.Failed)]
+    [InlineData(null)] // unknown or expired
+    public async Task Reply_ToAParentThatWasNeverDelivered_IsANewPost(string? parentStatus)
+    {
+        SetUpChannelAlias();
+        if (parentStatus != null)
+            SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = parentStatus, Alias = "test" });
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "Hello", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task Reply_ToAParentStillQueued_IsHeld_WithoutSending()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _queue.Verify(q => q.RequeueAsync(It.Is<QueueMessage>(m => m.ReplyTo == "msg-parent"),
+            QueueProcessorFunction.HoldDelay), Times.Once);
+        _botService.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Reply_AfterWaitingTooLong_IsANewPost()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+
+        await RunAsync(NewMessage(replyTo: "msg-parent",
+            enqueuedAt: DateTimeOffset.UtcNow - QueueProcessorFunction.MaxParentWait - TimeSpan.FromSeconds(1)));
+
+        _queue.VerifyNoOtherCalls();
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "Hello", null), Times.Once);
+    }
+
+    // --- Updates ---
+
+    [Fact]
+    public async Task Update_ToDeliveredMessage_ReplacesItInPlace()
+    {
+        SetUpRecord(DeliveredParent());
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+
+        await RunAsync(NewMessage(message: "Resolved", update: "msg-parent"));
+
+        _botService.Verify(b => b.UpdateAsync("team-old", "channel-old", "19:channel-old@thread.tacv2",
+            "activity-root", "text", "Resolved"), Times.Once);
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        Assert.Equal(PostedAs.Update, outcome!.PostedAs);
+        Assert.Equal("activity-root", outcome.ActivityId);
+    }
+
+    [Fact]
+    public async Task Update_ToAMessageThatFailed_FailsForGood_WithoutPosting()
+    {
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Failed });
+
+        await RunAsync(NewMessage(update: "msg-parent"));
+
+        _botService.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.Is<string>(e => e.Contains("never delivered"))), Times.Once);
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "UpdateTargetNotDelivered", It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_ToAMessageStillQueued_IsHeld()
+    {
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+
+        await RunAsync(NewMessage(update: "msg-parent"));
+
+        _queue.Verify(q => q.RequeueAsync(It.IsAny<QueueMessage>(), QueueProcessorFunction.HoldDelay), Times.Once);
+        _botService.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Update_AfterWaitingTooLong_FailsForGood()
+    {
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+
+        await RunAsync(NewMessage(update: "msg-parent",
+            enqueuedAt: DateTimeOffset.UtcNow - QueueProcessorFunction.MaxParentWait - TimeSpan.FromSeconds(1)));
+
+        _botService.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.IsAny<string>()), Times.Once);
+    }
+
     // --- Delivery events ---
 
     private void SetDequeueCount(long count)
@@ -319,5 +484,96 @@ public class QueueProcessorFunctionTests : IDisposable
         await RunAsync(NewMessage());
 
         _events.Verify(e => e.Delivered(It.IsAny<QueueMessage>(), "team-1", "channel-1", 0), Times.Once);
+    }
+
+    // --- Copies of one message racing, and failures before the send ---
+
+    [Fact]
+    public async Task AnotherCopyIsSending_Holds_WithoutSendingOrReportingAFailure()
+    {
+        SetUpChannelAlias();
+        _records.Setup(r => r.ClaimSendAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryRecordEntity?>()))
+            .ReturnsAsync(new SendClaim(SendClaimStatus.InProgress));
+
+        await RunAsync(NewMessage());
+
+        _queue.Verify(q => q.RequeueAsync(It.IsAny<QueueMessage>(), QueueProcessorFunction.HoldDelay), Times.Once);
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AnotherCopyDeliveredIt_Skips()
+    {
+        SetUpChannelAlias();
+        _records.Setup(r => r.ClaimSendAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryRecordEntity?>()))
+            .ReturnsAsync(new SendClaim(SendClaimStatus.AlreadyDelivered));
+
+        await RunAsync(NewMessage());
+
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _queue.VerifyNoOtherCalls();
+        _records.Verify(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendFailure_GivesTheClaimBack_AndReportsOnce()
+    {
+        SetUpChannelAlias();
+        var claim = new SendClaim(SendClaimStatus.Claimed, new Azure.ETag("W/\"mine\""));
+        _records.Setup(r => r.ClaimSendAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryRecordEntity?>())).ReturnsAsync(claim);
+        _botService.Setup(b => b.SendAsync("team-1", "channel-1", It.IsAny<string>(), It.IsAny<string>(), null))
+            .ThrowsAsync(new InvalidOperationException("teams down"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(NewMessage()));
+
+        _records.Verify(r => r.ReleaseSendAsync(It.IsAny<QueueMessage>(), claim), Times.Once);
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordReadFailure_IsReported_ThenRethrown()
+    {
+        _records.Setup(r => r.GetAsync("msg-test-123")).ThrowsAsync(new Azure.RequestFailedException(503, "storage down"));
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() => RunAsync(NewMessage()));
+
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "RequestFailedException", "storage down"), Times.Once);
+    }
+
+    [Fact]
+    public async Task HoldFailure_IsReported_ThenRethrown()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+        _queue.Setup(q => q.RequeueAsync(It.IsAny<QueueMessage>(), It.IsAny<TimeSpan>()))
+            .ThrowsAsync(new Azure.RequestFailedException(503, "queue down"));
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() => RunAsync(NewMessage(replyTo: "msg-parent")));
+
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "RequestFailedException", "queue down"), Times.Once);
+    }
+
+    [Fact]
+    public async Task SuccessfulHold_ReportsNoFailure()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Queued });
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _events.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Reply_ToAParentBeingSent_IsHeld()
+    {
+        SetUpChannelAlias();
+        SetUpRecord(new DeliveryRecordEntity { PartitionKey = "msg-parent", Status = DeliveryStatus.Sending });
+
+        await RunAsync(NewMessage(replyTo: "msg-parent"));
+
+        _queue.Verify(q => q.RequeueAsync(It.IsAny<QueueMessage>(), QueueProcessorFunction.HoldDelay), Times.Once);
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
     }
 }

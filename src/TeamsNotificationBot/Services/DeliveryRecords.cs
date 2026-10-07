@@ -9,6 +9,12 @@ namespace TeamsNotificationBot.Services;
 
 public class DeliveryRecords : IDeliveryRecords
 {
+    /// <summary>
+    /// A send claim older than this was abandoned (the function timeout is 5 minutes) and may be
+    /// taken over.
+    /// </summary>
+    public static readonly TimeSpan SendLease = TimeSpan.FromMinutes(5);
+
     // App Insights and the status endpoint show this; an exception message has no bound of its own.
     private const int MaxErrorLength = 1024;
 
@@ -30,9 +36,10 @@ public class DeliveryRecords : IDeliveryRecords
         _logger = logger;
     }
 
-    public async Task CreateAsync(QueueMessage message)
+    public async Task<ETag> CreateAsync(QueueMessage message)
     {
-        await _tableClient.UpsertEntityAsync(NewRecord(message, DeliveryStatus.Queued), TableUpdateMode.Replace);
+        var response = await _tableClient.UpsertEntityAsync(NewRecord(message, DeliveryStatus.Queued), TableUpdateMode.Replace);
+        return response.Headers.ETag ?? default;
     }
 
     public async Task<DeliveryRecordEntity?> GetAsync(string messageId)
@@ -48,6 +55,58 @@ public class DeliveryRecords : IDeliveryRecords
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
             return null;
+        }
+    }
+
+    public async Task<SendClaim> ClaimSendAsync(QueueMessage message, DeliveryRecordEntity? current)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var now = _time.GetUtcNow();
+            if (current?.Status == DeliveryStatus.Delivered)
+                return new SendClaim(SendClaimStatus.AlreadyDelivered);
+            if (current is { Status: DeliveryStatus.Sending, SendingAt: { } since } && since + SendLease > now)
+                return new SendClaim(SendClaimStatus.InProgress);
+
+            var sending = NewRecord(message, DeliveryStatus.Sending);
+            sending.SendingAt = now;
+            try
+            {
+                // Insert-only or ETag-guarded: of two copies claiming at once, exactly one gets here.
+                var response = current == null
+                    ? await _tableClient.AddEntityAsync(sending)
+                    : await _tableClient.UpdateEntityAsync(sending, current.ETag, TableUpdateMode.Replace);
+                return new SendClaim(SendClaimStatus.Claimed, response.Headers.ETag ?? default);
+            }
+            catch (RequestFailedException ex) when (ex.Status is 404 or 409 or 412)
+            {
+                // Changed since it was read: decide again from what is stored now, whatever its
+                // age (an expired row still occupies the key).
+                current = await ReadAsync(message.MessageId);
+            }
+        }
+
+        // Still contended after several attempts: another copy is busy with it.
+        return new SendClaim(SendClaimStatus.InProgress);
+    }
+
+    public async Task ReleaseSendAsync(QueueMessage message, SendClaim claim)
+    {
+        try
+        {
+            await _tableClient.UpdateEntityAsync(NewRecord(message, DeliveryStatus.Queued),
+                claim.ETag == default ? ETag.All : claim.ETag, TableUpdateMode.Replace);
+        }
+        catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+        {
+            // Gone or no longer ours: nothing to give back.
+        }
+        catch (Exception ex)
+        {
+            // Side concern (docs/contributing.md §5): this runs while the send failure propagates.
+            // An unreleased claim only delays the retry until SendLease runs out.
+            _logger.LogWarning(ex, "Could not release a send claim. MessageId={MessageId}", message.MessageId);
         }
     }
 
@@ -87,6 +146,16 @@ public class DeliveryRecords : IDeliveryRecords
                     return;
                 }
 
+                // Nor over a live send claim: another copy is sending it right now, and erasing the
+                // claim would let a held copy post it concurrently. If that send fails for good,
+                // it records the failure itself.
+                if (current is { Status: DeliveryStatus.Sending, SendingAt: { } since } && since + SendLease > _time.GetUtcNow())
+                {
+                    _logger.LogInformation("Being sent by another copy; not recording it as failed. MessageId={MessageId}",
+                        message.MessageId);
+                    return;
+                }
+
                 try
                 {
                     if (current == null)
@@ -110,11 +179,16 @@ public class DeliveryRecords : IDeliveryRecords
         }
     }
 
-    public async Task DeleteAsync(string messageId)
+    public async Task DeleteAsync(string messageId, ETag createdETag)
     {
         try
         {
-            await _tableClient.DeleteEntityAsync(messageId, string.Empty, ETag.All);
+            await _tableClient.DeleteEntityAsync(messageId, string.Empty,
+                createdETag == default ? ETag.All : createdETag);
+        }
+        catch (RequestFailedException ex) when (ex.Status is 404 or 412)
+        {
+            // Already gone, or claimed or delivered meanwhile (the message was queued after all): keep it.
         }
         catch (Exception ex)
         {
@@ -127,22 +201,30 @@ public class DeliveryRecords : IDeliveryRecords
 
     public async Task<int> PurgeExpiredAsync(CancellationToken cancellationToken = default)
     {
-        var cutoff = _time.GetUtcNow() - _retention;
+        var now = _time.GetUtcNow();
+        var cutoff = now - _retention;
         var deleted = 0;
         await foreach (var entity in _tableClient.QueryAsync<TableEntity>(
             // "le", matching GetAsync: a record is expired from the instant it is exactly _retention old.
             TableClient.CreateQueryFilter($"EnqueuedAt le {cutoff}"),
-            select: ["PartitionKey", "RowKey"],
+            select: ["PartitionKey", "RowKey", "Status", "SendingAt"],
             cancellationToken: cancellationToken))
         {
+            // A message delayed past a short retention can still be sending: deleting its claim
+            // would let another copy claim and post it concurrently.
+            if (entity.GetString("Status") == DeliveryStatus.Sending &&
+                entity.GetDateTimeOffset("SendingAt") is { } since && since + SendLease > now)
+                continue;
+
             try
             {
-                await _tableClient.DeleteEntityAsync(entity.PartitionKey, entity.RowKey, ETag.All, cancellationToken);
+                // Guarded by the ETag the query read, so a claim taken since survives too.
+                await _tableClient.DeleteEntityAsync(entity.PartitionKey, entity.RowKey, entity.ETag, cancellationToken);
                 deleted++;
             }
-            catch (RequestFailedException ex) when (ex.Status == 404)
+            catch (RequestFailedException ex) when (ex.Status is 404 or 412)
             {
-                // Deleted since the query read it.
+                // Deleted (404) or changed (412) since the query read it.
             }
         }
         return deleted;
@@ -184,6 +266,8 @@ public class DeliveryRecords : IDeliveryRecords
         Source = message.Source,
         PrincipalId = message.PrincipalId,
         Alias = message.Alias?.ToLowerInvariant(),
+        ReplyTo = message.ReplyTo,
+        Update = message.Update,
         EnqueuedAt = message.EnqueuedAt
     };
 

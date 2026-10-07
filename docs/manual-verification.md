@@ -3,9 +3,10 @@
 Some behavior in this app cannot be pinned by automated tests and must be verified against real
 Teams on the **dev** environment:
 
-- **Proactive sends** — `BotService.SendMessageAsync` / `SendAdaptiveCardAsync` compose the concrete
-  `CloudAdapter.ContinueConversationAsync` with Bot Framework token acquisition; no test executes
-  that chain.
+- **Proactive sends** — `BotService.SendAsync` / `UpdateAsync` (and the `SendMessageAsync` /
+  `SendAdaptiveCardAsync` wrappers) compose the concrete `CloudAdapter.ContinueConversationAsync`
+  with Bot Framework token acquisition; no test executes that chain. That includes posting into a
+  thread (`;messageid=`) and `UpdateActivity`.
 - **Channel enumeration** — `BotService.EnumerateAndStoreTeamChannelsAsync` runs inside a proactive
   turn and calls the Teams channel-list REST API with a self-built authenticated client.
 - **Real Teams payloads** — install/uninstall, channel and team lifecycle events, and card invokes
@@ -94,7 +95,18 @@ without a bearer token.
 - [ ] `POST /api/v1/alert/{alias}` → adaptive card renders.
 - [ ] Notify a personal-chat alias and a group-chat alias.
 - [ ] Webhook smoke: `create-webhook`, POST a sample updown payload to the ingest URL, card lands.
-- [ ] (Optional) Force a poison message → poison alert card arrives at the `PoisonAlertAlias`.
+- [ ] (Optional) Force a poison message → poison alert card arrives at the `PoisonAlertAlias`,
+  and `GET /api/v1/messages/{messageId}` for it says `failed`.
+- [ ] **Delivery status**: `GET /api/v1/messages/{messageId}` for a notify above says `delivered`,
+  `postedAs: "post"`, and the channel you expect in `target`.
+- [ ] **Reply in a thread**: notify with `"replyTo": "<messageId of a delivered channel post>"` →
+  the reply lands in that post's thread; its status says `postedAs: "reply"`. Reply to the reply →
+  same thread.
+- [ ] **Update in place**: notify with `"update": "<the same messageId>"` and a changed card → the
+  original post is replaced (Teams shows "Edited"); no new post appears.
+- [ ] **Hold**: send a notify and, at once, a reply to its `messageId` → the reply still lands in the
+  thread (it was held until the parent was delivered).
+- [ ] **Chat**: `replyTo` a message in a personal or group chat → an ordinary message in that chat.
 
 ### 6. Teardown
 
