@@ -74,7 +74,8 @@ public class PoisonQueueMonitorFunction
             using var cardDoc = JsonDocument.Parse(cardJson);
             var card = cardDoc.RootElement.Clone();
 
-            var (pk, rk) = ResolveAliasTarget(alias);
+            var (pk, rk) = alias.ConversationKey() ?? throw new InvalidOperationException(
+                $"Alias '{alias.RowKey}' has no valid target (type '{alias.TargetType}').");
             await _botService.SendAdaptiveCardAsync(pk, rk, card);
 
             _logger.LogInformation("Poison alert sent to alias '{Alias}' for queue {Queue}", aliasName, queueName);
@@ -84,17 +85,6 @@ public class PoisonQueueMonitorFunction
             // Log but DO NOT rethrow — prevent *-poison-poison queues
             _logger.LogError(ex, "Failed to process poison message alert for {Queue}. Message swallowed to prevent cascading failure.", queueName);
         }
-    }
-
-    private static (string pk, string rk) ResolveAliasTarget(Models.AliasEntity alias)
-    {
-        return alias.TargetType switch
-        {
-            "channel" => (alias.TeamId!, alias.ChannelId!),
-            "personal" => ("user", alias.UserId!),
-            "groupChat" => ("chat", alias.ChatId!),
-            _ => throw new InvalidOperationException($"Unknown alias target type: {alias.TargetType}")
-        };
     }
 
     private static string Truncate(string value, int maxLength)

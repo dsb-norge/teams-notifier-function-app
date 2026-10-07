@@ -211,7 +211,7 @@ public class QueueProcessorFunctionTests : IDisposable
             _function.Run(CreateQueueMessageJson(), _functionContext.Object));
 
         _events.Verify(e => e.DeliveryFailed(
-            It.IsAny<QueueMessage>(), It.IsAny<long>(), "InvalidOperationException", It.IsAny<string>()), Times.Once);
+            It.IsAny<QueueMessage>(), It.IsAny<long>(), "InvalidOperationException", It.Is<string>(m => m.Contains("no valid target"))), Times.Once);
         _botService.Verify(b => b.SendMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 

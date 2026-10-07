@@ -146,10 +146,11 @@ public class QueueProcessorFunction
             return null;
         }
 
-        var aliasKey = ResolveAliasTarget(alias);
+        var aliasKey = alias.ConversationKey() ?? throw new InvalidOperationException(
+            $"Alias '{alias.RowKey}' has no valid target (type '{alias.TargetType}').");
         _logger.LogInformation(
             "Alias resolved. Alias={Alias}, Type={Type}, PK={PK}, RK={RK}, MessageId={MessageId}",
-            queueMessage.Alias, alias.TargetType, aliasKey.partitionKey, aliasKey.rowKey, queueMessage.MessageId);
+            queueMessage.Alias, alias.TargetType, aliasKey.PartitionKey, aliasKey.RowKey, queueMessage.MessageId);
         return aliasKey;
     }
 
@@ -173,18 +174,6 @@ public class QueueProcessorFunction
             "personal" => ("user", target.UserId ?? throw new InvalidOperationException("UserId required for personal target")),
             "groupChat" => ("chat", target.ChatId ?? throw new InvalidOperationException("ChatId required for groupChat target")),
             _ => throw new InvalidOperationException($"Unknown target type: {target.Type}")
-        };
-    }
-
-    private static (string partitionKey, string rowKey) ResolveAliasTarget(AliasEntity alias)
-    {
-        return alias.TargetType switch
-        {
-            "channel" => (alias.TeamId ?? throw new InvalidOperationException("TeamId required for channel alias"),
-                          alias.ChannelId ?? throw new InvalidOperationException("ChannelId required for channel alias")),
-            "personal" => ("user", alias.UserId ?? throw new InvalidOperationException("UserId required for personal alias")),
-            "groupChat" => ("chat", alias.ChatId ?? throw new InvalidOperationException("ChatId required for groupChat alias")),
-            _ => throw new InvalidOperationException($"Unknown alias target type: {alias.TargetType}")
         };
     }
 }
