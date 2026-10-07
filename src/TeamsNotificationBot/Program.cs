@@ -88,8 +88,10 @@ var host = new HostBuilder()
                     .FirstOrDefault(r => r.RequestsRemaining < 0);
                 if (limitExceeded == null) return;
 
+                var retryAfter = RateLimitPolicy.RetryAfterSeconds(limitExceeded.RetryAfterInSeconds);
                 responseProxy.StatusCode = 429;
-                responseProxy.SetHttpHeader("Retry-After", limitExceeded.RetryAfterHeaderValue);
+                responseProxy.SetHttpHeader("Retry-After",
+                    retryAfter.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 responseProxy.SetHttpHeader("Content-Type", "application/problem+json");
 
                 var problem = new
@@ -97,7 +99,7 @@ var host = new HostBuilder()
                     type = "https://httpstatuses.io/429",
                     title = "Too Many Requests",
                     status = 429,
-                    detail = $"Rate limit exceeded. Try again in {(int)limitExceeded.RetryAfterInSeconds} seconds.",
+                    detail = $"Rate limit exceeded. Try again in {retryAfter} seconds.",
                     instance = requestProxy.UriWithoutQueryString
                 };
                 await responseProxy.WriteAsync(JsonSerializer.Serialize(problem));

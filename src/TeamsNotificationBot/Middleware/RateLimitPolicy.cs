@@ -47,6 +47,14 @@ public static class RateLimitPolicy
         return $"ingest-ip:{ip ?? "unknown"}";
     }
 
+    /// <summary>
+    /// The <c>Retry-After</c> value for a 429: always delta-seconds, rounded up and at least 1.
+    /// ThrottlingTroll's own <c>RetryAfterHeaderValue</c> may be an HTTP date, which callers are
+    /// free to ignore (RFC 9110 allows both forms; the API promises seconds).
+    /// </summary>
+    public static int RetryAfterSeconds(double retryAfterInSeconds) =>
+        Math.Max(1, (int)Math.Ceiling(retryAfterInSeconds));
+
     public static int ApiPermitLimit() => EnvInt("RateLimit__PermitLimit", DefaultApiPermitLimit);
     public static int ApiIntervalSeconds() => EnvInt("RateLimit__IntervalInSeconds", DefaultApiIntervalSeconds);
     public static int IngestPermitLimit() => EnvInt("RateLimit__Ingest__PermitLimit", DefaultIngestPermitLimit);
