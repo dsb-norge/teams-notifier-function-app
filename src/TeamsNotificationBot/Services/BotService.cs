@@ -47,72 +47,103 @@ public class BotService : IBotService
         _logger = logger;
     }
 
-    public async Task SendMessageAsync(string partitionKey, string rowKey, string message)
+    public Task SendMessageAsync(string partitionKey, string rowKey, string message) =>
+        SendAsync(partitionKey, rowKey, "text", message);
+
+    public Task SendAdaptiveCardAsync(string partitionKey, string rowKey, JsonElement card) =>
+        SendAsync(partitionKey, rowKey, "adaptive-card", card.GetRawText());
+
+    public async Task<SentActivity> SendAsync(
+        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null)
     {
         if (_teamsDisabled)
         {
             _logger.LogInformation(
-                "Teams integration disabled. Would send text to {PK}/{RK}: {Message}",
-                partitionKey, rowKey, message);
-            return;
+                "Teams integration disabled. Would send {Format} to {PK}/{RK}: {Message}",
+                format, partitionKey, rowKey, message);
+            return new SentActivity(string.Empty, null);
         }
 
         var reference = await GetConversationReferenceAsync(partitionKey, rowKey);
-        if (reference == null)
+        if (reference?.Conversation == null)
         {
             _logger.LogError("No conversation reference found for {PK}/{RK}", partitionKey, rowKey);
             throw new InvalidOperationException(
                 $"No conversation reference found for '{partitionKey}'/'{rowKey}'. Ensure the bot is installed.");
         }
 
+        if (threadActivityId != null)
+        {
+            // Posting to "<channel>;messageid=<root>" makes the post a reply in that thread.
+            reference.Conversation.Id = $"{BaseConversationId(reference.Conversation.Id)};messageid={threadActivityId}";
+        }
+
+        string? activityId = null;
         await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
-                await turnContext.SendActivityAsync(MessageFactory.Text(message), ct);
+                var response = await turnContext.SendActivityAsync(BuildActivity(format, message), ct);
+                activityId = response?.Id;
             },
             CancellationToken.None), logger: _logger);
 
         await UpdateLastUpdatedAsync(partitionKey, rowKey);
-        _logger.LogInformation("Sent text message to {PK}/{RK}", partitionKey, rowKey);
+        _logger.LogInformation("Sent {Format} to {PK}/{RK}. ActivityId={ActivityId}, Threaded={Threaded}",
+            format, partitionKey, rowKey, activityId, threadActivityId != null);
+        return new SentActivity(reference.Conversation.Id, activityId);
     }
 
-    public async Task SendAdaptiveCardAsync(string partitionKey, string rowKey, JsonElement card)
+    public async Task UpdateAsync(
+        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message)
     {
         if (_teamsDisabled)
         {
             _logger.LogInformation(
-                "Teams integration disabled. Would send adaptive card to {PK}/{RK}",
-                partitionKey, rowKey);
+                "Teams integration disabled. Would update activity {ActivityId} in {PK}/{RK}",
+                activityId, partitionKey, rowKey);
             return;
         }
 
         var reference = await GetConversationReferenceAsync(partitionKey, rowKey);
-        if (reference == null)
+        if (reference?.Conversation == null)
         {
             _logger.LogError("No conversation reference found for {PK}/{RK}", partitionKey, rowKey);
             throw new InvalidOperationException(
                 $"No conversation reference found for '{partitionKey}'/'{rowKey}'. Ensure the bot is installed.");
         }
 
+        // The activity is addressed in the conversation it was posted to, threaded or not.
+        reference.Conversation.Id = conversationId;
+
         await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
-                var attachment = new Attachment
-                {
-                    ContentType = "application/vnd.microsoft.card.adaptive",
-                    Content = JsonSerializer.Deserialize<object>(card.GetRawText())
-                };
-                var activity = MessageFactory.Attachment(attachment);
-                await turnContext.SendActivityAsync(activity, ct);
+                var activity = BuildActivity(format, message);
+                activity.Id = activityId;
+                await turnContext.UpdateActivityAsync(activity, ct);
             },
             CancellationToken.None), logger: _logger);
 
-        await UpdateLastUpdatedAsync(partitionKey, rowKey);
-        _logger.LogInformation("Sent adaptive card to {PK}/{RK}", partitionKey, rowKey);
+        _logger.LogInformation("Updated activity {ActivityId} in {PK}/{RK}", activityId, partitionKey, rowKey);
+    }
+
+    private static IActivity BuildActivity(string format, string message) => format == "adaptive-card"
+        ? MessageFactory.Attachment(new Attachment
+        {
+            ContentType = "application/vnd.microsoft.card.adaptive",
+            Content = JsonSerializer.Deserialize<object>(message)
+        })
+        : MessageFactory.Text(message);
+
+    /// <summary>A channel conversation ID without any ";messageid=…" thread suffix.</summary>
+    internal static string BaseConversationId(string conversationId)
+    {
+        var separator = conversationId.IndexOf(";messageid=", StringComparison.OrdinalIgnoreCase);
+        return separator < 0 ? conversationId : conversationId[..separator];
     }
 
     public async Task StoreConversationReferenceAsync(
