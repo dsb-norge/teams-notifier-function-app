@@ -8,6 +8,24 @@ public interface IBotService
 {
     Task SendMessageAsync(string partitionKey, string rowKey, string message);
     Task SendAdaptiveCardAsync(string partitionKey, string rowKey, JsonElement card);
+
+    /// <summary>
+    /// Sends <paramref name="message"/> (<paramref name="format"/> <c>text</c> or <c>adaptive-card</c>)
+    /// to the conversation stored under (<paramref name="partitionKey"/>, <paramref name="rowKey"/>)
+    /// and returns where it landed. With <paramref name="threadActivityId"/> the message is posted
+    /// as a reply in that thread, which only channels have.
+    /// </summary>
+    Task<SentActivity> SendAsync(
+        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null);
+
+    /// <summary>
+    /// Replaces activity <paramref name="activityId"/>, which lives in conversation
+    /// <paramref name="conversationId"/> (threaded for a reply), with <paramref name="message"/>.
+    /// The stored reference under (<paramref name="partitionKey"/>, <paramref name="rowKey"/>)
+    /// supplies the service URL and bot identity.
+    /// </summary>
+    Task UpdateAsync(
+        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message);
     Task StoreConversationReferenceAsync(
         ConversationReference reference, string partitionKey, string rowKey,
         string conversationType, string? teamName = null, string? channelName = null, string? userName = null);
@@ -53,3 +71,6 @@ public interface IBotService
     /// </summary>
     Task<bool> TryUpdateTeamNameAsync(string partitionKey, string rowKey, string teamName);
 }
+
+/// <summary>Where a sent activity landed. <c>ActivityId</c> is null if the channel didn't return one.</summary>
+public sealed record SentActivity(string ConversationId, string? ActivityId);
