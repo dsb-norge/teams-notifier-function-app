@@ -13,6 +13,8 @@ namespace TeamsNotificationBot.Functions;
 
 public class NotifyFunction
 {
+    private const string IdempotencyScope = "notify";
+
     private readonly IAliasService _aliasService;
     private readonly IBotService _botService;
     private readonly INotificationQueue _notificationQueue;
@@ -61,25 +63,6 @@ public class NotifyFunction
                 "Content-Type must be application/json.", instance, correlationId);
         }
 
-        // Validate alias exists
-        var channelAlias = await _aliasService.GetAliasAsync(alias);
-        if (channelAlias == null)
-        {
-            _logger.LogWarning(
-                "Unknown alias: {Alias}. MessageId={MessageId}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
-                Sanitize(alias), messageId, Sanitize(sourceIp), correlationId);
-            return ApiResponse.Problem(404, "Not Found",
-                $"Unknown alias '{alias}'.", instance, correlationId);
-        }
-
-        if (!await _botService.HasConversationAsync(channelAlias))
-        {
-            _logger.LogWarning(
-                "Alias {Alias} points to a conversation the bot no longer has. CorrelationId={CorrelationId}",
-                Sanitize(alias), correlationId);
-            return ApiResponse.ConversationGone(alias, instance, correlationId);
-        }
-
         // Parse request body
         NotificationRequest? request;
         try
@@ -125,18 +108,35 @@ public class NotifyFunction
             }
         }
 
-        // Check idempotency
-        var idempotencyKey = req.Headers["Idempotency-Key"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        // Idempotency: the key is scoped to the caller and the alias, and claimed before queuing,
+        // so a concurrent duplicate can't queue a second copy. Claimed before the checks that depend
+        // on current state (alias, conversation), so a retry of a request that completed replays its
+        // response even if the alias or its conversation has gone since.
+        if (!IdempotencyKeys.TryRead(req, out var idempotencyKey, out var keyError))
         {
-            var cached = await _idempotencyService.GetAsync("notify", idempotencyKey);
-            if (cached != null)
+            return ApiResponse.Problem(400, "Bad Request", keyError!, instance, correlationId);
+        }
+
+        var principalId = AuthMiddleware.GetPrincipalId(req.HttpContext);
+        IdempotencyClaim? claim = null;
+        if (idempotencyKey != null)
+        {
+            claim = await _idempotencyService.ClaimAsync(IdempotencyScope,
+                IdempotencyKeys.Scope(principalId, idempotencyKey, alias.ToLowerInvariant()));
+            if (claim.Status == IdempotencyClaimStatus.Completed)
             {
+                // The caller's key isn't logged: the correlation ID ties the replay to this request.
                 _logger.LogInformation(
-                    "Idempotent request. Key={Key}, Alias={Alias}, CorrelationId={CorrelationId}",
-                    Sanitize(idempotencyKey), Sanitize(alias), correlationId);
-                return new ObjectResult(JsonSerializer.Deserialize<object>(cached.ResponseBody))
-                { StatusCode = cached.StatusCode };
+                    "Idempotent replay. Alias={Alias}, CorrelationId={CorrelationId}",
+                    Sanitize(alias), correlationId);
+                return IdempotencyKeys.Replay(claim.Result!);
+            }
+            if (claim.Status == IdempotencyClaimStatus.InProgress)
+            {
+                _logger.LogWarning(
+                    "Idempotency key in use by a concurrent request. Alias={Alias}, CorrelationId={CorrelationId}",
+                    Sanitize(alias), correlationId);
+                return IdempotencyKeys.InProgress(instance, correlationId);
             }
         }
 
@@ -152,10 +152,29 @@ public class NotifyFunction
             Metadata = request.Metadata,
             EnqueuedAt = DateTimeOffset.UtcNow,
             Source = "notify",
-            PrincipalId = AuthMiddleware.GetPrincipalId(req.HttpContext)
+            PrincipalId = principalId
         };
 
-        await _notificationQueue.EnqueueAsync(queueMessage);
+        IActionResult? rejection;
+        try
+        {
+            rejection = await CheckDeliverableAsync(alias, instance, correlationId, messageId, sourceIp);
+            if (rejection == null)
+                await _notificationQueue.EnqueueAsync(queueMessage);
+        }
+        catch when (claim != null)
+        {
+            // Nothing was queued: free the key so the caller can retry with it.
+            await _idempotencyService.ReleaseAsync(claim);
+            throw;
+        }
+
+        if (rejection != null)
+        {
+            if (claim != null)
+                await _idempotencyService.ReleaseAsync(claim);
+            return rejection;
+        }
 
         var duration = (DateTimeOffset.UtcNow - startTime).TotalMilliseconds;
         _logger.LogInformation(
@@ -170,14 +189,41 @@ public class NotifyFunction
             timestamp = DateTimeOffset.UtcNow.ToString("o")
         };
 
-        // Store idempotency record
-        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        if (claim != null)
         {
-            await _idempotencyService.SetAsync("notify", idempotencyKey,
+            await _idempotencyService.CompleteAsync(claim,
                 StatusCodes.Status202Accepted, JsonSerializer.Serialize(responseBody));
         }
 
         return new ObjectResult(responseBody)
         { StatusCode = StatusCodes.Status202Accepted };
+    }
+
+    /// <summary>
+    /// The checks that depend on current state: the alias exists and the bot still has its
+    /// conversation. Null when the message can be queued, else the 404 to return.
+    /// </summary>
+    private async Task<IActionResult?> CheckDeliverableAsync(
+        string alias, string instance, string? correlationId, string messageId, string sourceIp)
+    {
+        var channelAlias = await _aliasService.GetAliasAsync(alias);
+        if (channelAlias == null)
+        {
+            _logger.LogWarning(
+                "Unknown alias: {Alias}. MessageId={MessageId}, SourceIp={SourceIp}, CorrelationId={CorrelationId}",
+                Sanitize(alias), messageId, Sanitize(sourceIp), correlationId);
+            return ApiResponse.Problem(404, "Not Found",
+                $"Unknown alias '{alias}'.", instance, correlationId);
+        }
+
+        if (!await _botService.HasConversationAsync(channelAlias))
+        {
+            _logger.LogWarning(
+                "Alias {Alias} points to a conversation the bot no longer has. CorrelationId={CorrelationId}",
+                Sanitize(alias), correlationId);
+            return ApiResponse.ConversationGone(alias, instance, correlationId);
+        }
+
+        return null;
     }
 }

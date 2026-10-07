@@ -145,78 +145,206 @@ public class NotifyFunctionTests
         Assert.IsType<ProblemDetails>(objectResult.Value);
     }
 
-    [Fact]
-    public async Task IdempotencyKey_FirstCall_Returns202AndStores()
+    // --- Idempotency-Key ---
+
+    private void SetUpDeliverableAlias()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+        // Case-insensitive, like AliasService.
+        _aliasService.Setup(s => s.GetAliasAsync(It.Is<string>(n => string.Equals(n, "test", StringComparison.OrdinalIgnoreCase)))).ReturnsAsync(
             new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
         _queueClient
             .Setup(q => q.SendMessageAsync(It.IsAny<string>()))
             .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
-        _idempotencyService
-            .Setup(s => s.GetAsync("notify", "key-123"))
-            .ReturnsAsync((IdempotencyResult?)null);
+    }
 
+    private static Microsoft.AspNetCore.Http.HttpRequest RequestWithKey(string key, string principal = "caller-a")
+    {
         var req = HttpRequestHelper.CreatePostRequest(
             body: """{"message": "Hello", "format": "text"}""",
-            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "key-123" });
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = key });
+        req.HttpContext.Items[TeamsNotificationBot.Middleware.AuthMiddleware.PrincipalIdItemKey] = principal;
+        return req;
+    }
 
-        var result = await _function.Run(req, "test");
+    private static IdempotencyClaim Claim(IdempotencyClaimStatus status, IdempotencyResult? result = null) =>
+        new(status, "notify", "scoped", DateTimeOffset.UtcNow, result);
 
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(202, objectResult.StatusCode);
+    [Fact]
+    public async Task IdempotencyKey_FirstCall_ClaimsScopedKey_Queues_AndCompletes()
+    {
+        SetUpDeliverableAlias();
+        var scoped = TeamsNotificationBot.Helpers.IdempotencyKeys.Scope("caller-a", "key-123", "test");
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", scoped)).ReturnsAsync(claim);
 
+        var result = await _function.Run(RequestWithKey("key-123"), "Test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Once);
-        _idempotencyService.Verify(s => s.SetAsync("notify", "key-123", 202, It.IsAny<string>()), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(claim, 202, It.Is<string>(b => b.Contains("msg-"))), Times.Once);
     }
 
     [Fact]
-    public async Task IdempotencyKey_DuplicateCall_ReturnsCachedResponse()
+    public async Task IdempotencyKey_ScopeDependsOnTheCaller()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-        _idempotencyService
-            .Setup(s => s.GetAsync("notify", "key-123"))
-            .ReturnsAsync(new IdempotencyResult
+        SetUpDeliverableAlias();
+        _idempotencyService.Setup(s => s.ClaimAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(Claim(IdempotencyClaimStatus.Claimed));
+
+        await _function.Run(RequestWithKey("key-123", principal: "caller-a"), "test");
+        await _function.Run(RequestWithKey("key-123", principal: "caller-b"), "test");
+
+        _idempotencyService.Verify(s => s.ClaimAsync("notify",
+            TeamsNotificationBot.Helpers.IdempotencyKeys.Scope("caller-a", "key-123", "test")), Times.Once);
+        _idempotencyService.Verify(s => s.ClaimAsync("notify",
+            TeamsNotificationBot.Helpers.IdempotencyKeys.Scope("caller-b", "key-123", "test")), Times.Once);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_Completed_ReplaysTheOriginalResponse_WithoutQueuing()
+    {
+        SetUpDeliverableAlias();
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>()))
+            .ReturnsAsync(Claim(IdempotencyClaimStatus.Completed, new IdempotencyResult
             {
                 StatusCode = 202,
                 ResponseBody = """{"status":"queued","messageId":"msg-abc","correlationId":"corr-1","timestamp":"2026-01-01T00:00:00.0000000Z"}"""
-            });
+            }));
 
-        var req = HttpRequestHelper.CreatePostRequest(
-            body: """{"message": "Hello", "format": "text"}""",
-            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "key-123" });
-
-        var result = await _function.Run(req, "test");
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(202, objectResult.StatusCode);
+        Assert.Contains("msg-abc", JsonSerializer.Serialize(objectResult.Value));
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
 
-        // Should NOT enqueue a message
+    [Fact]
+    public async Task IdempotencyKey_InProgress_Returns409_WithoutQueuing()
+    {
+        SetUpDeliverableAlias();
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>()))
+            .ReturnsAsync(Claim(IdempotencyClaimStatus.InProgress));
+
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(409, objectResult.StatusCode);
+        Assert.Contains("still being processed", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_QueueFailure_ReleasesTheClaim_AndPropagates()
+    {
+        SetUpDeliverableAlias();
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ThrowsAsync(new Azure.RequestFailedException(503, "unavailable"));
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() => _function.Run(RequestWithKey("key-123"), "test"));
+
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(It.IsAny<IdempotencyClaim>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_Completed_StillReplays_AfterTheConversationIsGone()
+    {
+        // The first request queued fine; the bot was removed from the team before the retry.
+        var orphan = new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" };
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(orphan);
+        _botService.Setup(b => b.HasConversationAsync(orphan)).ReturnsAsync(false);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>()))
+            .ReturnsAsync(Claim(IdempotencyClaimStatus.Completed,
+                new IdempotencyResult { StatusCode = 202, ResponseBody = """{"messageId":"msg-abc"}""" }));
+
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(202, objectResult.StatusCode);
+        Assert.Contains("msg-abc", JsonSerializer.Serialize(objectResult.Value));
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_Completed_StillReplays_AfterTheAliasIsRemoved()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync((AliasEntity?)null);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>()))
+            .ReturnsAsync(Claim(IdempotencyClaimStatus.Completed,
+                new IdempotencyResult { StatusCode = 202, ResponseBody = """{"messageId":"msg-abc"}""" }));
+
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_FreshClaim_IsReleased_WhenTheConversationIsGone()
+    {
+        var orphan = new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" };
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(orphan);
+        _botService.Setup(b => b.HasConversationAsync(orphan)).ReturnsAsync(false);
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
+
+        Assert.Equal(404, Assert.IsType<ObjectResult>(result).StatusCode);
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(It.IsAny<IdempotencyClaim>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_FreshClaim_IsReleased_WhenTheAliasIsUnknown()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync((AliasEntity?)null);
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+
+        var result = await _function.Run(RequestWithKey("key-123"), "test");
+
+        Assert.Equal(404, Assert.IsType<ObjectResult>(result).StatusCode);
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_FreshClaim_IsReleased_WhenACheckThrows()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test"))
+            .ThrowsAsync(new Azure.RequestFailedException(503, "unavailable"));
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() => _function.Run(RequestWithKey("key-123"), "test"));
+
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_Invalid_Returns400_WithoutClaiming()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(RequestWithKey(new string('k', 257)), "test");
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(result).StatusCode);
+        _idempotencyService.VerifyNoOtherCalls();
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
     public async Task NoIdempotencyKey_NormalBehavior()
     {
-        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
-            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
-        _queueClient
-            .Setup(q => q.SendMessageAsync(It.IsAny<string>()))
-            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        SetUpDeliverableAlias();
 
-        var req = HttpRequestHelper.CreatePostRequest(
-            body: """{"message": "Hello", "format": "text"}""");
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(
+            body: """{"message": "Hello", "format": "text"}"""), "test");
 
-        var result = await _function.Run(req, "test");
-
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(202, objectResult.StatusCode);
-
-        // Should enqueue but NOT interact with idempotency service
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Once);
-        _idempotencyService.Verify(s => s.GetAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-        _idempotencyService.Verify(s => s.SetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+        _idempotencyService.VerifyNoOtherCalls();
     }
 
     [Fact]

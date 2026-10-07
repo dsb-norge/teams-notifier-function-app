@@ -13,12 +13,14 @@ namespace TeamsNotificationBot.Tests.Functions;
 public class SendFunctionTests
 {
     private readonly Mock<QueueClient> _queueClient = new();
+    private readonly Mock<IIdempotencyService> _idempotencyService = new();
     private readonly SendFunction _function;
 
     public SendFunctionTests()
     {
         _function = new SendFunction(
             new NotificationQueue(_queueClient.Object, Mock.Of<IDeliveryEvents>()),
+            _idempotencyService.Object,
             NullLogger<SendFunction>.Instance);
     }
 
@@ -170,5 +172,71 @@ public class SendFunctionTests
         var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
         Assert.Contains("metadata key", problem.Detail);
         _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    // --- Idempotency-Key ---
+
+    private const string ChannelSendBody = """
+        {
+            "target": { "type": "channel", "teamId": "team-1", "channelId": "channel-1" },
+            "message": "hi"
+        }
+        """;
+
+    [Fact]
+    public async Task IdempotencyKey_ScopedToCallerAndTarget_QueuesOnce_AndCompletes()
+    {
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        var scoped = TeamsNotificationBot.Helpers.IdempotencyKeys.Scope("caller-a", "run-7", "channel", "team-1", "channel-1", null, null);
+        var claim = new IdempotencyClaim(IdempotencyClaimStatus.Claimed, "send", scoped, DateTimeOffset.UtcNow);
+        _idempotencyService.Setup(s => s.ClaimAsync("send", scoped)).ReturnsAsync(claim);
+        var req = HttpRequestHelper.CreatePostRequest(body: ChannelSendBody,
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "run-7" });
+        req.HttpContext.Items[TeamsNotificationBot.Middleware.AuthMiddleware.PrincipalIdItemKey] = "caller-a";
+
+        var result = await _function.Run(req);
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(claim, 202, It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_Duplicate_ReplaysWithoutQueuing()
+    {
+        _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>()))
+            .ReturnsAsync(new IdempotencyClaim(IdempotencyClaimStatus.Completed, "send", "k", DateTimeOffset.UtcNow,
+                new IdempotencyResult { StatusCode = 202, ResponseBody = """{"messageId":"send-abc"}""" }));
+        var req = HttpRequestHelper.CreatePostRequest(body: ChannelSendBody,
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "run-7" });
+
+        var result = await _function.Run(req);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(202, objectResult.StatusCode);
+        Assert.Contains("send-abc", JsonSerializer.Serialize(objectResult.Value));
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_TargetsThatOnlyDifferInWhereASeparatorFalls_DoNotShareAKey()
+    {
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        var keys = new List<string>();
+        _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>()))
+            .Callback<string, string>((_, k) => keys.Add(k))
+            .ReturnsAsync(new IdempotencyClaim(IdempotencyClaimStatus.Claimed, "send", "k", DateTimeOffset.UtcNow));
+
+        foreach (var (team, channel) in new[] { ("a|b", "c"), ("a", "b|c") })
+        {
+            var req = HttpRequestHelper.CreatePostRequest(
+                body: $$"""{"target": {"type": "channel", "teamId": "{{team}}", "channelId": "{{channel}}"}, "message": "hi"}""",
+                headers: new Dictionary<string, string> { ["Idempotency-Key"] = "run-7" });
+            await _function.Run(req);
+        }
+
+        Assert.Equal(2, keys.Distinct().Count());
     }
 }

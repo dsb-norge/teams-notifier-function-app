@@ -45,6 +45,7 @@ Functions available at:
 | OpenApi | `GET /api/v1/openapi.yaml` |
 | QueueProcessor | Queue trigger (automatic) |
 | PoisonQueueMonitor | Queue trigger (automatic) |
+| StorageCleanup | Timer trigger, daily at 02:30 UTC |
 
 All HTTP endpoints are served at `http://localhost:7071`.
 
@@ -173,7 +174,7 @@ dotnet test --project tests/TeamsNotificationBot.Tests/ -- --filter-class "*Inte
 
 | Directory | What It Covers |
 |-----------|----------------|
-| `Functions/` | All HTTP triggers (Notify, Alert, Send, Health, CheckIn, GetAliases), queue triggers (QueueProcessor, BotOperations), and timer trigger (PoisonQueueMonitor) |
+| `Functions/` | All HTTP triggers (Notify, Alert, Send, Health, CheckIn, GetAliases), queue triggers (QueueProcessor, BotOperations, PoisonQueueMonitor), and the StorageCleanup timer trigger |
 | `Models/` | Request validation (NotificationRequest) and Adaptive Card security (AdaptiveCardValidator) |
 | `Services/` | Alias CRUD, queue management, idempotency, bot handler command routing, and all card builders (Alert, Poison, SetupGuide, CreateAlias) |
 | `Middleware/` | EasyAuth header parsing, role-based authorization, and rate limiting |

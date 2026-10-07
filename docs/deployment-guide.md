@@ -408,7 +408,7 @@ for i in 1 2; do
 done
 ```
 
-The second request should return the cached response from the first.
+The second request should return the cached response from the first: the same `messageId`.
 
 **Error cases:**
 

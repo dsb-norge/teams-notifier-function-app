@@ -29,7 +29,8 @@ sequenceDiagram
     FuncApp->>RateLimit: Rate limit check<br/>(60 req/60s per principal)
     RateLimit-->>FuncApp: OK / 429 Too Many Requests
     FuncApp->>FuncApp: Validate JSON schema + 28KB limit
-    FuncApp->>FuncApp: Check Idempotency-Key header
+    FuncApp->>Tables: Check the alias still has a conversation (else 404)
+    FuncApp->>FuncApp: Claim Idempotency-Key (replay / 409 / continue)
     FuncApp->>Queue: Enqueue message
     FuncApp-->>Client: 202 Accepted { messageId, correlationId }
 
@@ -178,6 +179,7 @@ Azure Functions Flex Consumption plan (FC1 SKU), running .NET 10 on the isolated
 | Queue | BotOperations | `botoperations` | Internal ops (channel enumeration on install) |
 | Queue | NotificationsPoisonMonitor | `notifications-poison` | Alert on failed notifications |
 | Queue | BotOperationsPoisonMonitor | `botoperations-poison` | Alert on failed bot operations |
+| Timer | StorageCleanup | daily, 02:30 UTC | Purge expired idempotency records |
 
 **Authentication layers:**
 
@@ -196,7 +198,7 @@ Azure Storage with shared access keys disabled. All access via RBAC (User-Assign
 | `aliases` | Maps alias names to conversation targets (channel, personal, groupChat) |
 | `conversationreferences` | Stores Bot Framework conversation references (auto-populated on bot install) |
 | `teamlookup` | Maps team thread IDs to AAD group GUIDs and team names; written on install, updated on team rename. Channel events carry neither the GUID nor the team name, so this is where both come from |
-| `idempotencykeys` | Deduplication records (no automatic expiry); also stores updown webhook `(token,event,time)` dedupe markers |
+| `idempotencykeys` | `Idempotency-Key` records for `/v1/notify` and `/v1/send`, keyed by the SHA-256 of caller, target and key, plus updown webhook `(token,event,time)` dedupe markers. Expire after `Idempotency__ExpiryHours` (default 7 days); purged daily by the `StorageCleanup` timer |
 | `ThrottlingTrollCounters` | Rate limiter fixed window counters |
 | `webhooktokens` | updown.io webhook capability tokens (SHA-256 hashed) → conversation target + event filter |
 | `updownipallowlist` | Cached updown source-IP allowlist (resolved from `ips.updown.io`) for the ingress source-IP filter; refreshed lazily-when-stale + on demand |
@@ -266,11 +268,12 @@ erDiagram
     }
 
     idempotencykeys {
-        string PartitionKey "operation (e.g. 'notify')"
-        string RowKey "idempotency key"
+        string PartitionKey "operation ('notify', 'send', 'updown-ingest')"
+        string RowKey "SHA-256 hex of caller, target and key"
+        string State "'pending' while claimed, then 'completed'"
         string ResponseBody "cached JSON response"
         int StatusCode ""
-        datetime CreatedAt ""
+        datetime CreatedAt "first use; expiry counts from here"
     }
 
     ThrottlingTrollCounters {
