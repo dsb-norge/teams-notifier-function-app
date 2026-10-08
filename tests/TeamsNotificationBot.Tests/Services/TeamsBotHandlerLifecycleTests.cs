@@ -3,6 +3,7 @@ using Azure;
 using Azure.Data.Tables;
 using Azure.Storage.Queues;
 using Microsoft.Agents.Builder;
+using Microsoft.Agents.Connector;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -476,6 +477,76 @@ public class TeamsBotHandlerLifecycleTests
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
         VerifySentTextContaining(turnContext, "Bot is online");
+    }
+
+    // --- ids ---
+
+    private static Mention MentionOf(string id, string name, string? type = null)
+    {
+        var account = new ChannelAccount { Id = id, Name = name };
+        if (type != null)
+            account.Properties["type"] = JsonSerializer.SerializeToElement(type);
+        return new Mention { Type = "mention", Text = $"<at>{name}</at>", Mentioned = account };
+    }
+
+    private static Mock<IConversations> ConnectorIn(Mock<ITurnContext<IMessageActivity>> turnContext)
+    {
+        var conversations = new Mock<IConversations>();
+        var connector = new Mock<IConnectorClient>();
+        connector.Setup(c => c.Conversations).Returns(conversations.Object);
+        turnContext.Object.Services.Set(connector.Object);
+        return conversations;
+    }
+
+    [Fact]
+    public async Task Ids_RepliesWithTheTagIdAsSent_AndThePersonsObjectIdAndUpn()
+    {
+        var (turnContext, activity) = MessageTurn("<at>Bot</at> ids <at>On call</at> <at>Jane Doe</at>", "channel",
+            conversationId: $"{ChannelThreadId};messageid=1", includeChannelData: true);
+        activity.Entities =
+        [
+            MentionOf("bot-id", "Bot"),
+            MentionOf("dGFnLWZyb20tdGVhbXM=", "On call", type: "tag"),
+            MentionOf("29:jane", "Jane Doe"),
+        ];
+        var member = new ChannelAccount { Id = "29:jane", Name = "Jane Doe", AadObjectId = "0b5f8a8e-1c1e-4f43-9a37-2f6b1b0c9d11" };
+        member.Properties["userPrincipalName"] = JsonSerializer.SerializeToElement("jane.doe@example.com");
+        // Looked up in the channel the message is in, not its thread.
+        ConnectorIn(turnContext)
+            .Setup(c => c.GetConversationMemberAsync("29:jane", ChannelThreadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(member);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        VerifySentTextContaining(turnContext, "**On call** (tag): `\"tag\": \"dGFnLWZyb20tdGVhbXM=\"`");
+        VerifySentTextContaining(turnContext,
+            "**Jane Doe** (person): object ID `0b5f8a8e-1c1e-4f43-9a37-2f6b1b0c9d11`, UPN `jane.doe@example.com`");
+        turnContext.Verify(t => t.SendActivityAsync(It.Is<IActivity>(a => a.Text != null && a.Text.Contains("**Bot**")),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Ids_RosterLookupFailing_StillReplies()
+    {
+        var (turnContext, activity) = MessageTurn("ids <at>Jane Doe</at>", "groupChat");
+        activity.Entities = [MentionOf("29:jane", "Jane Doe")];
+        ConnectorIn(turnContext)
+            .Setup(c => c.GetConversationMemberAsync("29:jane", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Microsoft.Agents.Core.Errors.ErrorResponseException("forbidden") { StatusCode = 403 });
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        VerifySentTextContaining(turnContext, "**Jane Doe** (person): object ID `not found`, UPN `not found`");
+    }
+
+    [Fact]
+    public async Task Ids_WithoutMentions_ExplainsItself()
+    {
+        var (turnContext, _) = MessageTurn("ids", "personal");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        VerifySentTextContaining(turnContext, "Mention people or tags after **ids**");
     }
 
     [Fact]

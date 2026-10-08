@@ -91,6 +91,7 @@ public static class HelpTextBuilder
         "- **checkin** \u2014 verify the bot is running (shows version and timestamp)\n" +
         "- **setup-guide** \u2014 Entra ID authentication setup for API callers\n" +
         "- **delete-post** \u2014 reply to a bot message in a channel to delete it\n" +
+        "- **ids** `@person` `@tag` \u2014 the IDs of mentioned people and tags, for the API's `mentions`\n" +
         "- **help** `[topic]` \u2014 this help system";
 
     /// <summary>
@@ -197,6 +198,11 @@ public static class HelpTextBuilder
             "delete-post" =>
                 "**delete-post**\n\nDelete a bot message in a channel. **Reply to — or quote —** the bot " +
                 "message you want gone and send `delete-post`. The bot can only delete messages it sent.",
+            "ids" =>
+                "**ids** `@person` `@tag`\n\nMention people or tags after **ids** and the bot replies with " +
+                "the IDs the API's `mentions` takes: a person's object ID and UPN, and a tag's ID exactly as " +
+                "Teams sends it in the mention. The tag ID the Teams client shows elsewhere is a different " +
+                "one. Example: `ids @On call`.",
             "help" =>
                 "**help** `[topic|command]`\n\n" +
                 "- `help` — overview.\n" +

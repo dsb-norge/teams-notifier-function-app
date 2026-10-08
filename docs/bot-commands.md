@@ -431,6 +431,32 @@ Message deleted.
 
 ---
 
+### ids `@person` `@tag`
+
+Show the IDs of the people and tags you mention, in the form the API's
+[`mentions`](api-reference.md#mentions) takes. Mention them after `ids`:
+
+```
+@<bot-display-name> ids @On call @Jane Doe
+```
+
+**Response:**
+
+```
+IDs for the mentions of POST /api/v1/notify:
+
+- On call (tag): "tag": "<the tag's ID>"
+- Jane Doe (person): object ID 0b5f8a8e-…, UPN jane.doe@example.com
+```
+
+- A **tag's** ID is shown exactly as Teams sends it in the mention. The tag ID the Teams client
+  shows elsewhere is a different one, and a Graph tag ID can't be built from it.
+- A **person's** object ID and UPN come from the conversation's roster; `not found` if the bot
+  can't read it.
+- Without a mention, the bot replies with this help.
+
+---
+
 ## 7. Command Availability by Scope
 
 Not all commands are available in every conversation scope. Queue management commands that modify
@@ -450,6 +476,7 @@ data are restricted to team channels and personal chat where administrative acce
 | queue-retry | Yes | -- | -- |
 | queue-retry-all | Yes | -- | -- |
 | delete-post | Yes | -- | -- |
+| ids | Yes | Yes | Yes |
 | create-webhook | Yes | Yes | Yes |
 | list-webhooks | Yes | Yes | Yes |
 | show-webhook | Yes | Yes | Yes |
