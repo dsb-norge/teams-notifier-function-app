@@ -7,6 +7,7 @@ using Microsoft.Agents.Connector;
 using Microsoft.Agents.Core.Errors;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Agents.Hosting.AspNetCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Models;
 using TeamsApi = Microsoft.Teams.Api;
@@ -25,6 +26,7 @@ public class BotService : IBotService
 
     private readonly CloudAdapter _adapter;
     private readonly TableClient _tableClient;
+    private readonly TableClient _teamLookupTable;
     private readonly string _botAppId;
     private readonly bool _teamsDisabled;
     private readonly ILogger<BotService> _logger;
@@ -41,10 +43,12 @@ public class BotService : IBotService
         TableClient tableClient,
         ILogger<BotService> logger,
         IConnections connections,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        [FromKeyedServices("teamlookup")] TableClient teamLookupTable)
     {
         _adapter = adapter;
         _tableClient = tableClient;
+        _teamLookupTable = teamLookupTable;
         _connections = connections;
         _httpClientFactory = httpClientFactory;
         _botAppId = Environment.GetEnvironmentVariable("BotAppId") ?? string.Empty;
@@ -230,6 +234,104 @@ public class BotService : IBotService
         }
         while (!string.IsNullOrEmpty(continuationToken));
         return members;
+    }
+
+    public async Task<(string PartitionKey, string RowKey)?> FindPersonalConversationAsync(string userId, string? teamGuid = null)
+    {
+        // Offline local mode stores no references and reads no rosters.
+        if (_teamsDisabled)
+            return ("user", PersonIds.ObjectId(userId) ?? userId);
+
+        // A personal conversation is stored under the person's object ID.
+        if (PersonIds.ObjectId(userId) is { } objectId && await HasConversationAsync("user", objectId))
+            return ("user", objectId);
+
+        await foreach (var team in _teamLookupTable.QueryAsync<TeamLookupEntity>(e => e.PartitionKey == "teamlookup"))
+        {
+            if (teamGuid != null && !string.Equals(team.TeamGuid, teamGuid, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var reference = await GetTeamReferenceAsync(team);
+            if (reference?.Conversation == null)
+            {
+                _logger.LogWarning("No stored conversation for team {TeamGuid}; skipping it in the roster search", team.TeamGuid);
+                continue;
+            }
+
+            // The team's thread ID is its own conversation, whose roster is the team's members.
+            ChannelAccount? member = null;
+            await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
+                AgentClaims.CreateIdentity(_botAppId),
+                reference,
+                async (turnContext, ct) =>
+                {
+                    var roster = await GetRosterAsync(turnContext, team.RowKey, "channel", ct);
+                    member = roster.Find(userId);
+                },
+                CancellationToken.None), logger: _logger);
+
+            if (member is not { Id.Length: > 0 } || PersonIds.ObjectId(member.AadObjectId ?? string.Empty) is not { } memberObjectId)
+                continue;
+
+            if (!await HasConversationAsync("user", memberObjectId))
+                await CreatePersonalConversationAsync(reference, member, memberObjectId);
+            _logger.LogInformation("Found the recipient in team {TeamGuid}; personal conversation {RK}", team.TeamGuid, memberObjectId);
+            return ("user", memberObjectId);
+        }
+
+        return null;
+    }
+
+    /// <summary>A stored reference in the team, for its service URL, tenant and bot account: the
+    /// General channel's (its ID is the team's thread ID) if there is one, else any channel's.</summary>
+    private async Task<ConversationReference?> GetTeamReferenceAsync(TeamLookupEntity team)
+    {
+        if (await GetConversationReferenceAsync(team.TeamGuid, team.RowKey) is { } general)
+            return general;
+
+        await foreach (var entity in QueryTeamReferencesAsync(team.TeamGuid))
+        {
+            var reference = JsonSerializer.Deserialize<ConversationReference>(entity.ConversationReference, CaseInsensitiveOptions);
+            if (reference?.Conversation != null)
+                return reference;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Opens a one-to-one conversation with <paramref name="member"/>, a member of the team
+    /// <paramref name="teamReference"/> belongs to, and stores it under ("user", object ID) like a
+    /// personal installation would. Teams returns the existing chat if there is one, so this is safe
+    /// to repeat.
+    /// </summary>
+    private async Task CreatePersonalConversationAsync(
+        ConversationReference teamReference, ChannelAccount member, string objectId)
+    {
+        var tenantId = teamReference.Conversation.TenantId;
+        var parameters = new ConversationParameters
+        {
+            IsGroup = false,
+            Agent = teamReference.Agent,
+            Members = [new ChannelAccount { Id = member.Id }],
+            TenantId = tenantId,
+            ChannelData = new { tenant = new { id = tenantId } }
+        };
+
+        var identity = AgentClaims.CreateIdentity(_botAppId);
+        ConversationReference? created = null;
+        // No callback: the reference the SDK returns is all that's needed, without a turn.
+        await Helpers.ThrottleRetry.ExecuteAsync(async () => created = await _adapter.CreateConversationAsync(
+            identity,
+            teamReference.ChannelId,
+            teamReference.ServiceUrl,
+            AgentClaims.GetOutgoingAudienceClaim(identity),
+            parameters,
+            null!,
+            CancellationToken.None), logger: _logger);
+
+        if (created?.Conversation == null)
+            throw new InvalidOperationException("Teams created no personal conversation with the recipient.");
+        await StoreConversationReferenceAsync(created, "user", objectId, "personal", userName: member.Name);
     }
 
     private static IActivity BuildActivity(string format, string message) => format == "adaptive-card"

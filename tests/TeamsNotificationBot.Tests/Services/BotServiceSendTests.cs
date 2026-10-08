@@ -31,6 +31,7 @@ public class BotServiceSendTests : IDisposable
     private const string Channel = "19:channel@thread.tacv2";
 
     private readonly Mock<TableClient> _tableClient = new();
+    private readonly Mock<TableClient> _teamLookup = new();
     private readonly Mock<CloudAdapter> _adapter =
         new(Mock.Of<IChannelServiceClientFactory>(), Mock.Of<IActivityTaskQueue>(), null!, null!, null!, null!, null!);
     private readonly Mock<ITurnContext> _turnContext = new();
@@ -79,7 +80,7 @@ public class BotServiceSendTests : IDisposable
     }
 
     private BotService NewService() =>
-        new(_adapter.Object, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
+        new(_adapter.Object, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!, _teamLookup.Object);
 
     private void StoreReference(string pk, string rk, string conversationId)
     {

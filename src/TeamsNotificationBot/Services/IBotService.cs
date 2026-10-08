@@ -31,6 +31,17 @@ public interface IBotService
     Task<IReadOnlyList<string>> UpdateAsync(
         string partitionKey, string rowKey, string conversationId, string activityId, string format, string message,
         IReadOnlyList<MessageMention>? mentions = null);
+
+    /// <summary>
+    /// The <c>conversationreferences</c> key of a personal conversation with the person
+    /// <paramref name="userId"/> (an Entra object ID or a UPN). A stored conversation is used if
+    /// there is one; otherwise the rosters of the teams the bot is installed in are searched (only
+    /// the team with AAD group ID <paramref name="teamGuid"/>, when given), and a conversation with
+    /// the first match is created and stored. Null when no roster has the person. When Teams
+    /// integration is disabled, the key the person would have, without looking.
+    /// </summary>
+    Task<(string PartitionKey, string RowKey)?> FindPersonalConversationAsync(string userId, string? teamGuid = null);
+
     Task StoreConversationReferenceAsync(
         ConversationReference reference, string partitionKey, string rowKey,
         string conversationType, string? teamName = null, string? channelName = null, string? userName = null);
