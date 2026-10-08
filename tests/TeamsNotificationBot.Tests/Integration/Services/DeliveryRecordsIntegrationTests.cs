@@ -34,6 +34,21 @@ public class DeliveryRecordsIntegrationTests
     };
 
     [Fact]
+    public async Task Create_ForADirectTarget_KeepsTheTargetAsRequested()
+    {
+        var message = NewMessage();
+        message.Alias = null;
+        message.Source = "send";
+        message.Target = new MessageTarget { Type = "personal", UserId = "Jane.Doe@example.com" };
+
+        await _records.CreateAsync(message);
+        var record = await _records.GetAsync(message.MessageId);
+
+        Assert.Null(record!.Alias);
+        Assert.Equal(message.Target.Key(), record.RequestedTarget);
+    }
+
+    [Fact]
     public async Task Create_ThenGet_IsQueued_WithTheCallerAndALowercaseAlias()
     {
         var message = NewMessage(replyTo: "msg-0123456789abcdef0123456789abcdef");

@@ -288,6 +288,7 @@ erDiagram
         string Source "route that queued it"
         string PrincipalId "calling principal"
         string Alias "lowercase; null for /v1/send"
+        string RequestedTarget "the /v1/send target as requested, for the same-target rule"
         string PostedAs "post | reply | update"
         string TargetType "channel | personal | groupChat"
         string ConversationId "Teams conversation the activity lives in"
@@ -477,6 +478,19 @@ for the queue to retry, and 429s go through `ThrottleRetry`. Tags aren't checked
 Teams for a message with tags is answered by sending it once more with the tags as plain text.
 Everything written as plain text is recorded in the delivery record's `UnresolvedMentions`. See
 [API Reference](api-reference.md#mentions).
+
+**Direct messages:** a `/v1/send` to a person is resolved at delivery by
+`BotService.FindPersonalConversationAsync`. An object ID with a stored personal conversation
+(`user`/`<object ID>`, the same row a personal installation writes) is used as it is. Otherwise
+the processor searches the teams in `teamlookup` (only the one given in `target.teamId`, if any):
+for each it continues a stored conversation of the team, preferably its General channel, and reads
+the team roster (its thread ID) through the same roster cache mentions use. On the first match it
+calls `CreateConversationAsync` with the member's Teams ID, the team's tenant and the bot account,
+and stores the returned reference under the member's object ID, so the next message skips the
+search. Teams returns the existing chat if there is one, so a retry creates nothing new. A person
+in no roster fails the message for good (`RecipientNotFound`); a roster Teams refuses skips that
+team; other errors propagate for the queue to retry. See
+[API Reference](api-reference.md#direct-messages).
 
 **Poison queue monitoring:**
 

@@ -17,6 +17,7 @@ public class DeliveryRecordEntity : ITableEntity
     public string? Source { get; set; }
     public string? PrincipalId { get; set; }
     public string? Alias { get; set; }       // lowercase; null for /v1/send and updown
+    public string? RequestedTarget { get; set; } // MessageTarget.Key() of a /v1/send request
     public string? ReplyTo { get; set; }     // the messageId the request asked to reply to
     public string? Update { get; set; }      // the messageId the request asked to replace
 

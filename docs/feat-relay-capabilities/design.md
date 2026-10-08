@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Approved; releases 1 and 2 implemented |
+| Status | Approved; releases 1, 2 and 3 implemented |
 | Audience | app developers (this repo) and API consumers |
 | First client | the notifications in [`dsb-norge/github-actions-terraform`](https://github.com/dsb-norge/github-actions-terraform) (unapplied default branch, nightly drift) |
 
@@ -211,6 +211,29 @@ Settled while implementing:
 - One request is one delivery, so a failed direct message can't make a retry post the channel
   message twice.
 
+Settled while implementing:
+
+- **`update` comes to `/v1/send` for every target type**, not only people: the rules are the same
+  and nothing about them is specific to direct messages.
+- **"The same target" means the same request target**: the same type and IDs, `userId` without
+  regard to case. The record keeps the target as requested (`RequestedTarget`) and an update must
+  match it, so a person named by UPN must be named by that UPN again. Comparing the resolved person instead would need the lookup at
+  request time, which happens only at delivery. `target.teamId` only narrows a person's search,
+  so it isn't part of the comparison.
+- **A UPN is resolved through team rosters only.** Stored personal conversations are keyed by
+  object ID, and a personal installation doesn't tell the bot the person's UPN, so someone who
+  shares no team with the bot is reachable by object ID only. Storing a UPN per conversation
+  would take a roster read at install time; not worth it until a client needs it.
+- **No record lacks `RequestedTarget`.** Delivery records and `RequestedTarget` ship in the same
+  release, so no compatibility fallback is needed for older `/v1/send` records.
+- **`userId` is validated** as an object ID or a UPN (`400` otherwise). Before, any string was
+  accepted, and anything but an object ID with a stored conversation ended in the poison queue.
+- **The team roster is read at the team's thread ID**, through a stored conversation of the
+  team (its General channel's when stored), and cached with the mention rosters.
+- **The created conversation is stored from the reference `CreateConversationAsync` returns**,
+  without running a turn in it, under the same `user`/`<object ID>` key a personal installation
+  writes.
+
 ## 8. Settings
 
 All optional, with defaults in code, so none is added to `app-requirements.json`:
@@ -230,6 +253,8 @@ All optional, with defaults in code, so none is added to `app-requirements.json`
 - Whether Teams renders a backslash-escaped `\*` literally in a bot's text message, and how
   escaped `<` and `>` render (2).
 - Mentions in private and shared channels, for someone in the team but not the channel (2).
+- A direct message to a team member who never installed the app or chatted with the bot
+  arrives, and later ones reuse the stored chat (3).
 
 ## 10. Out of scope
 

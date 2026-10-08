@@ -228,21 +228,59 @@ public class QueueProcessorFunctionTests : IDisposable
     }
 
     [Fact]
-    public async Task DirectTarget_Personal_IsSentToTheUser()
+    public async Task DirectTarget_Personal_IsSentToTheConversationFoundForThePerson()
     {
-        var queueMessage = new QueueMessage
-        {
-            MessageId = "msg-direct-2",
-            Target = new MessageTarget { Type = "personal", UserId = "user-abc" },
-            Message = "Personal message",
-            Format = "text",
-            EnqueuedAt = DateTimeOffset.UtcNow
-        };
+        _botService.Setup(b => b.FindPersonalConversationAsync("jane.doe@example.com", null))
+            .ReturnsAsync(("user", "oid-jane"));
 
-        await RunAsync(queueMessage);
+        await RunAsync(PersonalMessage("jane.doe@example.com"));
 
-        _botService.Verify(b => b.SendAsync("user", "user-abc", "text", "Personal message", null), Times.Once);
+        _botService.Verify(b => b.SendAsync("user", "oid-jane", "text", "Personal message", null), Times.Once);
     }
+
+    [Fact]
+    public async Task DirectTarget_Personal_SearchesOnlyTheTeamGiven()
+    {
+        _botService.Setup(b => b.FindPersonalConversationAsync("jane.doe@example.com", "team-1"))
+            .ReturnsAsync(("user", "oid-jane"));
+
+        await RunAsync(PersonalMessage("jane.doe@example.com", teamId: "team-1"));
+
+        _botService.Verify(b => b.SendAsync("user", "oid-jane", "text", "Personal message", null), Times.Once);
+    }
+
+    [Fact]
+    public async Task DirectTarget_PersonInNoRoster_FailsForGood_WithoutRetry()
+    {
+        _botService.Setup(b => b.FindPersonalConversationAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(((string, string)?)null);
+
+        await RunAsync(PersonalMessage("stranger@example.com"));
+
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.Is<string>(e => e.Contains("no team"))), Times.Once);
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "RecipientNotFound", It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DirectTarget_PersonLookupFailing_IsRetried()
+    {
+        _botService.Setup(b => b.FindPersonalConversationAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ThrowsAsync(new HttpRequestException("roster read failed"));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => RunAsync(PersonalMessage("jane.doe@example.com")));
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.IsAny<string>()), Times.Never);
+    }
+
+    private static QueueMessage PersonalMessage(string userId, string? teamId = null) => new()
+    {
+        MessageId = "msg-direct-2",
+        Target = new MessageTarget { Type = "personal", UserId = userId, TeamId = teamId },
+        Message = "Personal message",
+        Format = "text",
+        Source = "send",
+        EnqueuedAt = DateTimeOffset.UtcNow
+    };
 
     // --- Replies ---
 
