@@ -291,14 +291,23 @@ A second round, the same day, on a pre-release with the fixes below:
   went missing for whole batches: Flex scaled the queue trigger's instance in before the
   buffered telemetry was sent. Fixed by flushing at the end of every invocation.
 
+A third round, after those fixes:
+
+- **The group chat by object ID (2).** The member is now mentioned.
+- **Delivery events (D10).** Every queued message has its `NotificationQueued` and
+  `NotificationDelivered` event, and the warnings arrive.
+- **A tag ID that isn't the tag's (2).** Teams answers `400` with `BadArgument`: "Mentioned Tag
+  with id … does not exist in current Team", and the bot posts the message with the tag as plain
+  text. The ID tried was built from the short tag ID the Teams client shows, in the format
+  Microsoft's documentation examples suggest; those examples are placeholders, and a Graph tag ID
+  can't be derived that way. It has to come from Graph (`GET /teams/{id}/tags`).
+
 Still to verify:
 
 - A direct message to someone with no chat with the bot at all, so that Teams creates a new one
   rather than returning the existing one, as it did above (3). Everyone tried so far had the
   app installed personally at some point.
-- A real tag's members are notified (2). A tag ID built in the format Microsoft's examples show
-  (base64 of team ID, tenant ID and short tag ID) was rejected with `400`, as was the short ID;
-  next, an ID read from Graph, with Teams' reason from the log.
+- A real tag's members are notified (2), with a tag ID read from Graph.
 - A shared channel (2).
 
 ## 10. Out of scope

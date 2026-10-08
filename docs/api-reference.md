@@ -300,7 +300,7 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
 |-------|----------|-------------|
 | `key` | Yes | What the `<at>key</at>` placements refer to: 1–64 letters, digits, `.`, `_` and `-`, unique in the array. |
 | `id` | `id` or `tag` | A person: their Entra object ID (a GUID) or UPN. Not their mail address (see below). |
-| `tag` | `id` or `tag` | A tag: its ID, as Microsoft Graph returns it ([teamworkTag](https://learn.microsoft.com/graph/api/resources/teamworktag)). |
+| `tag` | `id` or `tag` | A tag: its ID, as Microsoft Graph returns it ([teamworkTag](https://learn.microsoft.com/graph/api/resources/teamworktag)). A tag ID seen in the Teams client is not one, and a Graph ID can't be built from it. |
 | `name` | For a tag | A tag's display name. For a person, the plain text shown if they aren't in the roster; without it, the `id` is shown. 1–256 characters, without `<`, `>` or control characters. |
 
 - **Placement.** Every `<at>…</at>` in the message must enclose a declared key exactly, and every
