@@ -242,6 +242,20 @@ public class TeamsBotHandlerTests
     }
 
     [Fact]
+    public async Task SetAliasCommand_NameEndingInANewline_IsRejected_NotStored()
+    {
+        // Shift+Enter between the name and the description leaves "ops\n" as the name.
+        var (turnContext, _) = CreateMessageContext("set-alias ops\n description");
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        turnContext.Verify(t => t.SendActivityAsync(
+            It.Is<IActivity>(a => ((Activity)a).Text.Contains("Invalid alias name")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _aliasService.Verify(s => s.SetAliasAsync(It.IsAny<string>(), It.IsAny<AliasEntity>()), Times.Never);
+    }
+
+    [Fact]
     public async Task RemoveAliasCommand_ExistingAlias_RemovesAndConfirms()
     {
         _aliasService.Setup(s => s.RemoveAliasAsync("myalias")).ReturnsAsync(true);

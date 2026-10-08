@@ -15,9 +15,16 @@ public class AliasService : IAliasService
 
     public async Task<AliasEntity?> GetAliasAsync(string name)
     {
+        // A name that breaks the rule can't have been created, and may hold characters Table
+        // Storage rejects in a key (a "%0A" in a notify URL arrives as a newline): unknown, not a
+        // storage error.
+        var rowKey = name.ToLowerInvariant();
+        if (!AliasNames.IsValid(rowKey))
+            return null;
+
         try
         {
-            var response = await _tableClient.GetEntityAsync<AliasEntity>("alias", name.ToLowerInvariant());
+            var response = await _tableClient.GetEntityAsync<AliasEntity>("alias", rowKey);
             return response.Value;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
