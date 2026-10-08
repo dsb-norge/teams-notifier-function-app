@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Agents.Core.Errors;
 using TeamsNotificationBot.Helpers;
 using Xunit;
 
@@ -27,6 +28,14 @@ public class ThrottleRetryTests
     {
         var ex = new HttpRequestException("boom", null, HttpStatusCode.TooManyRequests);
         Assert.True(ThrottleRetry.IsThrottling(ex, out _));
+    }
+
+    [Fact]
+    public void IsThrottling_DetectsAConnectorErrorWithStatus429_WhateverItsMessage()
+    {
+        // A roster read surfaces a throttle as the connector's typed error, without "(429)" in the text.
+        Assert.True(ThrottleRetry.IsThrottling(new ErrorResponseException("Roster read failed") { StatusCode = 429 }, out _));
+        Assert.False(ThrottleRetry.IsThrottling(new ErrorResponseException("Roster read failed") { StatusCode = 403 }, out _));
     }
 
     [Fact]
