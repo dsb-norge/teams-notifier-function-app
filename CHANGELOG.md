@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.2.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.1.0...teams-notifier-function-app-v2.2.0) (2026-10-08)
+
+
+### Features
+
+* an ids command that shows the IDs of mentioned people and tags ([f9a88cd](https://github.com/dsb-norge/teams-notifier-function-app/commit/f9a88cdf3efc792a80d50c0905149eb41a5cc431))
+* **api:** direct messages by object ID or UPN, and updates on /v1/send ([cadbd4d](https://github.com/dsb-norge/teams-notifier-function-app/commit/cadbd4d8c2e2b520e1968f9f640bae39f76c2cf3))
+* **api:** limit the size of metadata ([e0a0e6d](https://github.com/dsb-norge/teams-notifier-function-app/commit/e0a0e6dee11eaee3691b05b712189a753fa3b57e))
+* **api:** mention people and tags from /v1/notify ([435f544](https://github.com/dsb-norge/teams-notifier-function-app/commit/435f544e496fbe0ef602f9d36fb353bae528a726))
+* **api:** record each message's delivery and serve its status ([d3b29e8](https://github.com/dsb-norge/teams-notifier-function-app/commit/d3b29e8abb82cd019347f68d7f33bbe6b584f5ef))
+* **api:** reply in a message's thread, or update it in place ([8aa1fbf](https://github.com/dsb-norge/teams-notifier-function-app/commit/8aa1fbfca4ad57d32fd6168056af2a1ee5abb133))
+* **api:** return 404 when an alias's conversation is gone ([4a605e8](https://github.com/dsb-norge/teams-notifier-function-app/commit/4a605e829b69a40aa8a529a67c8ffbf6bb877b2d))
+* **api:** scope idempotency keys per caller and target, atomically, with expiry ([78404b0](https://github.com/dsb-norge/teams-notifier-function-app/commit/78404b08d48b09a2c5e86d59a9ba4650c573494a))
+* let BotService find a person in the installed teams' rosters and open a chat ([5edb62a](https://github.com/dsb-norge/teams-notifier-function-app/commit/5edb62acc20eba6f60ea680d29fd7833991fe2bf))
+* let BotService mention people and tags, checked against the roster ([ae62bc2](https://github.com/dsb-norge/teams-notifier-function-app/commit/ae62bc23386e910ecbdf985b0ee8938c94e77793))
+* let BotService report where a message landed, post in a thread, and update it ([710a244](https://github.com/dsb-norge/teams-notifier-function-app/commit/710a244fcdafc242d807582746d21efffcbba70a))
+* log every queued and delivered notification as an unsampled event ([b20a491](https://github.com/dsb-norge/teams-notifier-function-app/commit/b20a4911200c2783dfaf98a7da286fc97b61bd69))
+
+
+### Bug Fixes
+
+* **api:** always send Retry-After as whole seconds ([91ec632](https://github.com/dsb-norge/teams-notifier-function-app/commit/91ec632a27e7fa460ac21468993a9ef639a44ca5))
+* describe threads, mentions, direct messages and status in help endpoints ([e50c79b](https://github.com/dsb-norge/teams-notifier-function-app/commit/e50c79bc77284b6d34dac8a2505d5b51b0f7ba04))
+* find a group chat member mentioned by object ID ([f63901c](https://github.com/dsb-norge/teams-notifier-function-app/commit/f63901cb55ed2e6688560e5abe6950ab2d880e45))
+* flush telemetry at the end of every delivery attempt ([03fbf32](https://github.com/dsb-norge/teams-notifier-function-app/commit/03fbf324dd8b6175c4f06aaaf1f612c23ebf0355))
+* let ids recognise a tag as Teams sends it, and record the tag verified ([ade650f](https://github.com/dsb-norge/teams-notifier-function-app/commit/ade650f4ab7b2b1a58476cc73e72cd0fbbd52a84))
+* log Teams' reason when it rejects tag mentions or a roster read ([bd2d8ac](https://github.com/dsb-norge/teams-notifier-function-app/commit/bd2d8ac7cb5c288b8272fb4a54c2731775b1483b))
+* recognise a throttled connector call by its status code ([6b8d71b](https://github.com/dsb-norge/teams-notifier-function-app/commit/6b8d71bf7538bc5da286da860fdb0c4806b02c85))
+* reject alias names that end in a newline ([f7161d7](https://github.com/dsb-norge/teams-notifier-function-app/commit/f7161d73cc32592dbd7348c231fb92588777b0f0))
+* store a channel's conversation from the first message the bot gets in it ([cf1c713](https://github.com/dsb-norge/teams-notifier-function-app/commit/cf1c71355d5c56554f4ce197035466906ea72bec))
+
 ## [2.1.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.0.3...teams-notifier-function-app-v2.1.0) (2026-10-02)
 
 
