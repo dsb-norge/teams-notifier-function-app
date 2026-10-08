@@ -12,8 +12,9 @@ namespace TeamsNotificationBot.Tests.Integration.Services;
 /// <summary>
 /// Integration tests for BotService table storage operations.
 ///
-/// BotService's constructor requires CloudAdapter (no parameterless constructor, can't mock it).
-/// Most storage methods also check TEAMS_INTEGRATION_DISABLED and short-circuit.
+/// BotService's storage methods don't use the CloudAdapter, so it is passed as null here
+/// (BotServiceSendTests mocks it for the send paths). Most of them also check
+/// TEAMS_INTEGRATION_DISABLED and short-circuit.
 /// So we test the table operations directly via TableClient, validating the entity schema
 /// and serialization that BotService relies on. Methods that DON'T depend on CloudAdapter
 /// (UpdateConversationReferenceAsync, QueryTeamReferencesAsync) are tested via BotService
