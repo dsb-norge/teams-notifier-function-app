@@ -418,20 +418,43 @@ public class TeamsBotHandlerLifecycleTests
     }
 
     [Fact]
-    public async Task Message_Channel_FirstContact_DoesNotStore()
+    public async Task Message_Channel_FirstContact_StoresTheTopLevelReference_InsertOnly()
     {
+        // A private or shared channel the app was added to after install: no install, channel or
+        // enumeration event ever stored it, so without this a set-alias there points nowhere.
         _botService.Setup(s => s.UpdateConversationReferenceAsync(
                 It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(false);
+        SetupTeamLookup(teamName: "Test Team");
+        var (turnContext, activity) = MessageTurn("checkin", "channel",
+            conversationId: $"{ChannelThreadId};messageid=12345", includeChannelData: true, includeTeamName: false);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        // The thread suffix is stripped, as for a refresh, and the team name comes from teamlookup:
+        // channel messages don't carry it.
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
+            It.Is<ConversationReference>(r => r.Conversation.Id == ChannelThreadId),
+            TeamGuid, ChannelThreadId, "Test Team", null), Times.Once);
+        _botService.Verify(s => s.StoreConversationReferenceAsync(
+            It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+        Assert.Equal($"{ChannelThreadId};messageid=12345", activity.Conversation.Id);
+    }
+
+    [Fact]
+    public async Task Message_Channel_AlreadyStored_IsOnlyRefreshed()
+    {
+        _botService.Setup(s => s.UpdateConversationReferenceAsync(
+                It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
         var (turnContext, _) = MessageTurn("checkin", "channel", includeChannelData: true);
 
         await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
 
-        // Channels only get references via install/channel events — a message must not
-        // fabricate one from a possibly-thread-scoped context.
-        _botService.Verify(s => s.StoreConversationReferenceAsync(
+        _botService.Verify(s => s.UpsertChannelReferenceAsync(
             It.IsAny<ConversationReference>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
+            It.IsAny<string?>(), It.IsAny<string?>()), Times.Never);
     }
 
     // --- @mention stripping and slash prefix ---
@@ -620,7 +643,8 @@ public class TeamsBotHandlerLifecycleTests
     }
 
     private static (Mock<ITurnContext<IMessageActivity>> turnContext, Activity activity) MessageTurn(
-        string text, string conversationType, string? conversationId = null, bool includeChannelData = false)
+        string text, string conversationType, string? conversationId = null, bool includeChannelData = false,
+        bool includeTeamName = true)
     {
         var activity = BaseActivity(ActivityTypes.Message, conversationType);
         activity.Text = text;
@@ -630,7 +654,9 @@ public class TeamsBotHandlerLifecycleTests
         {
             activity.ChannelData = JsonSerializer.SerializeToElement(new
             {
-                team = new { id = TeamThreadId, aadGroupId = TeamGuid, name = "Test Team" },
+                team = includeTeamName
+                    ? (object)new { id = TeamThreadId, aadGroupId = TeamGuid, name = "Test Team" }
+                    : new { id = TeamThreadId, aadGroupId = TeamGuid },
                 channel = new { id = ChannelThreadId }
             });
         }
