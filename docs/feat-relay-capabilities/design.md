@@ -151,7 +151,8 @@ in the queue, as before.
   mentions onto the wrong people. Matching runs on the raw text; HTML entities are not decoded
   first.
 - **People.** `id` is an Entra object ID or a UPN. It is checked against the roster in the queue
-  processor: the team's roster for a channel alias, the chat's members for a group chat.
+  processor: the team's roster for a channel alias (a private channel's own members, which
+  leaves out team members who aren't in it), the chat's members for a group chat.
   Mentions on a personal alias are `400`. A match is rendered as `<at>roster name</at>` with a
   mention entity; a miss as the caller's `name` in plain text, listed in `unresolvedMentions`.
   The roster's name is shown so the person displayed is always the person pinged. Lookups are
@@ -172,8 +173,9 @@ Settled while implementing:
 - **The roster is read whole, not per person.** Microsoft documents paged roster reads for teams
   and channels, but not whether a single-member lookup accepts a UPN or object ID. The bot reads
   the roster of the conversation it posts to (paged for a channel, whole for a chat) and matches
-  `aadObjectId` and `userPrincipalName`. One read per conversation per 5 minutes, however many
-  people a message mentions.
+  the object ID and `userPrincipalName`. Teams names the object ID `aadObjectId` in the paged
+  roster and `objectId` in the whole one, so both are read. One read per conversation per
+  5 minutes, however many people a message mentions.
 - **`name` is optional for a person.** It is only the plain-text fallback; the `id` is shown
   without it. It stays required for a tag.
 - **A 400 from Teams for a message with tags is retried once without them.** Microsoft documents
@@ -273,13 +275,28 @@ caller holding `Notifications.Send`:
   a conversation even if the person never writes to the bot, so "never chatted" is not the same
   as "unknown to the bot".
 
+A second round, the same day, on a pre-release with the fixes below:
+
+- **A private channel (2).** A private channel the app was added to after the team install had
+  no stored conversation, so an alias set there was `404` on every notify; fixed by storing a
+  channel from the first message the bot gets in it. Then: a channel member is mentioned; a
+  team member who isn't in the channel is written as plain text and reported, since the
+  channel's roster holds only its own members; a tag is plain text and reported (Teams rejects
+  it, and Microsoft documents tags as unsupported there); thread, reply and update work.
+- **A group chat (2).** People mentioned by UPN are pinged, a non-member is reported, a tag is
+  `400` at request time, `replyTo` posts an ordinary message, and an update replaces the
+  message. A member mentioned by object ID wasn't found: the group-chat roster call names the
+  object ID `objectId` where the paged roster says `aadObjectId`; fixed by reading both.
+
 Still to verify:
 
 - A direct message to someone with no chat with the bot at all, so that Teams creates a new one
-  rather than returning the existing one, as it did above (3).
-- A real tag's members are notified (2).
-- Mentions in private and shared channels, for someone in the team but not the channel, and in
-  group chats (2).
+  rather than returning the existing one, as it did above (3). Everyone tried so far had the
+  app installed personally at some point.
+- A real tag's members are notified (2). A tag ID built in the format Microsoft's examples show
+  (base64 of team ID, tenant ID and short tag ID) was rejected with `400`, as was the short ID;
+  next, an ID read from Graph, with Teams' reason from the log.
+- A shared channel (2).
 
 ## 10. Out of scope
 
