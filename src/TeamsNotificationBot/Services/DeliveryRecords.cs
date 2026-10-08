@@ -273,18 +273,16 @@ public class DeliveryRecords : IDeliveryRecords
 
     private static void SetTarget(DeliveryRecordEntity record, (string PartitionKey, string RowKey) key)
     {
-        switch (key.PartitionKey)
+        record.TargetType = ConversationReferenceEntity.TargetTypeOf(key.PartitionKey);
+        switch (record.TargetType)
         {
-            case "user":
-                record.TargetType = "personal";
+            case "personal":
                 record.UserId = key.RowKey;
                 break;
-            case "chat":
-                record.TargetType = "groupChat";
+            case "groupChat":
                 record.ChatId = key.RowKey;
                 break;
             default:
-                record.TargetType = "channel";
                 record.TeamId = key.PartitionKey;
                 record.ChannelId = key.RowKey;
                 break;

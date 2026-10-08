@@ -3,6 +3,9 @@ using System.Text.Json;
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Agents.Builder;
+using Microsoft.Agents.Connector;
+using Microsoft.Agents.Connector.Types;
+using Microsoft.Agents.Core.Errors;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Agents.Hosting.AspNetCore.BackgroundQueue;
@@ -31,6 +34,8 @@ public class BotServiceSendTests : IDisposable
     private readonly Mock<CloudAdapter> _adapter =
         new(Mock.Of<IChannelServiceClientFactory>(), Mock.Of<IActivityTaskQueue>(), null!, null!, null!, null!, null!);
     private readonly Mock<ITurnContext> _turnContext = new();
+    private readonly Mock<IConversations> _conversations = new();
+    private readonly TurnContextStateCollection _services = new();
 
     private ConversationReference? _usedReference;
     private readonly List<IActivity> _sent = [];
@@ -58,10 +63,20 @@ public class BotServiceSendTests : IDisposable
             .Callback<IActivity, CancellationToken>((a, _) => _updated.Add(a))
             .ReturnsAsync(new ResourceResponse("activity-root"));
 
+        // The connector client the adapter puts in a proactive turn, which roster reads go through.
+        var connector = new Mock<IConnectorClient>();
+        connector.Setup(c => c.Conversations).Returns(_conversations.Object);
+        _services.Set(connector.Object);
+        _turnContext.Setup(t => t.Services).Returns(_services);
+
         StoreReference("team-1", "channel-1", Channel);
     }
 
-    public void Dispose() => Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
+        _services.Dispose();
+    }
 
     private BotService NewService() =>
         new(_adapter.Object, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
@@ -171,5 +186,237 @@ public class BotServiceSendTests : IDisposable
         Assert.Null(sent.ActivityId);
         _adapter.Verify(a => a.ContinueConversationAsync(It.IsAny<ClaimsIdentity>(), It.IsAny<ConversationReference>(),
             It.IsAny<AgentCallbackHandler>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // --- Mentions ---
+
+    private const string JaneUpn = "jane.doe@example.com";
+    private const string JaneObjectId = "0b5f8a8e-1c1e-4f43-9a37-2f6b1b0c9d11";
+
+    private static readonly MessageMention Jane = new() { Key = "jane", Id = JaneUpn, Name = "Jane" };
+    private static readonly MessageMention Sam = new() { Key = "sam", Id = "sam@example.com", Name = "Sam" };
+    private static readonly MessageMention OnCall = new() { Key = "oncall", Tag = "dGFnLWlk", Name = "On call" };
+
+    private static ChannelAccount Member(string id, string name, string objectId, string upn)
+    {
+        var member = new ChannelAccount { Id = id, Name = name, AadObjectId = objectId };
+        member.Properties["userPrincipalName"] = JsonSerializer.SerializeToElement(upn);
+        return member;
+    }
+
+    private static readonly ChannelAccount JaneInRoster = Member("29:jane", "Jane Doe", JaneObjectId, JaneUpn);
+
+    /// <summary>The team roster, in two pages, with Jane on the second.</summary>
+    private void SetUpTeamRoster()
+    {
+        _conversations
+            .Setup(c => c.GetConversationPagedMembersAsync(Channel, It.IsAny<int?>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedMembersResult
+            {
+                Members = [Member("29:alex", "Alex", "11111111-1111-1111-1111-111111111111", "alex@example.com")],
+                ContinuationToken = "page-2"
+            });
+        _conversations
+            .Setup(c => c.GetConversationPagedMembersAsync(Channel, It.IsAny<int?>(), "page-2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedMembersResult { Members = [JaneInRoster] });
+    }
+
+    private static ErrorResponseException TeamsError(int status) => new($"Teams answered {status}") { StatusCode = status };
+
+    [Fact]
+    public async Task Send_WithMentions_InAChannel_ChecksThemAgainstTheTeamRoster()
+    {
+        SetUpTeamRoster();
+
+        var sent = await NewService().SendAsync("team-1", "channel-1", "text",
+            "<at>jane</at> and <at>sam</at>, look.", mentions: [Jane, Sam]);
+
+        var activity = Assert.Single(_sent);
+        Assert.Equal("<at>Jane Doe</at> and Sam, look.", activity.Text);
+        var mention = Assert.IsType<Mention>(Assert.Single(activity.Entities));
+        Assert.Equal("29:jane", mention.Mentioned.Id);
+        Assert.Equal(["sam@example.com"], sent.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Send_WithMentions_InAThread_ReadsTheChannelsRoster_NotTheThreads()
+    {
+        SetUpTeamRoster();
+
+        await NewService().SendAsync("team-1", "channel-1", "text", "<at>jane</at>",
+            threadActivityId: "1712345678901", mentions: [Jane]);
+
+        _conversations.Verify(c => c.GetConversationPagedMembersAsync(
+            Channel, It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        Assert.Equal("<at>Jane Doe</at>", Assert.Single(_sent).Text);
+    }
+
+    [Fact]
+    public async Task Send_WithMentions_InAGroupChat_ReadsTheChatsMembers()
+    {
+        StoreReference("chat", "19:chat@thread.v2", "19:chat@thread.v2");
+        _conversations
+            .Setup(c => c.GetConversationMembersAsync("19:chat@thread.v2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([JaneInRoster]);
+
+        var sent = await NewService().SendAsync("chat", "19:chat@thread.v2", "text", "<at>jane</at>", mentions: [Jane]);
+
+        Assert.Equal("<at>Jane Doe</at>", Assert.Single(_sent).Text);
+        Assert.Empty(sent.UnresolvedMentions);
+        _conversations.Verify(c => c.GetConversationPagedMembersAsync(
+            It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Send_WithMentions_InAPersonalChat_ReadsNoRoster_AndMentionsNobody()
+    {
+        StoreReference("user", "user-1", "a:personal");
+
+        var sent = await NewService().SendAsync("user", "user-1", "text", "<at>jane</at>", mentions: [Jane]);
+
+        Assert.Equal("Jane", Assert.Single(_sent).Text);
+        Assert.Equal([JaneUpn], sent.UnresolvedMentions);
+        _conversations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Send_ATagToAGroupChat_IsPlainText_AndReported()
+    {
+        // The request check rejects tags outside channels; this is an alias repointed while queued.
+        StoreReference("chat", "19:chat@thread.v2", "19:chat@thread.v2");
+
+        var sent = await NewService().SendAsync("chat", "19:chat@thread.v2", "text", "<at>oncall</at>", mentions: [OnCall]);
+
+        var activity = Assert.Single(_sent);
+        Assert.Equal("On call", activity.Text);
+        Assert.Empty(activity.Entities);
+        Assert.Equal(["dGFnLWlk"], sent.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Send_WithOnlyTags_ReadsNoRoster()
+    {
+        var sent = await NewService().SendAsync("team-1", "channel-1", "text", "<at>oncall</at>", mentions: [OnCall]);
+
+        Assert.Equal("<at>On call</at>", Assert.Single(_sent).Text);
+        Assert.Empty(sent.UnresolvedMentions);
+        _conversations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Send_TagsRejectedByTeams_GoAgainAsPlainText()
+    {
+        // Microsoft documents a 400 for a tag the team doesn't have.
+        SetUpTeamRoster();
+        _turnContext
+            .Setup(t => t.SendActivityAsync(It.Is<IActivity>(a => a.Entities.Any(e => e is Mention && ((Mention)e).Mentioned.Id == "dGFnLWlk")),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(400));
+
+        var sent = await NewService().SendAsync("team-1", "channel-1", "text",
+            "<at>oncall</at>: <at>jane</at>", mentions: [OnCall, Jane]);
+
+        var activity = Assert.Single(_sent);
+        Assert.Equal("On call: <at>Jane Doe</at>", activity.Text);
+        Assert.Equal("29:jane", Assert.IsType<Mention>(Assert.Single(activity.Entities)).Mentioned.Id);
+        Assert.Equal(["dGFnLWlk"], sent.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Send_A400ForAMessageWithoutTags_Propagates()
+    {
+        SetUpTeamRoster();
+        _turnContext
+            .Setup(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(400));
+
+        await Assert.ThrowsAsync<ErrorResponseException>(() =>
+            NewService().SendAsync("team-1", "channel-1", "text", "<at>jane</at>", mentions: [Jane]));
+    }
+
+    [Fact]
+    public async Task Send_RosterRefused_SendsWithThePeopleAsPlainText()
+    {
+        _conversations
+            .Setup(c => c.GetConversationPagedMembersAsync(Channel, It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(403));
+
+        var sent = await NewService().SendAsync("team-1", "channel-1", "text", "<at>jane</at>", mentions: [Jane]);
+
+        Assert.Equal("Jane", Assert.Single(_sent).Text);
+        Assert.Equal([JaneUpn], sent.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Send_RosterReadFailsOtherwise_Propagates_WithoutSending()
+    {
+        _conversations
+            .Setup(c => c.GetConversationPagedMembersAsync(Channel, It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("connection reset"));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            NewService().SendAsync("team-1", "channel-1", "text", "<at>jane</at>", mentions: [Jane]));
+        Assert.Empty(_sent);
+    }
+
+    [Fact]
+    public async Task Send_RosterIsReadOnce_ForMessagesInQuickSuccession()
+    {
+        SetUpTeamRoster();
+        var service = NewService();
+
+        await service.SendAsync("team-1", "channel-1", "text", "<at>jane</at>", mentions: [Jane]);
+        await service.SendAsync("team-1", "channel-1", "text", "<at>jane</at> again", mentions: [Jane]);
+
+        // Two pages, read once.
+        _conversations.Verify(c => c.GetConversationPagedMembersAsync(
+            Channel, It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        Assert.Equal(2, _sent.Count);
+    }
+
+    [Fact]
+    public async Task Send_Card_WithMentions_CarriesTheEntitiesInTheCard()
+    {
+        SetUpTeamRoster();
+
+        await NewService().SendAsync("team-1", "channel-1", "adaptive-card",
+            """{"type":"AdaptiveCard","version":"1.5","body":[{"type":"TextBlock","text":"<at>jane</at>"}]}""",
+            mentions: [Jane]);
+
+        var activity = Assert.Single(_sent);
+        Assert.Empty(activity.Entities ?? []);
+        var card = JsonSerializer.Serialize(Assert.Single(activity.Attachments).Content);
+        Assert.Contains("<at>Jane Doe</at>", JsonDocument.Parse(card).RootElement.GetProperty("body")[0].GetProperty("text").GetString());
+        Assert.Equal("29:jane", JsonDocument.Parse(card).RootElement
+            .GetProperty("msteams").GetProperty("entities")[0].GetProperty("mentioned").GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task Update_WithMentions_ResolvesThemAgain()
+    {
+        SetUpTeamRoster();
+
+        var unresolved = await NewService().UpdateAsync("team-1", "channel-1", $"{Channel};messageid=1712345678901",
+            "activity-root", "text", "Resolved by <at>jane</at>; <at>sam</at> was off.", [Jane, Sam]);
+
+        var activity = Assert.Single(_updated);
+        Assert.Equal("activity-root", activity.Id);
+        Assert.Equal("Resolved by <at>Jane Doe</at>; Sam was off.", activity.Text);
+        Assert.Single(activity.Entities);
+        Assert.Equal(["sam@example.com"], unresolved);
+    }
+
+    [Fact]
+    public async Task Update_TagsRejectedByTeams_GoAgainAsPlainText()
+    {
+        _turnContext
+            .Setup(t => t.UpdateActivityAsync(It.Is<IActivity>(a => a.Entities.Count > 0), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(400));
+
+        var unresolved = await NewService().UpdateAsync("team-1", "channel-1", Channel,
+            "activity-root", "text", "<at>oncall</at>", [OnCall]);
+
+        Assert.Equal("On call", Assert.Single(_updated).Text);
+        Assert.Equal(["dGFnLWlk"], unresolved);
     }
 }

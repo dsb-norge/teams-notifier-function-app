@@ -37,9 +37,16 @@ public class QueueProcessorFunctionTests : IDisposable
 
         // Every send lands; tests that need a failure override this.
         _botService
-            .Setup(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
-            .ReturnsAsync((string _, string _, string _, string _, string? thread) =>
+            .Setup(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<IReadOnlyList<MessageMention>?>()))
+            .ReturnsAsync((string _, string _, string _, string _, string? thread, IReadOnlyList<MessageMention>? _) =>
                 new SentActivity(thread == null ? ChannelConversation : $"{ChannelConversation};messageid={thread}", "activity-new"));
+
+        // Every update lands with no unresolved mentions.
+        _botService
+            .Setup(b => b.UpdateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<MessageMention>?>()))
+            .ReturnsAsync([]);
 
         // Every send claim is granted; tests about racing copies override this.
         _records.Setup(r => r.ClaimSendAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryRecordEntity?>()))
