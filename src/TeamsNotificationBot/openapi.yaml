@@ -348,7 +348,7 @@ components:
         id:
           type: string
           maxLength: 256
-          description: A person's Entra object ID (a GUID) or UPN.
+          description: A person's Entra object ID (a GUID) or UPN, not their mail address.
           example: jane.doe@example.com
         tag:
           type: string
@@ -390,8 +390,9 @@ components:
               type: string
               maxLength: 256
               description: >-
-                Required for personal type: the person's Entra object ID (a GUID) or UPN. Found in the
-                roster of a team the bot is installed in; someone in none fails the message for good.
+                Required for personal type: the person's Entra object ID (a GUID) or UPN (not their
+                mail address). Found in the roster of a team the bot is installed in; someone in none
+                fails the message for good.
               example: jane.doe@example.com
             chatId:
               type: string
