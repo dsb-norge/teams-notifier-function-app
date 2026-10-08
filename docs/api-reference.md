@@ -315,7 +315,9 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
   UPN finds nobody: the person is written as plain text and listed in `unresolvedMentions`. Only
   the object ID is permanent; a UPN changes only when an administrator renames the account, mail
   more readily. Prefer the object ID where you have it.
-- **People** are checked against the roster just before posting: the team's for a channel, the
+- **People** are checked against the roster just before posting: the team's for a channel (for a
+  private channel, the channel's own members, so someone in the team but not the channel is
+  written as plain text and reported), the
   chat's members for a group chat. A person in the roster is mentioned under the roster's display
   name, so the name shown is always the person pinged. A person who isn't is written as plain
   text (`name`, else `id`) and listed in the message's
