@@ -282,6 +282,25 @@ public class BotServiceSendTests : IDisposable
     }
 
     [Fact]
+    public async Task Send_WithMentions_InAGroupChat_FindsAMemberByObjectId_AsTeamsSendsIt()
+    {
+        // The group-chat roster call names the object ID "objectId"; seen on dev, where a member
+        // mentioned by object ID was written as plain text.
+        StoreReference("chat", "19:chat@thread.v2", "19:chat@thread.v2");
+        var pal = new ChannelAccount { Id = "29:pal", Name = "Pal" };
+        pal.Properties["objectId"] = JsonSerializer.SerializeToElement(JaneObjectId);
+        _conversations
+            .Setup(c => c.GetConversationMembersAsync("19:chat@thread.v2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([pal]);
+
+        var sent = await NewService().SendAsync("chat", "19:chat@thread.v2", "text", "<at>p</at>",
+            mentions: [new MessageMention { Key = "p", Id = JaneObjectId, Name = "Pal" }]);
+
+        Assert.Equal("<at>Pal</at>", Assert.Single(_sent).Text);
+        Assert.Empty(sent.UnresolvedMentions);
+    }
+
+    [Fact]
     public async Task Send_WithMentions_InAPersonalChat_ReadsNoRoster_AndMentionsNobody()
     {
         StoreReference("user", "user-1", "a:personal");

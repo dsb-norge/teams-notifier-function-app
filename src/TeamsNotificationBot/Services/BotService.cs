@@ -276,7 +276,7 @@ public class BotService : IBotService
                 },
                 CancellationToken.None), logger: _logger);
 
-            if (member is not { Id.Length: > 0 } || PersonIds.ObjectId(member.AadObjectId ?? string.Empty) is not { } memberObjectId)
+            if (member is not { Id.Length: > 0 } || PersonIds.ObjectId(Roster.ObjectIdOf(member) ?? string.Empty) is not { } memberObjectId)
                 continue;
 
             if (!await HasConversationAsync("user", memberObjectId))
