@@ -43,4 +43,9 @@ public class QueueMessage
     /// <summary>The messageId whose Teams message this message replaces.</summary>
     [JsonPropertyName("update")]
     public string? Update { get; set; }
+
+    /// <summary>The people and tags the message mentions, validated by <see cref="MentionRules"/>.</summary>
+    [JsonPropertyName("mentions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<MessageMention>? Mentions { get; set; }
 }

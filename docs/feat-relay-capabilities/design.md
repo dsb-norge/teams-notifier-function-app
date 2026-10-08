@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Approved for implementation |
+| Status | Approved; releases 1 and 2 implemented |
 | Audience | app developers (this repo) and API consumers |
 | First client | the notifications in [`dsb-norge/github-actions-terraform`](https://github.com/dsb-norge/github-actions-terraform) (unapplied default branch, nightly drift) |
 
@@ -165,6 +165,32 @@ in the queue, as before.
   its entities are not checked.
 - **Updates and replies** take `mentions` too.
 
+Settled while implementing:
+
+- **`/v1/notify` only.** The agreement named `/v1/notify`; `/v1/send` can take `mentions` later
+  if a client needs it.
+- **The roster is read whole, not per person.** Microsoft documents paged roster reads for teams
+  and channels, but not whether a single-member lookup accepts a UPN or object ID. The bot reads
+  the roster of the conversation it posts to (paged for a channel, whole for a chat) and matches
+  `aadObjectId` and `userPrincipalName`. One read per conversation per 5 minutes, however many
+  people a message mentions.
+- **`name` is optional for a person.** It is only the plain-text fallback; the `id` is shown
+  without it. It stays required for a tag.
+- **A 400 from Teams for a message with tags is retried once without them.** Microsoft documents
+  a `400` for a tag ID the team doesn't have, so an unchecked tag would otherwise fail the message
+  on every retry. The resend writes the tags as plain text and reports their IDs in
+  `unresolvedMentions`, the same way a person missing from the roster is reported.
+- **A roster Teams refuses (a 4xx other than 429) doesn't fail the message**: its people are
+  written as plain text and reported. A 5xx or a network error still propagates for the queue to
+  retry.
+- **One mention entity per placement, in the order the placements appear** (a card's string
+  values in document order), not one per declared key. Teams pairs `<at>` tags with entities by
+  position, so a key placed twice or placed out of declaration order would otherwise ping the
+  wrong person.
+- **The target check is made at request time and not repeated.** If the alias is repointed while
+  the message is queued, mentions its new conversation can't take are written as plain text and
+  reported, like any other unresolved mention, rather than failing a message that was accepted.
+
 ## 7. Release 3: direct messages
 
 ```json
@@ -198,6 +224,9 @@ All optional, with defaults in code, so none is added to `app-requirements.json`
 
 - Replies land in the thread and updates replace the card, through the API (B).
 - What Teams does with an invalid tag ID, in particular whether it shifts other mentions (2).
+  Microsoft documents a `400` ("Mentioned tag with ID … doesn't exist in current team"), which
+  the bot answers by resending with the tags as plain text (§6). Both are still to be checked
+  on dev.
 - Whether Teams renders a backslash-escaped `\*` literally in a bot's text message, and how
   escaped `<` and `>` render (2).
 - Mentions in private and shared channels, for someone in the team but not the channel (2).

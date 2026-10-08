@@ -80,4 +80,8 @@ public sealed record DeliveryOutcome(
     (string PartitionKey, string RowKey) ConversationKey,
     string ConversationId,
     string? ActivityId,
-    string? ThreadActivityId);
+    string? ThreadActivityId)
+{
+    /// <summary>The <c>id</c> or <c>tag</c> of every mention written as plain text.</summary>
+    public IReadOnlyList<string> UnresolvedMentions { get; init; } = [];
+}

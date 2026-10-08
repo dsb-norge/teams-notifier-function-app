@@ -314,6 +314,46 @@ components:
             A messageId from an earlier notify to this alias: replace that message instead of
             posting. Not together with replyTo.
           example: msg-a1b2c3d4e5f67890abcdef1234567890
+        mentions:
+          type: array
+          maxItems: 30
+          description: >-
+            People (at most 20) and tags (at most 10) to mention. The message places each one with
+            <at>key</at>, at most 30 placements in all; every placement must name a declared key and
+            every key must be placed.
+            People are checked against the roster before posting and shown under the roster's
+            name; one not found is written as plain text and listed in unresolvedMentions. Tags
+            only in channels; no mentions in personal chats.
+          items:
+            $ref: '#/components/schemas/Mention'
+
+    Mention:
+      type: object
+      required: [key]
+      description: A person (id) or a tag (tag), not both.
+      properties:
+        key:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+          description: What the message's <at>key</at> placements refer to; unique in the array.
+          example: merger
+        id:
+          type: string
+          maxLength: 256
+          description: A person's Entra object ID (a GUID) or UPN.
+          example: jane.doe@example.com
+        tag:
+          type: string
+          maxLength: 512
+          description: A tag's ID, as Microsoft Graph returns it. Not checked by the bot.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            Required for a tag: its display name. For a person, the plain text shown if they
+            aren't in the roster (the id is shown without it). No '<', '>' or control characters.
+          example: Jane Doe
 
     SendRequest:
       type: object
@@ -387,6 +427,9 @@ components:
               nullable: true
         unresolvedMentions:
           type: array
+          description: >-
+            The id of every mentioned person not found in the roster, and the tag of every tag
+            Teams rejected; each was written as plain text.
           items:
             type: string
         enqueuedAt:

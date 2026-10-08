@@ -30,6 +30,7 @@ public class DeliveryRecordEntity : ITableEntity
     public string? ConversationId { get; set; }   // the Teams conversation the activity lives in
     public string? ActivityId { get; set; }       // the Teams activity ID
     public string? ThreadActivityId { get; set; } // the activity that roots this message's thread
+    public string? UnresolvedMentions { get; set; } // JSON array of the mentions written as plain text
     public string? Error { get; set; }
 
     public DateTimeOffset EnqueuedAt { get; set; }

@@ -52,6 +52,24 @@ public class GetMessageFunctionTests
         Assert.DoesNotContain("internal-activity-id", json.GetRawText());
     }
 
+    [Theory]
+    [InlineData("""["sam@example.com","dGFnLWlk"]""", 2)]
+    [InlineData("not json", 0)]
+    public async Task Delivered_ListsTheUnresolvedMentions(string stored, int expected)
+    {
+        _records.Setup(r => r.GetAsync(MessageId)).ReturnsAsync(new DeliveryRecordEntity
+        {
+            PartitionKey = MessageId,
+            Status = DeliveryStatus.Delivered,
+            UnresolvedMentions = stored
+        });
+
+        var result = await _function.Run(HttpRequestHelper.CreateGetRequest(), MessageId);
+
+        var json = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(result).Value)).RootElement;
+        Assert.Equal(expected, json.GetProperty("unresolvedMentions").GetArrayLength());
+    }
+
     [Fact]
     public async Task Queued_HasNoTargetYet()
     {

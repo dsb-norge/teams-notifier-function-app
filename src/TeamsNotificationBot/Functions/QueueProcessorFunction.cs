@@ -151,9 +151,14 @@ public class QueueProcessorFunction
 
             if (await ClaimSendAsync(queueMessage, record) is not { } claim)
                 return;
-            await SendUnderClaimAsync(queueMessage, claim, () => _botService.UpdateAsync(
-                parentKey.PartitionKey, parentKey.RowKey, conversationId, activityId, queueMessage.Format, queueMessage.Message));
-            outcome = new DeliveryOutcome(PostedAs.Update, parentKey, conversationId, activityId, parent.ThreadActivityId);
+            IReadOnlyList<string> unresolved = [];
+            await SendUnderClaimAsync(queueMessage, claim, async () => unresolved = await _botService.UpdateAsync(
+                parentKey.PartitionKey, parentKey.RowKey, conversationId, activityId, queueMessage.Format, queueMessage.Message,
+                queueMessage.Mentions));
+            outcome = new DeliveryOutcome(PostedAs.Update, parentKey, conversationId, activityId, parent.ThreadActivityId)
+            {
+                UnresolvedMentions = unresolved
+            };
         }
         else
         {
@@ -181,16 +186,20 @@ public class QueueProcessorFunction
                 return;
             SentActivity sent = null!;
             await SendUnderClaimAsync(queueMessage, claim, async () => sent = await _botService.SendAsync(
-                key.PartitionKey, key.RowKey, queueMessage.Format, queueMessage.Message, threadActivityId));
+                key.PartitionKey, key.RowKey, queueMessage.Format, queueMessage.Message, threadActivityId,
+                queueMessage.Mentions));
             outcome = new DeliveryOutcome(
                 threadActivityId != null ? PostedAs.Reply : PostedAs.Post,
-                key, sent.ConversationId, sent.ActivityId, threadActivityId ?? sent.ActivityId);
+                key, sent.ConversationId, sent.ActivityId, threadActivityId ?? sent.ActivityId)
+            {
+                UnresolvedMentions = sent.UnresolvedMentions
+            };
         }
 
         _logger.LogInformation(
-            "Message delivered successfully. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}, PostedAs={PostedAs}",
+            "Message delivered successfully. MessageId={MessageId}, PK={PK}, RK={RK}, Format={Format}, PostedAs={PostedAs}, UnresolvedMentions={Unresolved}",
             queueMessage.MessageId, outcome.ConversationKey.PartitionKey, outcome.ConversationKey.RowKey,
-            queueMessage.Format, outcome.PostedAs);
+            queueMessage.Format, outcome.PostedAs, outcome.UnresolvedMentions.Count);
         await _records.MarkDeliveredAsync(queueMessage, outcome);
         _events.Delivered(queueMessage, outcome.ConversationKey.PartitionKey, outcome.ConversationKey.RowKey, dequeueCount);
     }

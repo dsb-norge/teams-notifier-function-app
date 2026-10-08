@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace TeamsNotificationBot.Models;
@@ -20,7 +21,10 @@ public sealed class MessageStatusResponse
     [JsonPropertyName("target")]
     public MessageTarget? Target { get; init; }
 
-    /// <summary>Mentions that weren't found in the roster. Always empty until mentions ship.</summary>
+    /// <summary>
+    /// The <c>id</c> of every person mention not found in the roster, and the <c>tag</c> of every
+    /// tag mention Teams wouldn't take: each was written as plain text.
+    /// </summary>
     [JsonPropertyName("unresolvedMentions")]
     public IReadOnlyList<string> UnresolvedMentions { get; init; } = [];
 
@@ -46,8 +50,23 @@ public sealed class MessageStatusResponse
             UserId = record.UserId,
             ChatId = record.ChatId
         },
+        UnresolvedMentions = ParseList(record.UnresolvedMentions),
         EnqueuedAt = record.EnqueuedAt,
         DeliveredAt = record.DeliveredAt,
         Error = record.Error
     };
+
+    private static IReadOnlyList<string> ParseList(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 }
