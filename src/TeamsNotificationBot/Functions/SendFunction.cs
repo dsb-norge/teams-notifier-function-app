@@ -17,15 +17,21 @@ public class SendFunction
 
     private readonly INotificationQueue _notificationQueue;
     private readonly IIdempotencyService _idempotencyService;
+    private readonly IDeliveryRecords _deliveryRecords;
+    private readonly IBotService _botService;
     private readonly ILogger<SendFunction> _logger;
 
     public SendFunction(
         INotificationQueue notificationQueue,
         IIdempotencyService idempotencyService,
+        IDeliveryRecords deliveryRecords,
+        IBotService botService,
         ILogger<SendFunction> logger)
     {
         _notificationQueue = notificationQueue;
         _idempotencyService = idempotencyService;
+        _deliveryRecords = deliveryRecords;
+        _botService = botService;
         _logger = logger;
     }
 
@@ -96,6 +102,12 @@ public class SendFunction
             return ApiResponse.Problem(400, "Bad Request", metadataError, instance, correlationId);
         }
 
+        if (request.Update != null && !MessageIds.IsValid(request.Update))
+        {
+            return ApiResponse.Problem(400, "Bad Request",
+                "'update' must be a messageId returned by this API.", instance, correlationId);
+        }
+
         // Validate adaptive card if applicable
         if (request.Format == "adaptive-card")
         {
@@ -153,18 +165,30 @@ public class SendFunction
             Metadata = request.Metadata,
             EnqueuedAt = DateTimeOffset.UtcNow,
             Source = "send",
-            PrincipalId = principalId
+            PrincipalId = principalId,
+            Update = request.Update
         };
 
+        IActionResult? rejection = null;
         try
         {
-            await _notificationQueue.EnqueueAsync(queueMessage);
+            if (request.Update != null)
+                rejection = await CheckUpdateAsync(request, instance, correlationId);
+            if (rejection == null)
+                await _notificationQueue.EnqueueAsync(queueMessage);
         }
         catch when (claim != null)
         {
             // Nothing was queued: free the key so the caller can retry with it.
             await _idempotencyService.ReleaseAsync(claim);
             throw;
+        }
+
+        if (rejection != null)
+        {
+            if (claim != null)
+                await _idempotencyService.ReleaseAsync(claim);
+            return rejection;
         }
 
         _logger.LogInformation(
@@ -189,6 +213,36 @@ public class SendFunction
         { StatusCode = StatusCodes.Status202Accepted };
     }
 
+    /// <summary>
+    /// An update must replace a message this route sent to the same target, and the bot must still
+    /// have the conversation it went to. Null when it can be queued, else the 404 or 409 to return.
+    /// </summary>
+    private async Task<IActionResult?> CheckUpdateAsync(SendRequest request, string instance, string? correlationId)
+    {
+        var referenced = await _deliveryRecords.GetAsync(request.Update!);
+        if (referenced == null)
+        {
+            return ApiResponse.Problem(404, "Not Found",
+                $"Unknown or expired message '{request.Update}'; there is nothing to update.", instance, correlationId);
+        }
+        if (!string.Equals(referenced.RequestedTarget, request.Target.Key(), StringComparison.Ordinal))
+        {
+            return ApiResponse.Problem(409, "Conflict",
+                $"Message '{request.Update}' was sent to a different alias or target.", instance, correlationId);
+        }
+        if (referenced is { Status: DeliveryStatus.Delivered } && referenced.ConversationKey() is { } key &&
+            !await _botService.HasConversationAsync(key.PartitionKey, key.RowKey))
+        {
+            _logger.LogWarning(
+                "Message {ReferencedId} went to a conversation the bot no longer has. CorrelationId={CorrelationId}",
+                Sanitize(request.Update), correlationId);
+            return ApiResponse.Problem(404, "Not Found",
+                $"The bot no longer has the conversation message '{request.Update}' went to " +
+                "(the bot may have been removed from that team or chat).", instance, correlationId);
+        }
+        return null;
+    }
+
     private static string? ValidateTarget(MessageTarget target)
     {
         if (string.IsNullOrEmpty(target.Type))
@@ -199,6 +253,8 @@ public class SendFunction
             "channel" when string.IsNullOrEmpty(target.TeamId) => "target.teamId is required for channel type.",
             "channel" when string.IsNullOrEmpty(target.ChannelId) => "target.channelId is required for channel type.",
             "personal" when string.IsNullOrEmpty(target.UserId) => "target.userId is required for personal type.",
+            "personal" when !PersonIds.IsValid(target.UserId) =>
+                "target.userId must be an Entra object ID (a GUID) or a UPN.",
             "groupChat" when string.IsNullOrEmpty(target.ChatId) => "target.chatId is required for groupChat type.",
             "channel" or "personal" or "groupChat" => null,
             _ => $"Unknown target type: '{target.Type}'. Expected 'channel', 'personal', or 'groupChat'."

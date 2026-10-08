@@ -442,8 +442,8 @@ If the request body is omitted or empty, the check-in proceeds with no source la
 
 ### POST /v1/send
 
-Send a message directly to a specific Teams channel, personal chat, or group chat by providing
-the target type and IDs. This endpoint bypasses alias resolution.
+Send a message directly to a specific Teams channel, a person, or a group chat by providing the
+target type and IDs. This endpoint bypasses alias resolution.
 
 **Request body**
 
@@ -463,21 +463,57 @@ the target type and IDs. This endpoint bypasses alias resolution.
 |-------|------|----------|-------------|
 | `target` | object | Yes | Target specification (see below) |
 | `target.type` | string | Yes | `"channel"`, `"personal"`, or `"groupChat"` |
-| `target.teamId` | string | Conditional | Required for `channel` type |
+| `target.teamId` | string | Conditional | The team's Entra group ID. Required for `channel` type; for `personal`, optionally limits the search for the person to this team. |
 | `target.channelId` | string | Conditional | Required for `channel` type |
-| `target.userId` | string | Conditional | Required for `personal` type |
+| `target.userId` | string | Conditional | Required for `personal` type: the person's Entra object ID (a GUID) or UPN. See [Direct messages](#direct-messages). |
 | `target.chatId` | string | Conditional | Required for `groupChat` type |
 | `message` | string | Yes | Message content (plain text or Adaptive Card JSON string) |
 | `format` | string | No | `"text"` (default) or `"adaptive-card"` |
 | `metadata` | object | No | Key-value pairs for tracing, logged with the message's delivery events (see [Size Limits](#8-size-limits)). Never put secrets here. |
+| `update` | string | No | A `messageId` from an earlier `/v1/send` to the same target: replace that message instead of posting. |
 
 **Response — 202 Accepted**
 
 Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).
 
-**Errors**: 400, 401, 409, 429
+**Errors**: 400, 401, 404 (`update` of an unknown or expired message, or of one whose conversation the bot no longer has), 409, 429
 
 Takes an `Idempotency-Key` like `/v1/notify`; the key is scoped to the caller and the whole target.
+
+#### Direct messages
+
+```json
+{
+  "target": { "type": "personal", "userId": "jane.doe@example.com" },
+  "format": "text",
+  "message": "Apply failed in production."
+}
+```
+
+- `userId` is the person's Entra object ID or UPN. The bot uses its stored one-to-one
+  conversation with them if it has one. Otherwise it looks for them in the rosters of the teams
+  it is installed in (the first team that has them wins, or only `target.teamId` when given),
+  starts a one-to-one chat from there, and stores it for next time. The person doesn't need to
+  have installed the app, and the bot needs no Microsoft Graph permission.
+- A UPN is found through team rosters only. Someone who installed the app personally but shares
+  no team with the bot is reached by object ID, which their stored chat is kept under.
+- Someone in no roster is a permanent failure: the message is `failed` at once, without retries
+  or a poison-queue alert, with the reason in `error`. The lookup happens at delivery, so the
+  request itself gets `202`.
+- The message's `target` in [`GET /v1/messages/{messageId}`](#get-v1messagesmessageid) shows the
+  person's object ID, whichever form the request used.
+- One request is one message to one person; send one request per recipient.
+
+#### Updates
+
+`update` replaces a message an earlier `/v1/send` posted, with the rules of
+[Threads and updates](#threads-and-updates) on `/v1/notify`: an update to a message still queued
+waits for it, one to a message that failed fails, and an unknown or expired `messageId` is `404`.
+The update must name the **same target** as the original, or it is `409`: the same type and IDs,
+with `userId` compared without regard to case. A person named by UPN the first time must be named
+by the same UPN again, not by object ID. A person's `target.teamId` isn't compared: it only
+narrows the search, and an update goes where the original went. There is no `replyTo` on
+`/v1/send`; for a person or a group chat there are no threads to reply in.
 
 ---
 
@@ -591,9 +627,9 @@ What happened to a message the API queued, and where it went. Works for every `m
 | `unresolvedMentions` | The `id` of every [mentioned](#mentions) person not found in the roster, and the `tag` of every tag Teams rejected: each was written as plain text. Empty when every mention went through. |
 | `error` | Why it failed, when `status` is `failed` |
 
-A message is `failed` when it can't ever be delivered (its alias was removed, or it updates a
-message that was never delivered), or when every delivery attempt failed and it went to the
-poison queue. Records are kept for 180 days (the `DeliveryRecords__RetentionDays` app setting,
+A message is `failed` when it can't ever be delivered (its alias was removed, it updates a
+message that was never delivered, or its recipient is in no team the bot is installed in), or
+when every delivery attempt failed and it went to the poison queue. Records are kept for 180 days (the `DeliveryRecords__RetentionDays` app setting,
 see [Authentication §7](authentication.md#7-configuration-reference)).
 
 Delivery is at least once. Two copies of a message can't post it at the same time, but if Table

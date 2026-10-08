@@ -145,6 +145,14 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: >-
+            update names an unknown or expired message, or one whose conversation the bot no
+            longer has
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
         '413':
@@ -372,13 +380,19 @@ components:
               description: Target type
             teamId:
               type: string
-              description: Required for channel type
+              description: >-
+                The team's Entra group ID. Required for channel type; for personal type, limits the
+                search for the person to this team.
             channelId:
               type: string
               description: Required for channel type
             userId:
               type: string
-              description: Required for personal type
+              maxLength: 256
+              description: >-
+                Required for personal type: the person's Entra object ID (a GUID) or UPN. Found in the
+                roster of a team the bot is installed in; someone in none fails the message for good.
+              example: jane.doe@example.com
             chatId:
               type: string
               description: Required for groupChat type
@@ -391,6 +405,13 @@ components:
           default: text
         metadata:
           $ref: '#/components/schemas/Metadata'
+        update:
+          type: string
+          description: >-
+            A messageId from an earlier send to the same target: replace that message instead of
+            posting. The target's type and IDs must match (userId ignoring case); a personal
+            target's teamId isn't compared.
+          example: send-a1b2c3d4e5f67890abcdef1234567890
 
     MessageStatus:
       type: object
@@ -584,7 +605,9 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     IdempotencyConflict:
-      description: Another request with the same Idempotency-Key is still being processed; retry shortly
+      description: >-
+        Another request with the same Idempotency-Key is still being processed (retry shortly), or
+        replyTo/update names a message sent to another alias or target
       content:
         application/problem+json:
           schema:

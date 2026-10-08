@@ -245,10 +245,28 @@ public class QueueProcessorFunction
 
     /// <summary>
     /// The conversation a new post goes to: the direct target, or the alias's conversation. Null
-    /// when the message has no target or its alias no longer exists, which fails it for good.
+    /// when the message has no target, its alias no longer exists, or its recipient is in no team
+    /// the bot is installed in, which fails it for good.
     /// </summary>
     private async Task<(string PartitionKey, string RowKey)?> ResolveDestinationAsync(QueueMessage queueMessage, long dequeueCount)
     {
+        if (queueMessage.Target is { Type: "personal", UserId: { } userId })
+        {
+            // A person is found by object ID or UPN, and a conversation with them is created if
+            // the bot has none yet.
+            var personal = await _botService.FindPersonalConversationAsync(userId, queueMessage.Target.TeamId);
+            if (personal == null)
+            {
+                await FailPermanentlyAsync(queueMessage, dequeueCount, "RecipientNotFound",
+                    "The recipient is in the roster of no team the bot is installed in" +
+                    (queueMessage.Target.TeamId != null ? " (searched only the team given)." : "."));
+                return null;
+            }
+            _logger.LogInformation("Recipient resolved. RK={RK}, MessageId={MessageId}",
+                personal.Value.RowKey, queueMessage.MessageId);
+            return personal;
+        }
+
         if (queueMessage.Target != null)
         {
             var key = ResolveTarget(queueMessage.Target);

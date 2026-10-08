@@ -269,6 +269,7 @@ public class DeliveryRecords : IDeliveryRecords
         Source = message.Source,
         PrincipalId = message.PrincipalId,
         Alias = message.Alias?.ToLowerInvariant(),
+        RequestedTarget = message.Target?.Key(),
         ReplyTo = message.ReplyTo,
         Update = message.Update,
         EnqueuedAt = message.EnqueuedAt

@@ -121,6 +121,15 @@ without a bearer token.
 - [ ] **Private or shared channel**: mention someone who is in the team but not in the channel, and
   a tag → record what Teams does with each.
 - [ ] **Update with mentions**: update a post with a different mention → the edited post shows it.
+- [ ] **Direct message by UPN** to a team member who has never chatted with the bot:
+  `POST /api/v1/send` with `{"target": {"type": "personal", "userId": "<UPN>"}, ...}` → it arrives
+  in a one-to-one chat with the bot; the status shows the person's object ID in `target`, and a
+  `user`/`<object ID>` row appears in `conversationreferences`. Send again by object ID → same
+  chat, no new search.
+- [ ] **Direct message to someone in no installed team** → `failed`, with the "no team" error and no
+  poison alert.
+- [ ] **Update a direct message**: `/v1/send` with the same target and `"update": "<messageId>"` →
+  the message is replaced.
 
 ### 6. Teardown
 
