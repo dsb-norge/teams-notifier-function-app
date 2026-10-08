@@ -518,6 +518,7 @@ public class QueueProcessorFunctionTests : IDisposable
 
         await RunAsync(NewMessage());
 
+        _events.Verify(e => e.FlushAsync(), Times.Once); // a flush, not an event
         _events.VerifyNoOtherCalls();
     }
 
@@ -607,6 +608,7 @@ public class QueueProcessorFunctionTests : IDisposable
 
         await RunAsync(NewMessage(replyTo: "msg-parent"));
 
+        _events.Verify(e => e.FlushAsync(), Times.Once); // a flush, not an event
         _events.VerifyNoOtherCalls();
     }
 
@@ -677,5 +679,52 @@ public class QueueProcessorFunctionTests : IDisposable
 
         Assert.Equal(PostedAs.Update, outcome!.PostedAs);
         Assert.Equal(["jane.doe@example.com"], outcome.UnresolvedMentions);
+    }
+
+    // --- Telemetry flush ---
+
+    [Fact]
+    public async Task EveryRun_FlushesTelemetry_SoFlexScaleInLosesNothing()
+    {
+        SetUpChannelAlias();
+
+        await RunAsync(NewMessage());
+
+        _events.Verify(e => e.FlushAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task AFailedRun_FlushesTelemetry_BeforeTheFailureReachesTheQueue()
+    {
+        SetUpChannelAlias();
+        _botService
+            .Setup(b => b.SendAsync("team-1", "channel-1", It.IsAny<string>(), It.IsAny<string>(), null, It.IsAny<IReadOnlyList<MessageMention>?>()))
+            .ThrowsAsync(new HttpRequestException("Teams down"));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => RunAsync(NewMessage()));
+
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        _events.Verify(e => e.FlushAsync(), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("not-json{{{")]
+    [InlineData("null")]
+    public async Task AnUnreadableMessage_FlushesTelemetry_ItsLogLineIsItsOnlyTrace(string messageJson)
+    {
+        await _function.Run(messageJson, _functionContext.Object);
+
+        _botService.VerifyNoOtherCalls();
+        _events.Verify(e => e.FlushAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task APermanentFailure_FlushesTelemetry()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("unknown")).ReturnsAsync((AliasEntity?)null);
+
+        await RunAsync(NewMessage(alias: "unknown"));
+
+        _events.Verify(e => e.FlushAsync(), Times.Once);
     }
 }

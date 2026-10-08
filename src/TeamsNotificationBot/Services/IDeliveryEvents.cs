@@ -18,4 +18,12 @@ public interface IDeliveryEvents
     /// have several of these before it is delivered or lands in the poison queue.
     /// </summary>
     void DeliveryFailed(QueueMessage message, long dequeueCount, string errorType, string error);
+
+    /// <summary>
+    /// Sends what has been tracked and logged so far, before the instance can go away. Telemetry
+    /// is buffered and sent every few seconds, and Flex Consumption can scale a queue trigger's
+    /// instance in right after an invocation, losing what is still buffered: the delivery events
+    /// above, and the warnings that explain a failure. Bounded to a few seconds; never throws.
+    /// </summary>
+    Task FlushAsync();
 }

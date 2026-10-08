@@ -124,28 +124,58 @@ public class DeliveryEventsTests
         events.DeliveryFailed(AliasMessage(), 1, "Exception", "boom");
     }
 
+    [Fact]
+    public async Task Flush_SendsWhatIsBuffered()
+    {
+        var channel = new CapturingChannel();
+        var events = new DeliveryEvents(new TelemetryClient(NewConfiguration(channel)), NullLogger<DeliveryEvents>.Instance);
+
+        events.Delivered(AliasMessage(), "team-1", "19:c@thread.tacv2", 1);
+        await events.FlushAsync();
+
+        Assert.Equal(1, channel.Flushes);
+    }
+
+    [Fact]
+    public async Task Flush_ThatFails_NeverReachesTheCaller()
+    {
+        var events = new DeliveryEvents(
+            new TelemetryClient(NewConfiguration(new ThrowingChannel())), NullLogger<DeliveryEvents>.Instance);
+
+        await events.FlushAsync();
+    }
+
     private static TelemetryConfiguration NewConfiguration(ITelemetryChannel channel) => new()
     {
         TelemetryChannel = channel,
         ConnectionString = "InstrumentationKey=00000000-0000-0000-0000-000000000000"
     };
 
-    private sealed class ThrowingChannel : ITelemetryChannel
+    // Both implement IAsyncFlushable, as the production ServerTelemetryChannel does:
+    // TelemetryClient.FlushAsync only flushes a channel that does.
+    private sealed class ThrowingChannel : ITelemetryChannel, IAsyncFlushable
     {
         public bool? DeveloperMode { get; set; }
         public string EndpointAddress { get; set; } = "";
         public void Send(ITelemetry item) => throw new InvalidOperationException("channel down");
-        public void Flush() { }
+        public void Flush() => throw new InvalidOperationException("channel down");
+        public Task<bool> FlushAsync(CancellationToken cancellationToken) => throw new InvalidOperationException("channel down");
         public void Dispose() { }
     }
 
-    private sealed class CapturingChannel : ITelemetryChannel
+    private sealed class CapturingChannel : ITelemetryChannel, IAsyncFlushable
     {
         public List<ITelemetry> Items { get; } = [];
         public bool? DeveloperMode { get; set; }
         public string EndpointAddress { get; set; } = "";
+        public int Flushes { get; private set; }
         public void Send(ITelemetry item) => Items.Add(item);
-        public void Flush() { }
+        public void Flush() => Flushes++;
+        public Task<bool> FlushAsync(CancellationToken cancellationToken)
+        {
+            Flushes++;
+            return Task.FromResult(true);
+        }
         public void Dispose() { }
     }
 }

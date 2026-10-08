@@ -287,6 +287,9 @@ A second round, the same day, on a pre-release with the fixes below:
   `400` at request time, `replyTo` posts an ordinary message, and an update replaces the
   message. A member mentioned by object ID wasn't found: the group-chat roster call names the
   object ID `objectId` where the paged roster says `aadObjectId`; fixed by reading both.
+- **Delivery events (D10).** The processor's `NotificationDelivered` events, and its warnings,
+  went missing for whole batches: Flex scaled the queue trigger's instance in before the
+  buffered telemetry was sent. Fixed by flushing at the end of every invocation.
 
 Still to verify:
 

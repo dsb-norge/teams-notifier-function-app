@@ -95,7 +95,8 @@ should **not** be narrowed. The rule in this codebase is:
 
 Channel- and team-name backfill (including the `teamlookup` name query), conversation-reference auto-refresh, `LastUpdated` stamping, the
 poison-alias nudge, channel enumeration, the updown allowlist warm-up and DNS refresh, delivery-event
-tracking (`DeliveryEvents`, which runs right after a message was queued or delivered),
+tracking and flushing (`DeliveryEvents`, which runs right after a message was queued or delivered,
+and at the end of every delivery attempt),
 completing and releasing an idempotency claim (`IdempotencyService`, after the message was queued or
 while the request's own failure propagates), delivery-record writes after a send or a failure
 (`DeliveryRecords`), reading the check-in's optional body (it only labels the source; anything
