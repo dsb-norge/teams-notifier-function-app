@@ -5,6 +5,8 @@ using Azure.Storage.Queues;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Builder.App;
 using Microsoft.Agents.Builder.State;
+using Microsoft.Agents.Connector;
+using Microsoft.Agents.Core.Errors;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Agents.Extensions.MSTeams;
 using Microsoft.Extensions.DependencyInjection;
@@ -177,6 +179,10 @@ public class TeamsBotHandler : AgentApplication
         else if (command == "delete-post")
         {
             await HandleDeletePostAsync(turnContext, cancellationToken);
+        }
+        else if (command == "ids" || command.StartsWith("ids "))
+        {
+            await HandleIdsAsync(turnContext, cancellationToken);
         }
         else if (command == "setup-guide")
         {
@@ -1455,6 +1461,76 @@ public class TeamsBotHandler : AgentApplication
     }
 
     // --- Delete post command ---
+
+    /// <summary>
+    /// Replies with the IDs of the people and tags the message mentions, in the form the API's
+    /// <c>mentions</c> takes. A tag's ID is shown exactly as Teams sends it in the mention: the tag
+    /// ID the Teams client shows elsewhere is a different one, and callers without Graph access
+    /// have no other way to see it. A person's object ID and UPN come from the conversation's
+    /// roster.
+    /// </summary>
+    private async Task HandleIdsAsync(ITurnContext turnContext, CancellationToken cancellationToken)
+    {
+        var activity = turnContext.Activity;
+        var mentioned = activity.GetMentions()
+            .Select(m => m.Mentioned)
+            .Where(a => a is { Id.Length: > 0 } && a.Id != activity.Recipient?.Id)
+            .DistinctBy(a => a.Id)
+            .ToList();
+
+        if (mentioned.Count == 0)
+        {
+            await turnContext.SendActivityAsync(
+                MessageFactory.Text(HelpTextBuilder.CommandHelp("ids")!), cancellationToken);
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var account in mentioned)
+        {
+            var name = string.IsNullOrWhiteSpace(account.Name) ? "(no name)" : account.Name;
+            if (account.Properties.TryGetValue("type", out var type) &&
+                type.ValueKind == JsonValueKind.String && type.GetString() == "tag")
+            {
+                lines.Add($"- **{name}** (tag): `\"tag\": \"{account.Id}\"`");
+                continue;
+            }
+
+            var (objectId, upn) = await LookUpPersonAsync(turnContext, account, cancellationToken);
+            lines.Add($"- **{name}** (person): object ID `{objectId ?? "not found"}`, UPN `{upn ?? "not found"}`");
+        }
+
+        _logger.LogInformation("ids: replied with the IDs of {Count} mentions", lines.Count);
+        await turnContext.SendActivityAsync(
+            MessageFactory.Text("IDs for the `mentions` of `POST /api/v1/notify`:\n\n" + string.Join("\n", lines)),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// A mentioned person's object ID and UPN: the object ID if the mention carries it, and both
+    /// from the conversation's roster otherwise. Nulls when the roster can't be read.
+    /// </summary>
+    private async Task<(string? ObjectId, string? Upn)> LookUpPersonAsync(
+        ITurnContext turnContext, ChannelAccount account, CancellationToken cancellationToken)
+    {
+        var conversations = turnContext.Services.Get<IConnectorClient>()?.Conversations;
+        var conversationId = BotService.BaseConversationId(turnContext.Activity.Conversation?.Id ?? string.Empty);
+        if (conversations == null || conversationId.Length == 0)
+            return (account.AadObjectId, null);
+
+        try
+        {
+            var member = await conversations.GetConversationMemberAsync(account.Id, conversationId, cancellationToken);
+            var upn = member.Properties.TryGetValue("userPrincipalName", out var value) &&
+                      value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            return (Roster.ObjectIdOf(member) ?? account.AadObjectId, upn);
+        }
+        catch (Exception ex) when (ex is ErrorResponseException or HttpRequestException)
+        {
+            _logger.LogWarning(ex, "ids: could not look up a mentioned person in the roster");
+            return (account.AadObjectId, null);
+        }
+    }
 
     private async Task HandleDeletePostAsync(
         ITurnContext turnContext, CancellationToken cancellationToken)

@@ -54,6 +54,7 @@ public class HelpTextBuilderTests
     [InlineData("queue-retry-all")]
     [InlineData("checkin")]
     [InlineData("delete-post")]
+    [InlineData("ids")]
     [InlineData("setup-guide")]
     [InlineData("help")]
     public void CommandHelp_KnownCommands_HaveDetailedHelp(string command)
