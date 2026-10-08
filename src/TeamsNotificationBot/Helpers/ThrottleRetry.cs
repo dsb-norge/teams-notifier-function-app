@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Agents.Core.Errors;
 using Microsoft.Extensions.Logging;
 
 namespace TeamsNotificationBot.Helpers;
@@ -74,9 +75,10 @@ public static class ThrottleRetry
 
     /// <summary>
     /// Detects an HTTP 429 anywhere in the exception chain. Uses the strongly-typed
-    /// <see cref="HttpRequestException.StatusCode"/> when available, and falls back to the message
-    /// text — the M365 Agents / Bot Framework connector surfaces throttling as an
-    /// "…'(429) TooManyRequests'… Throttled" message. <paramref name="retryAfter"/> is populated only
+    /// <see cref="HttpRequestException.StatusCode"/> or <see cref="ErrorResponseException.StatusCode"/>
+    /// when available, and falls back to the message text — the M365 Agents / Bot Framework connector
+    /// surfaces a throttled send as an "…'(429) TooManyRequests'… Throttled" message, but other
+    /// connector calls (a roster read) carry only the status code. <paramref name="retryAfter"/> is populated only
     /// if a delay can be extracted (none of the current exception types expose it, so it stays null
     /// and backoff applies).
     /// </summary>
@@ -85,7 +87,8 @@ public static class ThrottleRetry
         retryAfter = null;
         for (Exception? e = ex; e is not null; e = e.InnerException)
         {
-            if (e is HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests })
+            if (e is HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests }
+                or ErrorResponseException { StatusCode: 429 })
                 return true;
 
             var message = e.Message;
