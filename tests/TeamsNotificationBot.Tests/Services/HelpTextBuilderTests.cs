@@ -70,4 +70,19 @@ public class HelpTextBuilderTests
     {
         Assert.Null(HelpTextBuilder.CommandHelp(command));
     }
+
+    [Fact]
+    public void Endpoints_CoverThreadsMentionsDirectMessagesAndStatus()
+    {
+        var help = HelpTextBuilder.Endpoints("example.azurewebsites.net");
+
+        Assert.Contains("`replyTo`", help);
+        Assert.Contains("`update`", help);
+        Assert.Contains("`mentions`", help);
+        Assert.Contains("**ids**", help);
+        Assert.Contains("object ID or UPN", help);
+        Assert.Contains("/api/v1/messages/{messageId}", help);
+        Assert.Contains("it is a new post", help);
+        Assert.Contains("`messages` and `aliases` endpoints require **Entra ID authentication**", help);
+    }
 }

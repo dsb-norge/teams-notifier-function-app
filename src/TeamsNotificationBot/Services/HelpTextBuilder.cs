@@ -33,14 +33,20 @@ public static class HelpTextBuilder
 
     public static string Endpoints(string hostname) =>
         "The bot exposes HTTP API endpoints that external systems use to send notifications:\n\n" +
-        $"- `POST https://{hostname}/api/v1/notify/{{alias}}` \u2014 send notification to an alias (markdown or Adaptive Card)\n" +
+        $"- `POST https://{hostname}/api/v1/notify/{{alias}}` \u2014 send notification to an alias (markdown or Adaptive Card); " +
+        "`replyTo` posts in an earlier message's thread (in a channel; elsewhere, or if that message wasn't " +
+        "delivered, it is a new post), `update` replaces it, and `mentions` mentions people " +
+        "and tags (run **ids** to get their IDs)\n" +
         $"- `POST https://{hostname}/api/v1/alert/{{alias}}` \u2014 receive Azure Monitor alert webhooks\n" +
-        $"- `POST https://{hostname}/api/v1/send` \u2014 send to a specific conversation by reference\n" +
+        $"- `POST https://{hostname}/api/v1/send` \u2014 send to a specific conversation, or directly to a person by " +
+        "object ID or UPN; `update` replaces an earlier send\n" +
+        $"- `GET  https://{hostname}/api/v1/messages/{{messageId}}` \u2014 what happened to a message: queued, " +
+        "delivered or failed, where it went, and any mentions that went out as plain text\n" +
         $"- `POST https://{hostname}/api/v1/checkin/{{alias}}` \u2014 application heartbeat check-in\n" +
         $"- `POST https://{hostname}/api/v1/ingest/updown/{{token}}` \u2014 anonymous updown.io webhook ingress (run **help webhooks**)\n" +
         $"- `GET  https://{hostname}/api/v1/aliases` \u2014 list all aliases (JSON; debug mode only)\n" +
         $"- `GET  https://{hostname}/api/health` \u2014 bot health status (public)\n\n" +
-        "The `notify`, `alert`, `send`, and `checkin` endpoints require **Entra ID authentication** " +
+        "The `notify`, `alert`, `send`, `checkin`, `messages` and `aliases` endpoints require **Entra ID authentication** " +
         "(run **setup-guide** for setup). `/api/health` is public. The updown ingress is authenticated " +
         "by its per-webhook secret token, not Entra ID \u2014 see **help webhooks**.";
 
