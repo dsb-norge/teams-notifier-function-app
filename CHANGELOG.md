@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.0...teams-notifier-function-app-v2.2.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* let a failed send or update reach the queue instead of the channel ([1adf018](https://github.com/dsb-norge/teams-notifier-function-app/commit/1adf018bfed028f0bdefb32c029fa7e10a173757))
+
 ## [2.2.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.1.0...teams-notifier-function-app-v2.2.0) (2026-10-08)
 
 
