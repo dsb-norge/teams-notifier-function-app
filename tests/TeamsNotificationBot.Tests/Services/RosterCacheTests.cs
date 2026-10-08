@@ -28,6 +28,19 @@ public class RosterCacheTests
     }
 
     [Fact]
+    public void Roster_FindsByObjectId_WhenTeamsSendsItAsObjectId()
+    {
+        // The whole-roster call, which group chats use, sends "objectId", not "aadObjectId".
+        var member = new ChannelAccount { Id = "29:pal", Name = "Pal" };
+        member.Properties["objectId"] = JsonSerializer.SerializeToElement(ObjectId);
+
+        var roster = new Roster([member]);
+
+        Assert.Equal("29:pal", roster.Find(ObjectId.ToUpperInvariant())?.Id);
+        Assert.Equal(ObjectId, Roster.ObjectIdOf(member));
+    }
+
+    [Fact]
     public void Roster_FindsByUpn_IgnoringCase()
     {
         var roster = new Roster([Member("29:jane", ObjectId, "Jane.Doe@Example.com")]);

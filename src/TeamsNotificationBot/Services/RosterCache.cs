@@ -64,6 +64,17 @@ public sealed class RosterCache
 /// <summary>A conversation's members, found by Entra object ID or UPN (both case-insensitive).</summary>
 public sealed class Roster
 {
+    /// <summary>
+    /// A member's Entra object ID. Teams names it inconsistently by endpoint: the paged roster
+    /// (teams and channels) sends <c>aadObjectId</c>, the whole-roster call (group chats) sends
+    /// <c>objectId</c>, which the Agents SDK keeps in <c>Properties</c>.
+    /// </summary>
+    public static string? ObjectIdOf(ChannelAccount member) =>
+        !string.IsNullOrEmpty(member.AadObjectId) ? member.AadObjectId
+        : member.Properties.TryGetValue("objectId", out var objectId) && objectId.ValueKind == JsonValueKind.String
+            ? objectId.GetString()
+            : null;
+
     private readonly Dictionary<string, ChannelAccount> _byObjectId = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ChannelAccount> _byUpn = new(StringComparer.OrdinalIgnoreCase);
 
@@ -71,8 +82,8 @@ public sealed class Roster
     {
         foreach (var member in members.Where(m => m != null))
         {
-            if (!string.IsNullOrEmpty(member.AadObjectId))
-                _byObjectId[NormalizeObjectId(member.AadObjectId)] = member;
+            if (ObjectIdOf(member) is { Length: > 0 } objectId)
+                _byObjectId[NormalizeObjectId(objectId)] = member;
             // Teams sends the UPN as an extra property, which the Agents SDK keeps in Properties.
             if (member.Properties.TryGetValue("userPrincipalName", out var upn) &&
                 upn.ValueKind == JsonValueKind.String &&
