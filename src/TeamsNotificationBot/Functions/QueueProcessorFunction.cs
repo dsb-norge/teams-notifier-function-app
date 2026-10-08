@@ -46,6 +46,21 @@ public class QueueProcessorFunction
         [QueueTrigger("notifications")] string messageJson,
         FunctionContext context)
     {
+        try
+        {
+            await HandleAsync(messageJson, context);
+        }
+        finally
+        {
+            // Flex can scale this instance in as soon as the invocation ends, taking buffered
+            // telemetry with it: on dev, delivery events and warnings went missing that way. Every
+            // path flushes, an unreadable message included, whose log line is its only trace.
+            await _events.FlushAsync();
+        }
+    }
+
+    private async Task HandleAsync(string messageJson, FunctionContext context)
+    {
         QueueMessage? queueMessage;
         try
         {

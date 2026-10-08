@@ -231,7 +231,7 @@ The updown webhook ingress adds one **DNS-only** requirement: resolving `ips.upd
 
 ### Monitoring
 
-Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines. Every queued notification also produces unsampled `NotificationQueued`, `NotificationDelivered` and `NotificationDeliveryFailed` custom events with the caller and its `metadata`; see [Troubleshooting](troubleshooting.md#notification-delivery-trail).
+Application Insights backed by a Log Analytics Workspace. Includes a pre-built KQL query pack with 14 saved queries covering bot traffic, function executions, MSAL token acquisition, JWT validation events, error tracking, and end-to-end request timelines. Every queued notification also produces unsampled `NotificationQueued`, `NotificationDelivered` and `NotificationDeliveryFailed` custom events with the caller and its `metadata`; see [Troubleshooting](troubleshooting.md#notification-delivery-trail). Telemetry is buffered and sent every few seconds, and Flex Consumption can scale a queue trigger's instance in as soon as an invocation ends, so the queue processor flushes it (bounded to 5 seconds) at the end of every invocation; without that, the delivery events and the warnings that explain a failure were lost on dev.
 
 ---
 

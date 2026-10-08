@@ -20,6 +20,9 @@ public class DeliveryEvents : IDeliveryEvents
     // such bound of its own.
     private const int MaxErrorLength = 1024;
 
+    /// <summary>How long <see cref="FlushAsync"/> may hold up the invocation that calls it.</summary>
+    public static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(5);
+
     private readonly TelemetryClient _telemetry;
     private readonly ILogger<DeliveryEvents> _logger;
 
@@ -84,6 +87,22 @@ public class DeliveryEvents : IDeliveryEvents
 
         addProperties?.Invoke(p);
         return evt;
+    }
+
+    public async Task FlushAsync()
+    {
+        using var timeout = new CancellationTokenSource(FlushTimeout);
+        try
+        {
+            await _telemetry.FlushAsync(timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            // Side concern (docs/contributing.md §5): this runs at the end of every delivery attempt,
+            // after the outcome is decided. Throwing would turn a delivered message into a failed
+            // attempt, and the queue would post it again.
+            _logger.LogDebug(ex, "Could not flush telemetry");
+        }
     }
 
     private void Track(string name, QueueMessage message, Action<IDictionary<string, string>>? addProperties)
