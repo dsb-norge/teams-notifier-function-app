@@ -60,7 +60,7 @@ where `<kind>` is `code-scanning`, `code-quality`, `dependabot` or `secret-scann
 
 | ID | Rule | Location (when recorded) | Why it is ignored | Recorded |
 |----|------|--------------------------|-------------------|----------|
-| `code-scanning#52` | `cs/log-forging` | `src/TeamsNotificationBot/Middleware/AuthMiddleware.cs:82` | Values pass through `LogSanitizer.Sanitize()` into structured `ILogger` parameters. Default Setup can't apply the repo's `Sanitize` barrier to a source-analyzed method; the same line was dismissed as #32/#33 before it shifted. | 2026-10-08 |
+| `code-scanning#52` | `cs/log-forging` | `src/TeamsNotificationBot/Middleware/AuthMiddleware.cs:82` | Values pass through `LogSanitizer.Sanitize()` into structured `ILogger` parameters. Default Setup can't apply the repo's `Sanitize` barrier to a source-analyzed method; the same line was dismissed as `code-scanning#32` and `code-scanning#33` before it shifted. | 2026-10-08 |
 | `code-scanning#53` | `cs/log-forging` | `src/TeamsNotificationBot/Middleware/AuthMiddleware.cs:82` | Same line and reason as `code-scanning#52`. | 2026-10-08 |
 | `code-quality#191` | `cs/catch-of-all-exceptions` | `src/TeamsNotificationBot/Services/TeamsBotHandler.cs:260` | Poison-alias nudge is a side concern. [§5](contributing.md#broad-catch-exception-is-deliberate-in-side-effect-paths) | 2026-10-08 |
 | `code-quality#192` | `cs/catch-of-all-exceptions` | `src/TeamsNotificationBot/Services/TeamsBotHandler.cs:522` | Team name lookup in `teamlookup` is a side concern; a failure must not stop the turn. Was `code-quality#180`. [§5](contributing.md#broad-catch-exception-is-deliberate-in-side-effect-paths) | 2026-10-08 |

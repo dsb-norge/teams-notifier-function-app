@@ -101,7 +101,8 @@ while the request's own failure propagates), delivery-record writes after a send
 (`DeliveryRecords`), reading the check-in's optional body (it only labels the source; anything
 unreadable means `unknown`), and best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
 whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
-into the `BotMessages` 500 envelope. Each catches broadly, logs at `Debug`/`Warning`, and continues.
+into the `BotMessages` 500 envelope. Each catches broadly and continues, logging at `Debug`/`Warning`; the check-in body
+parse and test teardown are silent, since a failure there carries nothing worth logging.
 Narrowing them to specific exception types would convert an unforeseen SDK or Table Storage error
 into a dropped notification — the opposite of what we want. `PoisonQueueMonitorFunction` catches
 everything for the same reason, to avoid a `-poison-poison` cascade.
