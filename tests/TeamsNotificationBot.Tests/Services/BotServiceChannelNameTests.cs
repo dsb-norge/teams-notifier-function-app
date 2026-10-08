@@ -11,9 +11,9 @@ namespace TeamsNotificationBot.Tests.Services;
 /// <summary>
 /// Unit tests for BotService.TryUpdateChannelNameAsync.
 ///
-/// BotService's constructor takes a CloudAdapter that cannot be mocked (no parameterless
-/// constructor). TryUpdateChannelNameAsync never touches the adapter — it is a pure table
-/// operation — so the adapter is passed as null here. If that ever stops being true, these
+/// TryUpdateChannelNameAsync never touches the CloudAdapter — it is a pure table operation — so
+/// the adapter is passed as null here (BotServiceSendTests shows how to mock it where it's
+/// needed). If that ever stops being true, these
 /// tests fail loudly with a NullReferenceException rather than silently testing the wrong thing.
 /// </summary>
 // Joins the "Azurite" collection ONLY to serialize with the other classes that mutate the

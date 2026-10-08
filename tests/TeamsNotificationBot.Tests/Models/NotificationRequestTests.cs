@@ -71,4 +71,13 @@ public class NotificationRequestTests
         Assert.False(request.IsValid(out var error));
         Assert.Contains("JSON object", error);
     }
+
+    [Theory]
+    [InlineData("""{"message": "hi", "update": "msg-not-an-id"}""", "'update'")]
+    [InlineData("""{"message": "hi", "replyTo": "msg-0123456789abcdef0123456789abcdef\n"}""", "'replyTo'")]
+    public void MalformedReference_IsInvalid(string json, string field)
+    {
+        Assert.False(Deserialize(json).IsValid(out var error));
+        Assert.Contains(field, error);
+    }
 }

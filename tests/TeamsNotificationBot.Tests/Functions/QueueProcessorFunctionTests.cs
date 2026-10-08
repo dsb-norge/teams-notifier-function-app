@@ -576,4 +576,16 @@ public class QueueProcessorFunctionTests : IDisposable
         _queue.Verify(q => q.RequeueAsync(It.IsAny<QueueMessage>(), QueueProcessorFunction.HoldDelay), Times.Once);
         _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
     }
+
+    [Fact]
+    public async Task NoTargetAndNoAlias_FailsForGood_WithoutRetry()
+    {
+        var message = new QueueMessage { MessageId = "msg-test-123", Message = "hi", EnqueuedAt = DateTimeOffset.UtcNow };
+
+        await RunAsync(message);
+
+        _records.Verify(r => r.MarkFailedAsync(It.IsAny<QueueMessage>(), It.Is<string>(e => e.Contains("neither"))), Times.Once);
+        _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "NoTarget", It.IsAny<string>()), Times.Once);
+        _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
 }
