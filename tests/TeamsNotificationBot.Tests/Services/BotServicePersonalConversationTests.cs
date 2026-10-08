@@ -41,6 +41,7 @@ public class BotServicePersonalConversationTests : IDisposable
     private readonly TurnContextStateCollection _services = new();
     private readonly List<TeamLookupEntity> _teams = [];
     private readonly List<ConversationReferenceEntity> _stored = [];
+    private readonly List<Exception> _turnErrors = [];
     private ConversationParameters? _created;
 
     public BotServicePersonalConversationTests()
@@ -52,12 +53,7 @@ public class BotServicePersonalConversationTests : IDisposable
         _services.Set(connector.Object);
         _turnContext.Setup(t => t.Services).Returns(_services);
 
-        _adapter
-            .Setup(a => a.ContinueConversationAsync(
-                It.IsAny<ClaimsIdentity>(), It.IsAny<ConversationReference>(),
-                It.IsAny<AgentCallbackHandler>(), It.IsAny<CancellationToken>()))
-            .Returns((ClaimsIdentity _, ConversationReference _, AgentCallbackHandler callback, CancellationToken ct) =>
-                callback(_turnContext.Object, ct));
+        TeamsNotificationBot.Tests.Helpers.ProactiveTurns.RunLikeTheSdk(_adapter, _turnContext.Object, _turnErrors);
         _adapter
             .Setup(a => a.CreateConversationAsync(
                 It.IsAny<ClaimsIdentity>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),

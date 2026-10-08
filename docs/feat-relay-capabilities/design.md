@@ -310,6 +310,12 @@ person, rendered both as mentions, with nothing reported unresolved. Teams' inco
 carry no `"type": "tag"`, so `ids` tells a tag by its ID, which is neither a `29:` user ID nor a
 `28:` bot ID.
 
+After the release, the client's own tests sent a reply and an update to the same message at the
+same moment. **Teams answered `404` to the update**, and the M365 Agents SDK adapter's default
+turn-error handler posted that error into the channel and returned normally, so the update was
+recorded as delivered and never retried. Every send, update and roster search now hands its
+exception back to the processor, so the queue retries the update and the record stays accurate.
+
 Still to verify:
 
 - A direct message to someone with no chat with the bot at all, so that Teams creates a new one

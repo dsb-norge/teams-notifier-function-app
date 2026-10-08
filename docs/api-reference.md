@@ -279,6 +279,9 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
   further replies and updates should keep referring to the original.
 - A reply that fell back to a new message starts a new thread: refer to it for later replies.
   `GET /v1/messages/{messageId}` shows which happened.
+- Teams can refuse an update sent at the same moment as a reply in the same message's thread
+  (seen as a `404` from Teams). The update is then retried about 30 seconds later, and its status
+  stays `queued` until then. Sending the update once the reply is `delivered` avoids the wait.
 
 #### Mentions
 
