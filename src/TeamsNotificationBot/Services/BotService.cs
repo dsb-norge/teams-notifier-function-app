@@ -94,15 +94,13 @@ public class BotService : IBotService
 
         string? activityId = null;
         IReadOnlyList<string> unresolved = [];
-        await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
-            AgentClaims.CreateIdentity(_botAppId),
+        await Helpers.ThrottleRetry.ExecuteAsync(() => ContinueAsync(
             reference,
             async (turnContext, ct) =>
             {
                 unresolved = await DeliverAsync(turnContext, partitionKey, baseConversationId, format, message, mentions,
                     async activity => activityId = (await turnContext.SendActivityAsync(activity, ct))?.Id, ct);
-            },
-            CancellationToken.None), logger: _logger);
+            }), logger: _logger);
 
         await UpdateLastUpdatedAsync(partitionKey, rowKey);
         _logger.LogInformation(
@@ -135,8 +133,7 @@ public class BotService : IBotService
         reference.Conversation.Id = conversationId;
 
         IReadOnlyList<string> unresolved = [];
-        await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
-            AgentClaims.CreateIdentity(_botAppId),
+        await Helpers.ThrottleRetry.ExecuteAsync(() => ContinueAsync(
             reference,
             async (turnContext, ct) =>
             {
@@ -147,12 +144,37 @@ public class BotService : IBotService
                         activity.Id = activityId;
                         return turnContext.UpdateActivityAsync(activity, ct);
                     }, ct);
-            },
-            CancellationToken.None), logger: _logger);
+            }), logger: _logger);
 
         _logger.LogInformation("Updated activity {ActivityId} in {PK}/{RK}. UnresolvedMentions={Unresolved}",
             activityId, partitionKey, rowKey, unresolved.Count);
         return unresolved;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="callback"/> in a proactive turn and hands its exception back to the
+    /// caller. Every proactive turn goes through here. The adapter's default turn-error handler would
+    /// otherwise catch the exception, post its message into the conversation and return normally:
+    /// a send or update Teams refused would look delivered, and a 429 would never reach
+    /// <see cref="Helpers.ThrottleRetry"/>.
+    /// </summary>
+    private async Task ContinueAsync(ConversationReference reference, AgentCallbackHandler callback)
+    {
+        Task? turn = null;
+        await _adapter.ContinueConversationAsync(
+            AgentClaims.CreateIdentity(_botAppId),
+            reference,
+            async (turnContext, ct) =>
+            {
+                // Wait for it inside the turn, which ends when this returns, without letting a
+                // failure out to the turn-error handler.
+                turn = callback(turnContext, ct);
+                await turn.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            },
+            CancellationToken.None);
+
+        if (turn != null)
+            await turn;
     }
 
     /// <summary>
@@ -266,15 +288,13 @@ public class BotService : IBotService
 
             // The team's thread ID is its own conversation, whose roster is the team's members.
             ChannelAccount? member = null;
-            await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
-                AgentClaims.CreateIdentity(_botAppId),
+            await Helpers.ThrottleRetry.ExecuteAsync(() => ContinueAsync(
                 reference,
                 async (turnContext, ct) =>
                 {
                     var roster = await GetRosterAsync(turnContext, team.RowKey, "channel", ct);
                     member = roster.Find(userId);
-                },
-                CancellationToken.None), logger: _logger);
+                }), logger: _logger);
 
             if (member is not { Id.Length: > 0 } || PersonIds.ObjectId(Roster.ObjectIdOf(member) ?? string.Empty) is not { } memberObjectId)
                 continue;
@@ -672,8 +692,7 @@ public class BotService : IBotService
 
         var installChannelId = reference.Conversation?.Id;
 
-        await _adapter.ContinueConversationAsync(
-            AgentClaims.CreateIdentity(_botAppId),
+        await ContinueAsync(
             reference,
             async (turnContext, ct) =>
             {
@@ -718,8 +737,7 @@ public class BotService : IBotService
                 {
                     _logger.LogWarning(ex, "Failed to enumerate channels for team {TeamGuid}", teamGuid);
                 }
-            },
-            CancellationToken.None);
+            });
     }
 
     /// <summary>

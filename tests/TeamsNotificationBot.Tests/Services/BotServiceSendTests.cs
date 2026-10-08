@@ -39,6 +39,7 @@ public class BotServiceSendTests : IDisposable
     private readonly TurnContextStateCollection _services = new();
 
     private ConversationReference? _usedReference;
+    private readonly List<Exception> _turnErrors = [];
     private readonly List<IActivity> _sent = [];
     private readonly List<IActivity> _updated = [];
 
@@ -46,15 +47,8 @@ public class BotServiceSendTests : IDisposable
     {
         Environment.SetEnvironmentVariable("TEAMS_INTEGRATION_DISABLED", null);
 
-        _adapter
-            .Setup(a => a.ContinueConversationAsync(
-                It.IsAny<ClaimsIdentity>(), It.IsAny<ConversationReference>(),
-                It.IsAny<AgentCallbackHandler>(), It.IsAny<CancellationToken>()))
-            .Returns((ClaimsIdentity _, ConversationReference reference, AgentCallbackHandler callback, CancellationToken ct) =>
-            {
-                _usedReference = reference;
-                return callback(_turnContext.Object, ct);
-            });
+        TeamsNotificationBot.Tests.Helpers.ProactiveTurns.RunLikeTheSdk(
+            _adapter, _turnContext.Object, _turnErrors, reference => _usedReference = reference);
         _turnContext
             .Setup(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
             .Callback<IActivity, CancellationToken>((a, _) => _sent.Add(a))
@@ -175,6 +169,56 @@ public class BotServiceSendTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             NewService().UpdateAsync("team-1", "gone", Channel, "activity-root", "text", "Resolved"));
+    }
+
+    // --- Failures inside the turn ---
+    // The adapter's default turn-error handler would post these into the conversation and report
+    // success; they must reach the caller instead, so the queue retries and the record stays honest.
+
+    [Fact]
+    public async Task Send_RefusedByTeams_Throws_AndNothingIsPostedAboutIt()
+    {
+        _turnContext
+            .Setup(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(403));
+
+        var ex = await Assert.ThrowsAsync<ErrorResponseException>(() =>
+            NewService().SendAsync("team-1", "channel-1", "text", "Hello"));
+
+        Assert.Equal(403, ex.StatusCode);
+        Assert.Empty(_turnErrors);
+    }
+
+    [Fact]
+    public async Task Update_NotFoundByTeams_Throws_SoTheQueueRetriesIt()
+    {
+        // Seen on dev: Teams answered 404 to an update sent at the same moment as a reply in the
+        // updated message's thread. A retry a little later finds the message.
+        _turnContext
+            .Setup(t => t.UpdateActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(404));
+
+        var ex = await Assert.ThrowsAsync<ErrorResponseException>(() =>
+            NewService().UpdateAsync("team-1", "channel-1", Channel, "activity-root", "text", "Resolved"));
+
+        Assert.Equal(404, ex.StatusCode);
+        Assert.Empty(_turnErrors);
+    }
+
+    [Fact]
+    public async Task Send_Throttled_IsRetried_InANewTurn()
+    {
+        _turnContext
+            .SetupSequence(t => t.SendActivityAsync(It.IsAny<IActivity>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(429))
+            .ReturnsAsync(new ResourceResponse("activity-123"));
+
+        var sent = await NewService().SendAsync("team-1", "channel-1", "text", "Hello");
+
+        Assert.Equal("activity-123", sent.ActivityId);
+        _adapter.Verify(a => a.ContinueConversationAsync(It.IsAny<ClaimsIdentity>(), It.IsAny<ConversationReference>(),
+            It.IsAny<AgentCallbackHandler>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        Assert.Empty(_turnErrors);
     }
 
     [Fact]
