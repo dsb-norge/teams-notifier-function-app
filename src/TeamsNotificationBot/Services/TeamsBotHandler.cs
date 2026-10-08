@@ -1847,6 +1847,20 @@ public class TeamsBotHandler : AgentApplication
                     reference, pk, rk, targetType,
                     userName: targetType == "personal" ? activity.From?.Name : null);
             }
+            else if (!updated && targetType == "channel")
+            {
+                // A channel the bot got no install or channel event for: a private or shared
+                // channel the app was added to later, or one enumeration didn't list. The message
+                // proves the bot is in it, and the reference is the stripped top-level one, so
+                // store it, or set-alias here would point at a conversation the bot doesn't have.
+                // Insert-only, through the writer channel events use: a row another writer just
+                // created is updated in place, keeping its names. Channel messages carry no team
+                // name, so it comes from teamlookup.
+                var channelData = activity.GetChannelData<TeamsApi.ChannelData>();
+                var (_, teamName) = await ResolveTeamAsync(channelData?.Team, needName: true);
+                await _botService.UpsertChannelReferenceAsync(
+                    reference, pk, rk, teamName, channelData?.Channel?.Name);
+            }
         }
         catch (Exception ex)
         {

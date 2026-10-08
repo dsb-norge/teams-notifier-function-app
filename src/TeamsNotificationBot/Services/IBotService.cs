@@ -46,11 +46,12 @@ public interface IBotService
         ConversationReference reference, string partitionKey, string rowKey,
         string conversationType, string? teamName = null, string? channelName = null, string? userName = null);
     /// <summary>
-    /// Stores a channel reference from a channel event (created/renamed/restored) or from
-    /// install-time channel enumeration. A missing row is
+    /// Stores a channel reference from a channel event (created/renamed/restored), from
+    /// install-time channel enumeration, or from the first message in a channel that has no row
+    /// (a private or shared channel the app was added to later). A missing row is
     /// inserted (insert-only, never an upsert); an existing row is updated in place: the
     /// reference and LastUpdated are replaced, a non-empty name replaces the stored one, and
-    /// InstalledAt and any name the event lacks are kept. ETag-guarded; retries on 412 and on a
+    /// InstalledAt and any name the write lacks are kept. ETag-guarded; retries on 412 and on a
     /// 409 from a concurrent insert, and propagates the last conflict.
     /// </summary>
     Task UpsertChannelReferenceAsync(
