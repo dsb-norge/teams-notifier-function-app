@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Approved; releases 1, 2 and 3 implemented |
+| Status | Approved; releases 1, 2 and 3 implemented and verified on dev (§9) |
 | Audience | app developers (this repo) and API consumers |
 | First client | the notifications in [`dsb-norge/github-actions-terraform`](https://github.com/dsb-norge/github-actions-terraform) (unapplied default branch, nightly drift) |
 
@@ -245,16 +245,41 @@ All optional, with defaults in code, so none is added to `app-requirements.json`
 
 ## 9. To verify on dev
 
-- Replies land in the thread and updates replace the card, through the API (B).
-- What Teams does with an invalid tag ID, in particular whether it shifts other mentions (2).
-  Microsoft documents a `400` ("Mentioned tag with ID … doesn't exist in current team"), which
-  the bot answers by resending with the tags as plain text (§6). Both are still to be checked
-  on dev.
-- Whether Teams renders a backslash-escaped `\*` literally in a bot's text message, and how
-  escaped `<` and `>` render (2).
-- Mentions in private and shared channels, for someone in the team but not the channel (2).
-- A direct message to a team member who never installed the app or chatted with the bot
-  arrives, and later ones reuse the stored chat (3).
+Verified on dev on 2026-10-08, on a pre-release of all three releases, through the API as a
+caller holding `Notifications.Send`:
+
+- **Replies and updates (B).** A reply lands in its parent's thread and an update replaces the
+  post in place (Teams marks it Edited); their `postedAs` says `reply` and `update`. A reply sent while
+  its parent was still queued was held and posted into the thread about 20 seconds later.
+- **Mentions (2).** By UPN, by object ID, in text and in a card, and the same person twice: each
+  is a real mention under the roster's display name. A person missing from the roster, placed
+  before a real one, is plain text and doesn't shift the mention after it. A mail address that
+  isn't the UPN matches nobody and is reported, as documented. Six messages with mentions,
+  processed at the same time, read the channel's roster once.
+- **An invalid tag ID (2).** The message lands with the tag as plain text, the person mentioned
+  after it is still the one pinged, and the tag ID is reported in `unresolvedMentions`. The
+  outbound calls show Teams answering the first send with `400`, as Microsoft documents, and the
+  resend succeeding.
+- **Escaping in text messages (2).** `\*` and `\_` render literally (no bold or italics);
+  `&lt;b&gt;` and `\<b\>` both render as a literal `<b>`; a `<` or `>` that forms no tag renders
+  as written.
+- **Direct messages (3).** By UPN and by object ID, both reach the person's existing chat with the
+  bot (the UPN through a read of the team's roster at its thread ID; no conversation was created);
+  an update replaces the message; a stranger, and a person searched for in the wrong team,
+  fail with their reasons; an update naming the person in the other form is `409`. A team
+  member whose stored conversation had been removed was found in the team roster by UPN; the bot
+  created the chat (Teams returned the one the person already had), stored it with the roster's
+  name, and a second message by object ID used the stored chat. A personal installation stores
+  a conversation even if the person never writes to the bot, so "never chatted" is not the same
+  as "unknown to the bot".
+
+Still to verify:
+
+- A direct message to someone with no chat with the bot at all, so that Teams creates a new one
+  rather than returning the existing one, as it did above (3).
+- A real tag's members are notified (2).
+- Mentions in private and shared channels, for someone in the team but not the channel, and in
+  group chats (2).
 
 ## 10. Out of scope
 

@@ -210,6 +210,12 @@ Send a notification message to the Teams conversation identified by `{alias}`.
 | `update` | string | No | A `messageId` from an earlier `/v1/notify` to this alias: replace that message instead of posting. Not together with `replyTo`. |
 | `mentions` | array | No | People and tags to mention, placed in the message with `<at>key</at>`. See [Mentions](#mentions). |
 
+A `text` message is rendered as Teams markdown. To show a `*` or `_` literally, escape it with a
+backslash (`\*not bold\*`). To show an HTML tag such as `<b>` literally, write `&lt;b&gt;` or
+`\<b\>`. A `<` or `>` that forms no tag shows as written. Mentions are placed with `<at>key</at>`
+(see [Mentions](#mentions)). These are the characters Teams must receive: inside the JSON request
+body each backslash is itself escaped, so `\*not bold\*` is sent as `"\\*not bold\\*"`.
+
 For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 
 ```json
