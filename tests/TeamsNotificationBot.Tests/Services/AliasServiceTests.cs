@@ -120,4 +120,16 @@ public class AliasServiceTests
         _tableClient.Verify(t => t.DeleteEntityAsync("alias", "nonexistent",
             It.IsAny<ETag>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Theory]
+    [InlineData("ops\n")]
+    [InlineData("ops/../x")]
+    [InlineData("a")]
+    public async Task GetAliasAsync_NameThatBreaksTheRule_IsUnknown_WithoutAStorageCall(string name)
+    {
+        Assert.Null(await _service.GetAliasAsync(name));
+
+        _tableClient.Verify(t => t.GetEntityAsync<AliasEntity>(It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

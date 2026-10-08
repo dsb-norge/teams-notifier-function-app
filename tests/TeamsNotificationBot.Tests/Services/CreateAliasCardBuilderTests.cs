@@ -89,7 +89,21 @@ public class CreateAliasCardBuilderTests
         // aliasName input is at index 3
         var aliasInput = body[3];
         var regex = aliasInput.GetProperty("regex").GetString();
-        Assert.NotNull(regex);
-        Assert.Contains("[a-z0-9]", regex);
+        Assert.Equal(TeamsNotificationBot.Models.AliasNames.ClientPattern, regex);
+        Assert.Equal(TeamsNotificationBot.Models.AliasNames.Rule, aliasInput.GetProperty("errorMessage").GetString());
+    }
+
+    [Theory]
+    [InlineData("ops-alerts", true)]
+    [InlineData("a", false)]
+    [InlineData("-ops", false)]
+    [InlineData("Ops", false)]
+    public void Build_RegexPattern_AcceptsWhatTheServerAccepts(string name, bool valid)
+    {
+        // The card's pattern is the client form of the server rule; on a single-line name both agree.
+        var regex = new System.Text.RegularExpressions.Regex(TeamsNotificationBot.Models.AliasNames.ClientPattern);
+
+        Assert.Equal(valid, regex.IsMatch(name));
+        Assert.Equal(valid, TeamsNotificationBot.Models.AliasNames.IsValid(name));
     }
 }

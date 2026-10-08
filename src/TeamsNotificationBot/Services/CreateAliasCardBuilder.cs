@@ -1,4 +1,5 @@
 using System.Text.Json;
+using TeamsNotificationBot.Models;
 
 namespace TeamsNotificationBot.Services;
 
@@ -39,8 +40,8 @@ public static class CreateAliasCardBuilder
                     id = "aliasName",
                     placeholder = "e.g. devops-alerts",
                     value = suggestedAlias ?? "",
-                    regex = "^[a-z0-9][a-z0-9\\-]{0,48}[a-z0-9]$",
-                    errorMessage = "2-50 chars: lowercase letters, digits, hyphens. Must start/end with letter or digit."
+                    regex = AliasNames.ClientPattern,
+                    errorMessage = AliasNames.Rule
                 },
                 new
                 {

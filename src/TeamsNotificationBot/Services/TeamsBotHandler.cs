@@ -31,7 +31,6 @@ public class TeamsBotHandler : AgentApplication
     private readonly ILogger<TeamsBotHandler> _logger;
     private readonly TeamsAgentExtension _teams;
 
-    private static readonly Regex AliasNameRegex = new(@"^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$", RegexOptions.Compiled);
     private static readonly HashSet<string> ValidPoisonQueues = ["notifications-poison", "botoperations-poison"];
 
     // Poison alias nudge cache (v1.5 §5). The handler is registered as a singleton, so concurrent
@@ -309,12 +308,11 @@ public class TeamsBotHandler : AgentApplication
         var originalParts = originalText.TrimStart('/').Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
         var description = originalParts.Length > 2 ? originalParts[2] : string.Empty;
 
-        if (!AliasNameRegex.IsMatch(name))
+        if (!AliasNames.IsValid(name))
         {
             await turnContext.SendActivityAsync(
                 MessageFactory.Text(
-                    "Invalid alias name. Use 2-50 characters: lowercase letters, digits, hyphens. " +
-                    "Must start and end with a letter or digit."),
+                    "Invalid alias name. " + AliasNames.Rule),
                 cancellationToken);
             return;
         }
@@ -1314,12 +1312,11 @@ public class TeamsBotHandler : AgentApplication
         }
 
         aliasName = aliasName.Trim().ToLowerInvariant();
-        if (!AliasNameRegex.IsMatch(aliasName))
+        if (!AliasNames.IsValid(aliasName))
         {
             await turnContext.SendActivityAsync(
                 MessageFactory.Text(
-                    "Invalid alias name. Use 2-50 characters: lowercase letters, digits, hyphens. " +
-                    "Must start and end with a letter or digit."),
+                    "Invalid alias name. " + AliasNames.Rule),
                 cancellationToken);
             return;
         }
@@ -1395,11 +1392,10 @@ public class TeamsBotHandler : AgentApplication
         }
 
         aliasName = aliasName.Trim().ToLowerInvariant();
-        if (!AliasNameRegex.IsMatch(aliasName))
+        if (!AliasNames.IsValid(aliasName))
         {
             return CreateAdaptiveCardResponse(400,
-                "Invalid alias name. Use 2-50 characters: lowercase letters, digits, hyphens. " +
-                "Must start and end with a letter or digit.");
+                "Invalid alias name. " + AliasNames.Rule);
         }
 
         // Extract conversation keys
