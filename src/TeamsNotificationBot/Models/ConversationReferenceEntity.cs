@@ -16,4 +16,15 @@ public class ConversationReferenceEntity : ITableEntity
     public DateTimeOffset LastUpdated { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
+
+    /// <summary>
+    /// The target type of the conversations in partition <paramref name="partitionKey"/>:
+    /// <c>personal</c> under "user", <c>groupChat</c> under "chat", and <c>channel</c> under a team.
+    /// </summary>
+    public static string TargetTypeOf(string partitionKey) => partitionKey switch
+    {
+        "user" => "personal",
+        "chat" => "groupChat",
+        _ => "channel"
+    };
 }

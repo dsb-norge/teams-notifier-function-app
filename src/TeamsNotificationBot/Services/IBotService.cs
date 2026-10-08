@@ -13,19 +13,24 @@ public interface IBotService
     /// Sends <paramref name="message"/> (<paramref name="format"/> <c>text</c> or <c>adaptive-card</c>)
     /// to the conversation stored under (<paramref name="partitionKey"/>, <paramref name="rowKey"/>)
     /// and returns where it landed. With <paramref name="threadActivityId"/> the message is posted
-    /// as a reply in that thread, which only channels have.
+    /// as a reply in that thread, which only channels have. <paramref name="mentions"/> (already
+    /// validated by <see cref="MentionRules"/>) are resolved against the conversation's roster; the
+    /// ones written as plain text are returned in <see cref="SentActivity.UnresolvedMentions"/>.
     /// </summary>
     Task<SentActivity> SendAsync(
-        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null);
+        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null,
+        IReadOnlyList<MessageMention>? mentions = null);
 
     /// <summary>
     /// Replaces activity <paramref name="activityId"/>, which lives in conversation
     /// <paramref name="conversationId"/> (threaded for a reply), with <paramref name="message"/>.
     /// The stored reference under (<paramref name="partitionKey"/>, <paramref name="rowKey"/>)
-    /// supplies the service URL and bot identity.
+    /// supplies the service URL and bot identity. Mentions are resolved as for
+    /// <see cref="SendAsync"/>; returns the ones written as plain text.
     /// </summary>
-    Task UpdateAsync(
-        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message);
+    Task<IReadOnlyList<string>> UpdateAsync(
+        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message,
+        IReadOnlyList<MessageMention>? mentions = null);
     Task StoreConversationReferenceAsync(
         ConversationReference reference, string partitionKey, string rowKey,
         string conversationType, string? teamName = null, string? channelName = null, string? userName = null);
@@ -80,4 +85,8 @@ public interface IBotService
 }
 
 /// <summary>Where a sent activity landed. <c>ActivityId</c> is null if the channel didn't return one.</summary>
-public sealed record SentActivity(string ConversationId, string? ActivityId);
+public sealed record SentActivity(string ConversationId, string? ActivityId)
+{
+    /// <summary>The <c>id</c> or <c>tag</c> of every mention written as plain text.</summary>
+    public IReadOnlyList<string> UnresolvedMentions { get; init; } = [];
+}

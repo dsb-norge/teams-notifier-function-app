@@ -3,6 +3,8 @@ using Azure;
 using Azure.Data.Tables;
 using Microsoft.Agents.Authentication;
 using Microsoft.Agents.Builder;
+using Microsoft.Agents.Connector;
+using Microsoft.Agents.Core.Errors;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Extensions.Logging;
@@ -16,6 +18,9 @@ public class BotService : IBotService
     // Azure Table Storage caps a single SubmitTransaction at 100 entities.
     private const int MaxBatchSize = 100;
 
+    // The largest page the roster API returns.
+    private const int RosterPageSize = 500;
+
     private static readonly JsonSerializerOptions CaseInsensitiveOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly CloudAdapter _adapter;
@@ -25,6 +30,9 @@ public class BotService : IBotService
     private readonly ILogger<BotService> _logger;
     private readonly IConnections _connections;
     private readonly IHttpClientFactory _httpClientFactory;
+
+    // A singleton, like the service: the cache outlives single sends.
+    private readonly RosterCache _rosters = new(TimeProvider.System);
 
     // Required (not optional) so a missing AddHttpClient()/IConnections registration fails at
     // startup DI resolution instead of on the first channel-enumeration turn in production.
@@ -54,7 +62,8 @@ public class BotService : IBotService
         SendAsync(partitionKey, rowKey, "adaptive-card", card.GetRawText());
 
     public async Task<SentActivity> SendAsync(
-        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null)
+        string partitionKey, string rowKey, string format, string message, string? threadActivityId = null,
+        IReadOnlyList<MessageMention>? mentions = null)
     {
         if (_teamsDisabled)
         {
@@ -72,38 +81,42 @@ public class BotService : IBotService
                 $"No conversation reference found for '{partitionKey}'/'{rowKey}'. Ensure the bot is installed.");
         }
 
+        var baseConversationId = BaseConversationId(reference.Conversation.Id);
         if (threadActivityId != null)
         {
             // Posting to "<channel>;messageid=<root>" makes the post a reply in that thread.
-            reference.Conversation.Id = $"{BaseConversationId(reference.Conversation.Id)};messageid={threadActivityId}";
+            reference.Conversation.Id = $"{baseConversationId};messageid={threadActivityId}";
         }
 
         string? activityId = null;
+        IReadOnlyList<string> unresolved = [];
         await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
-                var response = await turnContext.SendActivityAsync(BuildActivity(format, message), ct);
-                activityId = response?.Id;
+                unresolved = await DeliverAsync(turnContext, partitionKey, baseConversationId, format, message, mentions,
+                    async activity => activityId = (await turnContext.SendActivityAsync(activity, ct))?.Id, ct);
             },
             CancellationToken.None), logger: _logger);
 
         await UpdateLastUpdatedAsync(partitionKey, rowKey);
-        _logger.LogInformation("Sent {Format} to {PK}/{RK}. ActivityId={ActivityId}, Threaded={Threaded}",
-            format, partitionKey, rowKey, activityId, threadActivityId != null);
-        return new SentActivity(reference.Conversation.Id, activityId);
+        _logger.LogInformation(
+            "Sent {Format} to {PK}/{RK}. ActivityId={ActivityId}, Threaded={Threaded}, UnresolvedMentions={Unresolved}",
+            format, partitionKey, rowKey, activityId, threadActivityId != null, unresolved.Count);
+        return new SentActivity(reference.Conversation.Id, activityId) { UnresolvedMentions = unresolved };
     }
 
-    public async Task UpdateAsync(
-        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message)
+    public async Task<IReadOnlyList<string>> UpdateAsync(
+        string partitionKey, string rowKey, string conversationId, string activityId, string format, string message,
+        IReadOnlyList<MessageMention>? mentions = null)
     {
         if (_teamsDisabled)
         {
             _logger.LogInformation(
                 "Teams integration disabled. Would update activity {ActivityId} in {PK}/{RK}",
                 activityId, partitionKey, rowKey);
-            return;
+            return [];
         }
 
         var reference = await GetConversationReferenceAsync(partitionKey, rowKey);
@@ -117,18 +130,106 @@ public class BotService : IBotService
         // The activity is addressed in the conversation it was posted to, threaded or not.
         reference.Conversation.Id = conversationId;
 
+        IReadOnlyList<string> unresolved = [];
         await Helpers.ThrottleRetry.ExecuteAsync(() => _adapter.ContinueConversationAsync(
             AgentClaims.CreateIdentity(_botAppId),
             reference,
             async (turnContext, ct) =>
             {
-                var activity = BuildActivity(format, message);
-                activity.Id = activityId;
-                await turnContext.UpdateActivityAsync(activity, ct);
+                unresolved = await DeliverAsync(turnContext, partitionKey, BaseConversationId(conversationId),
+                    format, message, mentions,
+                    activity =>
+                    {
+                        activity.Id = activityId;
+                        return turnContext.UpdateActivityAsync(activity, ct);
+                    }, ct);
             },
             CancellationToken.None), logger: _logger);
 
-        _logger.LogInformation("Updated activity {ActivityId} in {PK}/{RK}", activityId, partitionKey, rowKey);
+        _logger.LogInformation("Updated activity {ActivityId} in {PK}/{RK}. UnresolvedMentions={Unresolved}",
+            activityId, partitionKey, rowKey, unresolved.Count);
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Builds the activity, with any mentions resolved against the conversation's roster, and hands
+    /// it to <paramref name="deliver"/> (a send or an update). Returns the mentions written as plain
+    /// text. If Teams rejects a message that mentions tags (Microsoft documents a 400 for a tag the
+    /// team doesn't have), the message goes again with the tags as plain text: the message matters
+    /// more than the ping, and the caller sees the tags reported.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> DeliverAsync(
+        ITurnContext turnContext, string partitionKey, string conversationId, string format, string message,
+        IReadOnlyList<MessageMention>? mentions, Func<IActivity, Task> deliver, CancellationToken ct)
+    {
+        if (mentions is not { Count: > 0 })
+        {
+            await deliver(BuildActivity(format, message));
+            return [];
+        }
+
+        var targetType = ConversationReferenceEntity.TargetTypeOf(partitionKey);
+        var roster = mentions.Any(m => m.Id != null)
+            ? await GetRosterAsync(turnContext, conversationId, targetType, ct)
+            : Roster.Empty;
+
+        var rendered = MentionRenderer.Render(format, message, mentions, roster.Find, tagsAllowed: targetType == "channel");
+        try
+        {
+            await deliver(BuildActivity(format, rendered));
+        }
+        catch (ErrorResponseException ex) when (ex.StatusCode == 400 && rendered.HasTagMentions)
+        {
+            _logger.LogWarning(ex, "Teams rejected the message's tag mentions; sending the tags as plain text instead");
+            rendered = MentionRenderer.Render(format, message, mentions, roster.Find, tagsAllowed: false);
+            await deliver(BuildActivity(format, rendered));
+        }
+        return rendered.Unresolved;
+    }
+
+    /// <summary>
+    /// The roster person mentions are checked against: the team's for a channel, the members for a
+    /// group chat, nobody in a personal chat. A roster Teams refuses to give (a 4xx other than a
+    /// throttle) won't change on a retry, so the message goes out with its people unresolved;
+    /// anything else propagates for the queue to retry.
+    /// </summary>
+    private async Task<Roster> GetRosterAsync(
+        ITurnContext turnContext, string conversationId, string targetType, CancellationToken ct)
+    {
+        if (targetType == "personal")
+            return Roster.Empty;
+
+        try
+        {
+            return await _rosters.GetAsync(conversationId, () => ReadRosterAsync(turnContext, conversationId, targetType, ct));
+        }
+        catch (ErrorResponseException ex) when (ex.StatusCode is >= 400 and < 500 and not 429)
+        {
+            _logger.LogWarning(ex, "Could not read the roster ({Status}); person mentions go out as plain text", ex.StatusCode);
+            return Roster.Empty;
+        }
+    }
+
+    private static async Task<IEnumerable<ChannelAccount>> ReadRosterAsync(
+        ITurnContext turnContext, string conversationId, string targetType, CancellationToken ct)
+    {
+        var conversations = turnContext.Services.Get<IConnectorClient>()?.Conversations
+            ?? throw new InvalidOperationException("The proactive turn has no connector client to read the roster with.");
+
+        // Teams pages team and channel rosters; a chat's comes whole.
+        if (targetType != "channel")
+            return await conversations.GetConversationMembersAsync(conversationId, ct);
+
+        var members = new List<ChannelAccount>();
+        string? continuationToken = null;
+        do
+        {
+            var page = await conversations.GetConversationPagedMembersAsync(conversationId, RosterPageSize, continuationToken, ct);
+            members.AddRange(page.Members ?? []);
+            continuationToken = page.ContinuationToken;
+        }
+        while (!string.IsNullOrEmpty(continuationToken));
+        return members;
     }
 
     private static IActivity BuildActivity(string format, string message) => format == "adaptive-card"
@@ -138,6 +239,18 @@ public class BotService : IBotService
             Content = JsonSerializer.Deserialize<object>(message)
         })
         : MessageFactory.Text(message);
+
+    private static IActivity BuildActivity(string format, MentionRenderer.Rendered rendered)
+    {
+        var activity = BuildActivity(format, rendered.Message);
+        if (rendered.Entities.Count > 0)
+        {
+            activity.Entities ??= [];
+            foreach (var entity in rendered.Entities)
+                activity.Entities.Add(entity);
+        }
+        return activity;
+    }
 
     /// <summary>A channel conversation ID without any ";messageid=…" thread suffix.</summary>
     internal static string BaseConversationId(string conversationId)
