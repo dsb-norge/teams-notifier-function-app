@@ -184,7 +184,11 @@ public class BotService : IBotService
         }
         catch (ErrorResponseException ex) when (ex.StatusCode == 400 && rendered.HasTagMentions)
         {
-            _logger.LogWarning(ex, "Teams rejected the message's tag mentions; sending the tags as plain text instead");
+            // Teams' reason is in the response body, not the exception message: log it, or a
+            // rejected tag can't be told from a malformed one.
+            _logger.LogWarning(ex,
+                "Teams rejected the message's tag mentions ({Code}: {Reason}); sending the tags as plain text instead",
+                Helpers.LogSanitizer.Sanitize(ex.Body?.Error?.Code), Helpers.LogSanitizer.Sanitize(ex.Body?.Error?.Message));
             rendered = MentionRenderer.Render(format, message, mentions, roster.Find, tagsAllowed: false);
             await deliver(BuildActivity(format, rendered));
         }
@@ -209,7 +213,9 @@ public class BotService : IBotService
         }
         catch (ErrorResponseException ex) when (ex.StatusCode is >= 400 and < 500 and not 429)
         {
-            _logger.LogWarning(ex, "Could not read the roster ({Status}); person mentions go out as plain text", ex.StatusCode);
+            _logger.LogWarning(ex,
+                "Could not read the roster ({Status} {Code}: {Reason}); person mentions go out as plain text",
+                ex.StatusCode, Helpers.LogSanitizer.Sanitize(ex.Body?.Error?.Code), Helpers.LogSanitizer.Sanitize(ex.Body?.Error?.Message));
             return Roster.Empty;
         }
     }
