@@ -247,7 +247,7 @@ public class BotServiceStorageTests
             channelId: "19:renamed@thread.tacv2", teamName: "Stored Team");
         seeded.InstalledAt = new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
         await _tableClient.UpsertEntityAsync(seeded);
-        var service = new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!);
+        var service = new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!, null!);
 
         await service.UpsertChannelReferenceAsync(
             new ConversationReference
@@ -335,7 +335,7 @@ public class BotServiceStorageTests
         try
         {
             // The ctor captures the flag; CloudAdapter and the HTTP pieces aren't touched here.
-            return new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!);
+            return new BotService(null!, _tableClient, NullLogger<BotService>.Instance, null!, null!, null!);
         }
         finally
         {

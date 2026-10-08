@@ -23,7 +23,6 @@ public static partial class MentionRules
     public const int MaxPlacements = MaxPeople + MaxTags;
     public const int MaxKeyLength = 64;
     public const int MaxNameLength = 256;
-    public const int MaxIdLength = 256;
     public const int MaxTagIdLength = 512;
 
     // \z, not $: in .NET, $ also matches before a final newline.
@@ -37,9 +36,6 @@ public static partial class MentionRules
     // Any opening or closing at-tag, however it is written: <at>, </at>, <AT >, <at id="x">.
     [GeneratedRegex(@"<\s*/?\s*at\b[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex AnyAtTag();
-
-    [GeneratedRegex(@"^[^@\s<>]+@[^@\s<>]+\z")]
-    private static partial Regex UpnPattern();
 
     // Printable ASCII without spaces: Graph's tag IDs are base64.
     [GeneratedRegex(@"^[\x21-\x7E]{1,512}\z")]
@@ -78,7 +74,7 @@ public static partial class MentionRules
 
             if (mention.Id != null)
             {
-                if (!IsPersonId(mention.Id))
+                if (!PersonIds.IsValid(mention.Id))
                     return $"Mention '{mention.Key}': 'id' must be an Entra object ID (a GUID) or a UPN.";
                 people++;
             }
@@ -121,9 +117,6 @@ public static partial class MentionRules
     private static bool IsValidName(string name) =>
         name.Length is > 0 and <= MaxNameLength &&
         !name.Any(c => c is '<' or '>' || char.IsControl(c));
-
-    private static bool IsPersonId(string id) =>
-        id.Length <= MaxIdLength && (Guid.TryParse(id, out _) || UpnPattern().IsMatch(id));
 
     // The bot adds the mention entities to the card itself; entities of the caller's own would
     // collide with them, and the bot can't check them against the roster.

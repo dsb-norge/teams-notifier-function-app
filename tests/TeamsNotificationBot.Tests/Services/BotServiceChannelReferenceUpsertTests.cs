@@ -29,7 +29,7 @@ public class BotServiceChannelReferenceUpsertTests
 
     public BotServiceChannelReferenceUpsertTests()
     {
-        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!);
+        _service = new BotService(null!, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!, null!);
     }
 
     private static readonly DateTimeOffset Installed = new(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
