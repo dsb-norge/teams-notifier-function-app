@@ -293,7 +293,7 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
 | Field | Required | Description |
 |-------|----------|-------------|
 | `key` | Yes | What the `<at>key</at>` placements refer to: 1–64 letters, digits, `.`, `_` and `-`, unique in the array. |
-| `id` | `id` or `tag` | A person: their Entra object ID (a GUID) or UPN. |
+| `id` | `id` or `tag` | A person: their Entra object ID (a GUID) or UPN. Not their mail address (see below). |
 | `tag` | `id` or `tag` | A tag: its ID, as Microsoft Graph returns it ([teamworkTag](https://learn.microsoft.com/graph/api/resources/teamworktag)). |
 | `name` | For a tag | A tag's display name. For a person, the plain text shown if they aren't in the roster; without it, the `id` is shown. 1–256 characters, without `<`, `>` or control characters. |
 
@@ -304,6 +304,11 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
   found in every string value. A key may be placed more than once, and the placements needn't
   follow the order of `mentions`: the bot builds one mention per placement, in the order they
   appear, which is how Teams pairs them.
+- **Name people by object ID or UPN, never by mail address.** The two often differ (a UPN can
+  be an employee number while mail is `first.last@…`), and a mail address that isn't also the
+  UPN finds nobody: the person is written as plain text and listed in `unresolvedMentions`. Only
+  the object ID is permanent; a UPN changes only when an administrator renames the account, mail
+  more readily. Prefer the object ID where you have it.
 - **People** are checked against the roster just before posting: the team's for a channel, the
   chat's members for a group chat. A person in the roster is mentioned under the roster's display
   name, so the name shown is always the person pinged. A person who isn't is written as plain
@@ -490,7 +495,8 @@ Takes an `Idempotency-Key` like `/v1/notify`; the key is scoped to the caller an
 }
 ```
 
-- `userId` is the person's Entra object ID or UPN. The bot uses its stored one-to-one
+- `userId` is the person's Entra object ID or UPN, not their mail address (see
+  [Mentions](#mentions) for why). The bot uses its stored one-to-one
   conversation with them if it has one. Otherwise it looks for them in the rosters of the teams
   it is installed in (the first team that has them wins, or only `target.teamId` when given),
   starts a one-to-one chat from there, and stores it for next time. The person doesn't need to
