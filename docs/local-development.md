@@ -12,7 +12,7 @@ This guide covers running the Teams Notification Bot function app on your local 
 | Azure Functions Core Tools v4 | `func --version` should show `4.x` |
 | Azurite | `npm install -g azurite` |
 | jq | `sudo apt install jq` (needed for online mode) |
-| Azure CLI | Only needed for online mode |
+| Azure CLI | Needed for online mode, and offline for adding an alias to Azurite ([§3](#3-offline-mode)) |
 
 ---
 
@@ -61,8 +61,20 @@ Runs entirely locally with mock values. No Azure access needed, no real Teams de
 
 This generates `local.settings.json` with:
 - `TEAMS_INTEGRATION_DISABLED=true` -- bot service calls are skipped
-- Mock channel aliases (`test`, `diagnostics`)
 - Azurite for storage (`UseDevelopmentStorage=true`)
+
+It creates no aliases: they live in the Azurite `aliases` table, and offline you can't run the
+`set-alias` bot command. Insert one by hand to have something to notify (the table exists once the
+function host has started; `az storage table create` makes it earlier). Teams integration is
+disabled, so the IDs don't have to be real:
+
+```bash
+AZURITE='DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1'
+az storage table create --name aliases --connection-string "$AZURITE"
+az storage entity insert --connection-string "$AZURITE" --table-name aliases \
+  --entity PartitionKey=alias RowKey=test TargetType=channel \
+  TeamId=00000000-0000-0000-0000-000000000000 ChannelId=19:local@thread.tacv2
+```
 
 ### Test the HTTP API
 
@@ -76,7 +88,7 @@ curl -X POST http://localhost:7071/api/v1/notify/test \
   -d '{"message": "hello from local dev", "format": "text"}'
 ```
 
-The message will be queued and processed by the QueueProcessor, but since Teams integration is disabled, no actual message is sent. You will see the full processing flow in the function host logs. The health endpoint (`GET /api/v1/health`) does not require auth headers.
+The message will be queued and processed by the QueueProcessor, but since Teams integration is disabled, no actual message is sent. You will see the full processing flow in the function host logs. The health endpoint (`GET /api/health`) does not require auth headers.
 
 ### Test the updown webhook ingress
 
