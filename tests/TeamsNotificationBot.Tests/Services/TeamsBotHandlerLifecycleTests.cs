@@ -526,6 +526,42 @@ public class TeamsBotHandlerLifecycleTests
     }
 
     [Fact]
+    public async Task Ids_RecognisesATag_AsTeamsSendsIt_WithoutATypeMarker()
+    {
+        // Teams' incoming tag mention has a base64 ID and no "type": "tag" (seen on dev).
+        var (turnContext, activity) = MessageTurn("ids <at>dev-tag</at>", "channel", includeChannelData: true);
+        activity.Entities = [MentionOf("MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIyMwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIjI3RFeGFtcGxlMQ==", "dev-tag")];
+        var conversations = ConnectorIn(turnContext);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        VerifySentTextContaining(turnContext, "**dev-tag** (tag): `\"tag\": \"MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIyMwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIjI3RFeGFtcGxlMQ==\"`");
+        conversations.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("29:1abc", "Person")]
+    [InlineData("28:bot-app-id", "Bot")]
+    [InlineData("MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIyMwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIjI3RFeGFtcGxlMQ==", "Tag")]
+    public void KindOf_TellsTagsFromPeopleAndBots(string id, string expected)
+    {
+        Assert.Equal(expected, TeamsBotHandler.KindOf(new ChannelAccount { Id = id }).ToString());
+    }
+
+    [Fact]
+    public async Task Ids_ShowsAnotherBot_AsABot_WithoutARosterLookup()
+    {
+        var (turnContext, activity) = MessageTurn("ids <at>Other Bot</at>", "channel", includeChannelData: true);
+        activity.Entities = [MentionOf("28:other-bot", "Other Bot")];
+        var conversations = ConnectorIn(turnContext);
+
+        await ((IAgent)_handler).OnTurnAsync(turnContext.Object);
+
+        VerifySentTextContaining(turnContext, "**Other Bot** (bot): Teams ID `28:other-bot`");
+        conversations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Ids_RosterLookupFailing_StillReplies()
     {
         var (turnContext, activity) = MessageTurn("ids <at>Jane Doe</at>", "groupChat");

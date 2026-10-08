@@ -1489,11 +1489,15 @@ public class TeamsBotHandler : AgentApplication
         foreach (var account in mentioned)
         {
             var name = string.IsNullOrWhiteSpace(account.Name) ? "(no name)" : account.Name;
-            if (account.Properties.TryGetValue("type", out var type) &&
-                type.ValueKind == JsonValueKind.String && type.GetString() == "tag")
+            switch (KindOf(account))
             {
-                lines.Add($"- **{name}** (tag): `\"tag\": \"{account.Id}\"`");
-                continue;
+                case MentionKind.Tag:
+                    lines.Add($"- **{name}** (tag): `\"tag\": \"{account.Id}\"`");
+                    continue;
+                case MentionKind.Bot:
+                    // A bot can't be mentioned through the API, and isn't in the roster.
+                    lines.Add($"- **{name}** (bot): Teams ID `{account.Id}`");
+                    continue;
             }
 
             var (objectId, upn) = await LookUpPersonAsync(turnContext, account, cancellationToken);
@@ -1504,6 +1508,23 @@ public class TeamsBotHandler : AgentApplication
         await turnContext.SendActivityAsync(
             MessageFactory.Text("IDs for the `mentions` of `POST /api/v1/notify`:\n\n" + string.Join("\n", lines)),
             cancellationToken);
+    }
+
+    internal enum MentionKind { Person, Bot, Tag }
+
+    /// <summary>
+    /// What a mention is of. Teams' incoming tag mentions don't carry the <c>"type": "tag"</c> the
+    /// outgoing ones need (seen on dev), so the ID decides: people are <c>29:</c>, bots
+    /// <c>28:</c>, and anything else (a tag's ID is base64) is taken as a tag.
+    /// </summary>
+    internal static MentionKind KindOf(ChannelAccount account)
+    {
+        if (account.Properties.TryGetValue("type", out var type) &&
+            type.ValueKind == JsonValueKind.String && type.GetString() == "tag")
+            return MentionKind.Tag;
+        if (account.Id.StartsWith("28:", StringComparison.Ordinal))
+            return MentionKind.Bot;
+        return account.Id.StartsWith("29:", StringComparison.Ordinal) ? MentionKind.Person : MentionKind.Tag;
     }
 
     /// <summary>
