@@ -449,8 +449,11 @@ IDs for the mentions of POST /api/v1/notify:
 - Jane Doe (person): object ID 0b5f8a8e-…, UPN jane.doe@example.com
 ```
 
-- A **tag's** ID is shown exactly as Teams sends it in the mention. The tag ID the Teams client
-  shows elsewhere is a different one, and a Graph tag ID can't be built from it.
+- A **tag's** ID is shown exactly as Teams sends it in the mention: the ID a tag mention through
+  the API needs. The tag ID the Teams client shows elsewhere is a different one. Teams marks no
+  incoming mention as a tag, so the bot treats a mention as one when its ID is neither a Teams user
+  ID (`29:`) nor a bot ID (`28:`).
+- A mentioned **bot** is listed with its Teams ID; bots can't be mentioned through the API.
 - A **person's** object ID and UPN come from the conversation's roster; `not found` if the bot
   can't read it.
 - Without a mention, the bot replies with this help.

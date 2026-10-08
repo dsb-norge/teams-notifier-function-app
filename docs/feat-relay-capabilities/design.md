@@ -302,12 +302,19 @@ A third round, after those fixes:
   Microsoft's documentation examples suggest; those examples are placeholders, and a Graph tag ID
   can't be derived that way. It has to come from Graph (`GET /teams/{id}/tags`).
 
+A fourth round: **a real tag (2).** The bot's `ids` command (added for this) showed the ID Teams
+sends when someone mentions the tag: base64 of the tenant ID, the team ID and the short tag ID, in
+that order, the reverse of what the documentation examples suggested for the first two (an
+observation, not a documented format). A notification mentioning the tag with that ID, then a
+person, rendered both as mentions, with nothing reported unresolved. Teams' incoming tag mentions
+carry no `"type": "tag"`, so `ids` tells a tag by its ID, which is neither a `29:` user ID nor a
+`28:` bot ID.
+
 Still to verify:
 
 - A direct message to someone with no chat with the bot at all, so that Teams creates a new one
-  rather than returning the existing one, as it did above (3). Everyone tried so far had the
-  app installed personally at some point.
-- A real tag's members are notified (2), with a tag ID read from Graph.
+  rather than returning the existing one, as it did above (3). On dev, every current member of
+  the team the bot is in had the app installed personally months ago, so this needs someone new.
 - A shared channel (2).
 
 ## 10. Out of scope
