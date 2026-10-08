@@ -239,4 +239,44 @@ public class SendFunctionTests
 
         Assert.Equal(2, keys.Distinct().Count());
     }
+
+    private static Microsoft.AspNetCore.Http.HttpRequest SendWithKey(string key) =>
+        HttpRequestHelper.CreatePostRequest(body: ChannelSendBody,
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = key });
+
+    [Fact]
+    public async Task IdempotencyKey_Invalid_Returns400_WithoutClaiming()
+    {
+        var result = await _function.Run(SendWithKey(new string('k', 257)));
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(result).StatusCode);
+        _idempotencyService.VerifyNoOtherCalls();
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_InProgress_Returns409_WithoutQueuing()
+    {
+        _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>()))
+            .ReturnsAsync(new IdempotencyClaim(IdempotencyClaimStatus.InProgress, "send", "k", DateTimeOffset.UtcNow));
+
+        var result = await _function.Run(SendWithKey("run-7"));
+
+        Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_QueueFailure_ReleasesTheClaim_AndPropagates()
+    {
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ThrowsAsync(new Azure.RequestFailedException(503, "unavailable"));
+        var claim = new IdempotencyClaim(IdempotencyClaimStatus.Claimed, "send", "k", DateTimeOffset.UtcNow);
+        _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>())).ReturnsAsync(claim);
+
+        await Assert.ThrowsAsync<Azure.RequestFailedException>(() => _function.Run(SendWithKey("run-7")));
+
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(It.IsAny<IdempotencyClaim>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
 }
