@@ -79,8 +79,10 @@ public class BotServiceSendTests : IDisposable
         _services.Dispose();
     }
 
+    private readonly TeamsNotificationBot.Tests.Helpers.ListLogger<BotService> _log = new();
+
     private BotService NewService() =>
-        new(_adapter.Object, _tableClient.Object, NullLogger<BotService>.Instance, null!, null!, _teamLookup.Object);
+        new(_adapter.Object, _tableClient.Object, _log, null!, null!, _teamLookup.Object);
 
     private void StoreReference(string pk, string rk, string conversationId)
     {
@@ -224,6 +226,17 @@ public class BotServiceSendTests : IDisposable
 
     private static ErrorResponseException TeamsError(int status) => new($"Teams answered {status}") { StatusCode = status };
 
+    /// <summary>A Teams error with its reason in the body, as the connector parses it.</summary>
+    private static ErrorResponseException TeamsError(int status, string code, string reason) =>
+        new($"ReplyToActivity operation returned an invalid status code '({status})'")
+        {
+            StatusCode = status,
+            Body = new ErrorResponse { Error = new Error { Code = code, Message = reason } }
+        };
+
+    private string Warning(string startsWith) =>
+        Assert.Single(_log.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning && e.Message.StartsWith(startsWith)).Message;
+
     [Fact]
     public async Task Send_WithMentions_InAChannel_ChecksThemAgainstTheTeamRoster()
     {
@@ -321,6 +334,36 @@ public class BotServiceSendTests : IDisposable
         Assert.Equal("On call: <at>Jane Doe</at>", activity.Text);
         Assert.Equal("29:jane", Assert.IsType<Mention>(Assert.Single(activity.Entities)).Mentioned.Id);
         Assert.Equal(["dGFnLWlk"], sent.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Send_TagsRejectedByTeams_LogsTeamsReason_Sanitized()
+    {
+        // The reason is in the response body, not the exception message; it is logged so a rejected
+        // tag can be told from a malformed one, and sanitized because it comes from outside.
+        _turnContext
+            .Setup(t => t.SendActivityAsync(It.Is<IActivity>(a => a.Entities.Count > 0), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(400, "BadArgument", "Mentioned tag with ID x doesn't exist\nin current team"));
+
+        await NewService().SendAsync("team-1", "channel-1", "text", "<at>oncall</at>", mentions: [OnCall]);
+
+        var warning = Warning("Teams rejected the message's tag mentions");
+        Assert.Contains("BadArgument: Mentioned tag with ID x doesn't exist_in current team", warning);
+        Assert.DoesNotContain("\n", warning);
+    }
+
+    [Fact]
+    public async Task Send_RosterRefused_LogsTeamsReason_Sanitized()
+    {
+        _conversations
+            .Setup(c => c.GetConversationPagedMembersAsync(Channel, It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(TeamsError(403, "Forbidden", "Bot is not\rpart of the roster"));
+
+        await NewService().SendAsync("team-1", "channel-1", "text", "<at>jane</at>", mentions: [Jane]);
+
+        var warning = Warning("Could not read the roster");
+        Assert.Contains("403 Forbidden: Bot is not_part of the roster", warning);
+        Assert.DoesNotContain("\r", warning);
     }
 
     [Fact]
