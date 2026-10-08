@@ -79,6 +79,32 @@ public class DeliveryRecordsIntegrationTests
     }
 
     [Fact]
+    public async Task MarkDelivered_RecordsTheUnresolvedMentions()
+    {
+        var message = NewMessage();
+
+        await _records.MarkDeliveredAsync(message,
+            new DeliveryOutcome(PostedAs.Post, ("team-1", "19:c@thread.tacv2"), "conv-1", "a", "a")
+            {
+                UnresolvedMentions = ["sam@example.com", "dGFnLWlk"]
+            });
+
+        var status = MessageStatusResponse.From((await _records.GetAsync(message.MessageId))!);
+        Assert.Equal(["sam@example.com", "dGFnLWlk"], status.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task MarkDelivered_WithEveryMentionResolved_StoresNoList()
+    {
+        var message = NewMessage();
+
+        await _records.MarkDeliveredAsync(message,
+            new DeliveryOutcome(PostedAs.Post, ("team-1", "19:c@thread.tacv2"), "conv-1", "a", "a"));
+
+        Assert.Null((await _records.GetAsync(message.MessageId))!.UnresolvedMentions);
+    }
+
+    [Fact]
     public async Task MarkDelivered_AfterAFailure_ClearsTheError()
     {
         var message = NewMessage();

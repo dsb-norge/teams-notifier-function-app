@@ -6,7 +6,8 @@ Teams on the **dev** environment:
 - **Proactive sends** — `BotService.SendAsync` / `UpdateAsync` (and the `SendMessageAsync` /
   `SendAdaptiveCardAsync` wrappers) compose the concrete `CloudAdapter.ContinueConversationAsync`
   with Bot Framework token acquisition; no test executes that chain. That includes posting into a
-  thread (`;messageid=`) and `UpdateActivity`.
+  thread (`;messageid=`), `UpdateActivity`, and the roster reads and mention entities behind
+  `mentions`.
 - **Channel enumeration** — `BotService.EnumerateAndStoreTeamChannelsAsync` runs inside a proactive
   turn and calls the Teams channel-list REST API with a self-built authenticated client.
 - **Real Teams payloads** — install/uninstall, channel and team lifecycle events, and card invokes
@@ -107,6 +108,19 @@ without a bearer token.
 - [ ] **Hold**: send a notify and, at once, a reply to its `messageId` → the reply still lands in the
   thread (it was held until the parent was delivered).
 - [ ] **Chat**: `replyTo` a message in a personal or group chat → an ordinary message in that chat.
+- [ ] **Mention by UPN and by object ID** in a channel: `"mentions": [{"key": "a", "id": "<UPN>"},
+  {"key": "b", "id": "<object ID>"}]` with `<at>a</at>` and `<at>b</at>` in the text → both are
+  pinged (they get a notification) under their Teams display names; the status lists no
+  `unresolvedMentions`. Repeat with a card.
+- [ ] **Someone outside the team**: mention a UPN that isn't a team member → plain text, nobody
+  pinged, the UPN in `unresolvedMentions`.
+- [ ] **Group chat**: mention a chat member → pinged.
+- [ ] **Tag**: mention a real tag of the team → its members are notified. Then an ID the team
+  doesn't have → the message still lands, the tag as plain text and in `unresolvedMentions`, and
+  any person mention in the same message is still on the right person (no shifted mentions).
+- [ ] **Private or shared channel**: mention someone who is in the team but not in the channel, and
+  a tag → record what Teams does with each.
+- [ ] **Update with mentions**: update a post with a different mention → the edited post shows it.
 
 ### 6. Teardown
 

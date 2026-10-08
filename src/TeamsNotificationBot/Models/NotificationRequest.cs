@@ -22,6 +22,10 @@ public class NotificationRequest
     [JsonPropertyName("update")]
     public string? Update { get; set; }
 
+    /// <summary>People and tags to mention, placed in the message with <c>&lt;at&gt;key&lt;/at&gt;</c>.</summary>
+    [JsonPropertyName("mentions")]
+    public List<MessageMention>? Mentions { get; set; }
+
     public bool IsValid(out string? error)
     {
         if (Message.ValueKind == JsonValueKind.Undefined)
@@ -66,7 +70,7 @@ public class NotificationRequest
             return false;
         }
 
-        error = MetadataRules.Validate(Metadata);
+        error = MetadataRules.Validate(Metadata) ?? MentionRules.Validate(Mentions, Format, Message);
         return error == null;
     }
 }

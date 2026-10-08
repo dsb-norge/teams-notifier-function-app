@@ -36,6 +36,9 @@ sequenceDiagram
 
     Queue->>QueueProc: Dequeue message
     QueueProc->>Tables: Resolve alias → conversation reference
+    opt The message mentions people
+        QueueProc->>Teams: Read the roster (cached 5 min)
+    end
     QueueProc->>Bot: Send text or Adaptive Card
     Bot->>Teams: POST activity to Teams channel
 
@@ -290,6 +293,7 @@ erDiagram
         string ConversationId "Teams conversation the activity lives in"
         string ActivityId "Teams activity ID"
         string ThreadActivityId "activity that roots the thread"
+        string UnresolvedMentions "JSON array of the mentions written as plain text"
         string Error "why it failed"
         datetime EnqueuedAt "retention counts from here"
         datetime DeliveredAt ""
@@ -460,6 +464,19 @@ delivered channel message is sent to `<channel>;messageid=<thread root>` in that
 conversation; an update calls `UpdateActivity` on its activity ID. A failure no retry can fix (an
 update to a message that was never delivered, a removed alias) marks the record `failed` without
 throwing, so it raises no poison alert. See [API Reference](api-reference.md#threads-and-updates).
+
+**Mentions:** the request is checked when it arrives (placements, limits, and whether the
+conversation it goes to takes them), and the people in it are resolved in the proactive turn that
+sends the message. `BotService` reads the roster through the turn's connector client: paged for a
+channel, whole for a group chat. It finds each person by Entra object ID or UPN and builds the
+mention entities with the roster's Teams ID and display name, on the activity for text and in
+`msteams.entities` for a card. Rosters are cached in memory per conversation for 5 minutes, per
+instance (Flex scales the queue trigger on its own instances). A roster Teams refuses (a 4xx other
+than 429) leaves the people as plain text instead of failing the message; other errors propagate
+for the queue to retry, and 429s go through `ThrottleRetry`. Tags aren't checked, so a 400 from
+Teams for a message with tags is answered by sending it once more with the tags as plain text.
+Everything written as plain text is recorded in the delivery record's `UnresolvedMentions`. See
+[API Reference](api-reference.md#mentions).
 
 **Poison queue monitoring:**
 

@@ -208,6 +208,7 @@ Send a notification message to the Teams conversation identified by `{alias}`.
 | `metadata` | object | No | Key-value pairs for tracing, logged with the message's delivery events (see [Size Limits](#8-size-limits)). Never put secrets here. |
 | `replyTo` | string | No | A `messageId` from an earlier `/v1/notify` to this alias: post in that message's thread. See [Threads and updates](#threads-and-updates). |
 | `update` | string | No | A `messageId` from an earlier `/v1/notify` to this alias: replace that message instead of posting. Not together with `replyTo`. |
+| `mentions` | array | No | People and tags to mention, placed in the message with `<at>key</at>`. See [Mentions](#mentions). |
 
 For Adaptive Card payloads, `message` must be a valid Adaptive Card JSON object:
 
@@ -272,6 +273,60 @@ earlier `/v1/notify` to the **same alias** returned (`409` otherwise).
   further replies and updates should keep referring to the original.
 - A reply that fell back to a new message starts a new thread: refer to it for later replies.
   `GET /v1/messages/{messageId}` shows which happened.
+
+#### Mentions
+
+`mentions` declares the people and tags a message mentions, and the message places each one with
+`<at>key</at>`:
+
+```json
+{
+  "format": "text",
+  "message": "Apply failed after merge. <at>merger</at>, please take a look. <at>oncall</at>",
+  "mentions": [
+    { "key": "merger", "id": "jane.doe@example.com", "name": "Jane Doe" },
+    { "key": "oncall", "tag": "<tag ID>", "name": "On call" }
+  ]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `key` | Yes | What the `<at>key</at>` placements refer to: 1–64 letters, digits, `.`, `_` and `-`, unique in the array. |
+| `id` | `id` or `tag` | A person: their Entra object ID (a GUID) or UPN. |
+| `tag` | `id` or `tag` | A tag: its ID, as Microsoft Graph returns it ([teamworkTag](https://learn.microsoft.com/graph/api/resources/teamworktag)). |
+| `name` | For a tag | A tag's display name. For a person, the plain text shown if they aren't in the roster; without it, the `id` is shown. 1–256 characters, without `<`, `>` or control characters. |
+
+- **Placement.** Every `<at>…</at>` in the message must enclose a declared key exactly, and every
+  key must be placed at least once, or the request is rejected with `400`. Teams shifts mentions
+  onto the wrong people when an `<at>` tag has no matching mention, so none reaches it.
+  Placements are matched in the raw text: `&lt;at&gt;` is just text. In a card, placements are
+  found in every string value. A key may be placed more than once, and the placements needn't
+  follow the order of `mentions`: the bot builds one mention per placement, in the order they
+  appear, which is how Teams pairs them.
+- **People** are checked against the roster just before posting: the team's for a channel, the
+  chat's members for a group chat. A person in the roster is mentioned under the roster's display
+  name, so the name shown is always the person pinged. A person who isn't is written as plain
+  text (`name`, else `id`) and listed in the message's
+  [`unresolvedMentions`](#get-v1messagesmessageid). Rosters are cached for 5 minutes, so someone
+  just added to the team can take that long to become mentionable.
+- **Tags** aren't checked: that would need Microsoft Graph, which the bot doesn't use. Microsoft
+  documents that Teams rejects a message that mentions a tag the team doesn't have; the bot then
+  posts it again with the tags as plain text and lists them in `unresolvedMentions`. Microsoft
+  also documents that tag mentions aren't supported in private and shared channels
+  ([Teams docs](https://learn.microsoft.com/microsoftteams/platform/bots/how-to/conversations/channel-and-group-conversations#work-with-mentions)). Teams limits tag mentions to 2 messages per 5 seconds and 5 per minute
+  in a thread; the bot doesn't enforce that, and a throttled burst is delayed, not lost.
+- **Where.** People and tags work in channels, people in group chats (a tag there is `400`), and
+  nothing in personal chats (`400`). A reply or an update is checked against the conversation it
+  goes to: once the referenced message was delivered, that message's. If the alias is repointed
+  while the message waits in the queue, what its new conversation can't take is written as plain
+  text and listed in `unresolvedMentions`; the message isn't failed for it.
+- **Cards.** A card that uses `mentions` can't carry mention entities of its own in
+  `msteams.entities` (`400`): the bot adds them. A card without `mentions` is forwarded
+  unchanged, as before, and its entities aren't checked.
+- **Limits.** At most 20 people and 10 tags per message, and at most 30 placements in all (a key
+  placed twice counts twice).
+- Replies and updates take `mentions` too; an update resolves them again.
 
 **Example**
 
@@ -533,7 +588,7 @@ What happened to a message the API queued, and where it went. Works for every `m
 | `status` | `queued` (waiting, being sent, or being retried), `delivered`, or `failed` |
 | `postedAs` | How it was posted: `post`, `reply` (in an earlier message's thread) or `update` (replaced an earlier message). Null until delivered. |
 | `target` | The conversation it went to. Null until delivered. Check it to confirm that an alias still points where you expect. |
-| `unresolvedMentions` | Mentions not found in the roster. Always empty until mentions are supported. |
+| `unresolvedMentions` | The `id` of every [mentioned](#mentions) person not found in the roster, and the `tag` of every tag Teams rejected: each was written as plain text. Empty when every mention went through. |
 | `error` | Why it failed, when `status` is `failed` |
 
 A message is `failed` when it can't ever be delivered (its alias was removed, or it updates a
@@ -676,9 +731,12 @@ curl -s -X POST \
 | Metadata keys | 1 -- 64 characters: letters, digits, `.`, `_`, `-` |
 | Metadata values | Strings of at most 256 characters |
 | Idempotency key | 1 -- 256 printable ASCII characters |
+| Mentions per message | At most 20 people and 10 tags, and 30 placements (`<at>key</at>`) in all |
+| Mention keys | 1 -- 64 characters: letters, digits, `.`, `_`, `-` |
+| Mention names | 1 -- 256 characters, without `<`, `>` or control characters |
 
 Requests exceeding the 28 KB body limit receive a `413 Payload Too Large` response. A request
-whose `metadata` breaks a limit receives `400 Bad Request`.
+whose `metadata` or `mentions` breaks a limit receives `400 Bad Request`.
 
 Each `metadata` entry is copied into the message's delivery events in Application Insights as a
 `meta.<key>` property, which is what the limits keep bounded. See

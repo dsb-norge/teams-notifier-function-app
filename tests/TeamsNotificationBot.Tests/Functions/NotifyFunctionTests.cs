@@ -487,4 +487,113 @@ public class NotifyFunctionTests
         Assert.Equal(404, objectResult.StatusCode);
         Assert.Contains(ParentId, Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
     }
+
+    // --- mentions ---
+
+    private const string PersonMention = """{"key": "jane", "id": "jane.doe@example.com", "name": "Jane"}""";
+    private const string TagMention = """{"key": "oncall", "tag": "dGFnLWlk", "name": "On call"}""";
+
+    private static Microsoft.AspNetCore.Http.HttpRequest MentionRequest(string message, params string[] mentions) =>
+        HttpRequestHelper.CreatePostRequest(body:
+            $$"""{"message": "{{message}}", "format": "text", "mentions": [{{string.Join(",", mentions)}}]}""");
+
+    private void SetUpAlias(AliasEntity alias)
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(alias);
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+    }
+
+    [Fact]
+    public async Task Mentions_InAChannel_AreQueuedWithTheMessage()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(MentionRequest("<at>jane</at>, <at>oncall</at>", PersonMention, TagMention), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.Is<string>(s =>
+            s.Contains("\"mentions\":[{\"key\":\"jane\",\"id\":\"jane.doe@example.com\",\"name\":\"Jane\"}"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task NoMentions_QueueNoMentionsField()
+    {
+        SetUpDeliverableAlias();
+
+        await _function.Run(HttpRequestHelper.CreatePostRequest(body: """{"message": "Hi", "mentions": []}"""), "test");
+
+        _queueClient.Verify(q => q.SendMessageAsync(It.Is<string>(s => !s.Contains("mentions"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task Mentions_Misplaced_Return400_WithoutQueuing()
+    {
+        SetUpDeliverableAlias();
+
+        var result = await _function.Run(MentionRequest("<at>someone</at>", PersonMention), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(400, objectResult.StatusCode);
+        Assert.Contains("doesn't name a key", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Mentions_OnAPersonalAlias_Return400()
+    {
+        SetUpAlias(new AliasEntity { TargetType = "personal", UserId = "user-1" });
+
+        var result = await _function.Run(MentionRequest("<at>jane</at>", PersonMention), "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(400, objectResult.StatusCode);
+        Assert.Contains("personal chat", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Tags_OnAGroupChatAlias_Return400_ButPeopleAreFine()
+    {
+        SetUpAlias(new AliasEntity { TargetType = "groupChat", ChatId = "19:chat@thread.v2" });
+
+        var tags = await _function.Run(MentionRequest("<at>oncall</at>", TagMention), "test");
+        var people = await _function.Run(MentionRequest("<at>jane</at>", PersonMention), "test");
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(tags).StatusCode);
+        Assert.Equal(202, Assert.IsType<ObjectResult>(people).StatusCode);
+    }
+
+    [Fact]
+    public async Task Mentions_InAReplyToADeliveredChannelPost_AreCheckedAgainstWhereTheParentWent()
+    {
+        // The alias now points to a group chat, but the reply goes into the parent's channel thread.
+        SetUpAlias(new AliasEntity { TargetType = "groupChat", ChatId = "19:chat@thread.v2" });
+        _botService.Setup(b => b.HasConversationAsync("team-old", "channel-old")).ReturnsAsync(true);
+        _deliveryRecords.Setup(r => r.GetAsync(ParentId)).ReturnsAsync(new DeliveryRecordEntity
+        {
+            PartitionKey = ParentId, Alias = "test", Status = DeliveryStatus.Delivered,
+            TargetType = "channel", TeamId = "team-old", ChannelId = "channel-old"
+        });
+
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(body:
+            $$"""{"message": "<at>oncall</at>", "replyTo": "{{ParentId}}", "mentions": [{{TagMention}}]}"""), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Mentions_RejectedForTheTarget_ReleaseTheIdempotencyClaim()
+    {
+        SetUpAlias(new AliasEntity { TargetType = "personal", UserId = "user-1" });
+        var claim = new IdempotencyClaim(IdempotencyClaimStatus.Claimed, "notify", "row", DateTimeOffset.UtcNow);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+        var req = MentionRequest("<at>jane</at>", PersonMention);
+        req.Headers["Idempotency-Key"] = "key-1";
+
+        var result = await _function.Run(req, "test");
+
+        Assert.Equal(400, Assert.IsType<ObjectResult>(result).StatusCode);
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+    }
 }

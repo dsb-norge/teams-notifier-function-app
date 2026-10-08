@@ -118,6 +118,9 @@ public class DeliveryRecords : IDeliveryRecords
         record.ConversationId = outcome.ConversationId;
         record.ActivityId = outcome.ActivityId;
         record.ThreadActivityId = outcome.ThreadActivityId;
+        record.UnresolvedMentions = outcome.UnresolvedMentions.Count > 0
+            ? System.Text.Json.JsonSerializer.Serialize(outcome.UnresolvedMentions)
+            : null;
         record.DeliveredAt = _time.GetUtcNow();
 
         // Replace, built from the queue message: also right for a message queued before records

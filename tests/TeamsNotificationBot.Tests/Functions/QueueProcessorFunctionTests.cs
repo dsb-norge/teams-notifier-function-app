@@ -595,4 +595,49 @@ public class QueueProcessorFunctionTests : IDisposable
         _events.Verify(e => e.DeliveryFailed(It.IsAny<QueueMessage>(), It.IsAny<long>(), "NoTarget", It.IsAny<string>()), Times.Once);
         _botService.Verify(b => b.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
     }
+
+    // --- Mentions ---
+
+    private static readonly List<MessageMention> Mentions =
+        [new() { Key = "jane", Id = "jane.doe@example.com", Name = "Jane" }];
+
+    [Fact]
+    public async Task Post_PassesTheMentionsOn_AndRecordsTheUnresolvedOnes()
+    {
+        SetUpChannelAlias();
+        _botService
+            .Setup(b => b.SendAsync("team-1", "channel-1", "text", "<at>jane</at>", null, It.IsAny<IReadOnlyList<MessageMention>?>()))
+            .ReturnsAsync(new SentActivity(ChannelConversation, "activity-new") { UnresolvedMentions = ["jane.doe@example.com"] });
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+        var message = NewMessage(message: "<at>jane</at>");
+        message.Mentions = Mentions;
+
+        await RunAsync(message);
+
+        _botService.Verify(b => b.SendAsync("team-1", "channel-1", "text", "<at>jane</at>", null,
+            It.Is<IReadOnlyList<MessageMention>?>(m => m != null && m.Single().Id == "jane.doe@example.com")), Times.Once);
+        Assert.Equal(["jane.doe@example.com"], outcome!.UnresolvedMentions);
+    }
+
+    [Fact]
+    public async Task Update_PassesTheMentionsOn_AndRecordsTheUnresolvedOnes()
+    {
+        SetUpRecord(DeliveredParent());
+        _botService
+            .Setup(b => b.UpdateAsync("team-old", "channel-old", "19:channel-old@thread.tacv2", "activity-root",
+                "text", "<at>jane</at>", It.IsAny<IReadOnlyList<MessageMention>?>()))
+            .ReturnsAsync(["jane.doe@example.com"]);
+        DeliveryOutcome? outcome = null;
+        _records.Setup(r => r.MarkDeliveredAsync(It.IsAny<QueueMessage>(), It.IsAny<DeliveryOutcome>()))
+            .Callback<QueueMessage, DeliveryOutcome>((_, o) => outcome = o);
+        var message = NewMessage(message: "<at>jane</at>", update: "msg-parent");
+        message.Mentions = Mentions;
+
+        await RunAsync(message);
+
+        Assert.Equal(PostedAs.Update, outcome!.PostedAs);
+        Assert.Equal(["jane.doe@example.com"], outcome.UnresolvedMentions);
+    }
 }

@@ -157,7 +157,8 @@ public class NotifyFunction
             Source = "notify",
             PrincipalId = principalId,
             ReplyTo = request.ReplyTo,
-            Update = request.Update
+            Update = request.Update,
+            Mentions = request.Mentions is { Count: > 0 } ? request.Mentions : null
         };
 
         IActionResult? rejection;
@@ -206,8 +207,9 @@ public class NotifyFunction
 
     /// <summary>
     /// The checks that depend on current state: the alias exists, a reply or update refers to a
-    /// message sent to this alias, and the bot still has the conversation the message will go to.
-    /// Null when the message can be queued, else the 404 or 409 to return.
+    /// message sent to this alias, its mentions suit the conversation it will go to, and the bot
+    /// still has that conversation. Null when the message can be queued, else the 400, 404 or 409
+    /// to return.
     /// </summary>
     private async Task<IActionResult?> CheckDeliverableAsync(
         string alias, NotificationRequest request, string instance, string? correlationId, string messageId, string sourceIp)
@@ -244,7 +246,19 @@ public class NotifyFunction
 
         // Check the conversation the message will actually go to: a reply or an update to a
         // delivered message goes where that message went, even if the alias has been repointed since.
-        if (referenced is { Status: DeliveryStatus.Delivered } && referenced.ConversationKey() is { } parentKey)
+        var goesToParent = referenced is { Status: DeliveryStatus.Delivered } && referenced.ConversationKey() != null;
+
+        var mentionError = MentionRules.CheckTarget(request.Mentions,
+            goesToParent ? referenced!.TargetType : channelAlias.TargetType);
+        if (mentionError != null)
+        {
+            _logger.LogWarning(
+                "Mentions don't suit the target: {Error}. Alias={Alias}, CorrelationId={CorrelationId}",
+                mentionError, Sanitize(alias), correlationId);
+            return ApiResponse.Problem(400, "Bad Request", mentionError, instance, correlationId);
+        }
+
+        if (goesToParent && referenced!.ConversationKey() is { } parentKey)
         {
             if (!await _botService.HasConversationAsync(parentKey.PartitionKey, parentKey.RowKey))
             {
