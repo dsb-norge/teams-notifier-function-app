@@ -25,9 +25,9 @@ namespace TeamsNotificationBot.Tests.Services;
 /// </summary>
 public class TeamsBotHandlerChannelNameBackfillTests : IDisposable
 {
-    private const string TeamGuid = "0cfe6b08-34e2-4918-abd3-83c4f8bff08d";
-    private const string TeamThreadId = "19:VaovLGAH@thread.tacv2";
-    private const string ChannelId = "19:513be54d@thread.tacv2";
+    private const string TeamGuid = "11111111-2222-3333-4444-666666666666";
+    private const string TeamThreadId = "19:team-thread@thread.tacv2";
+    private const string ChannelId = "19:backfill-channel@thread.tacv2";
 
     private readonly Mock<IBotService> _botService = new();
     private readonly Mock<IAliasService> _aliasService = new();
