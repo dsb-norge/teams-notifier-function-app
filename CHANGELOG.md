@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.1...teams-notifier-function-app-v2.2.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **deps:** bump Azure.Storage.Blobs to 12.30.1 and Azure.Storage.Queues to 12.28.1 ([b3961bf](https://github.com/dsb-norge/teams-notifier-function-app/commit/b3961bf101eed38f523b445ae34674ab6a44145b))
+* **deps:** bump upload-artifact to v7.0.2, download-artifact to v8.0.2 and codeql-action to v4.38.3 ([ad85903](https://github.com/dsb-norge/teams-notifier-function-app/commit/ad859039d9c03b14509bae7585dca4b4e7ebb9cc))
+
 ## [2.2.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.0...teams-notifier-function-app-v2.2.1) (2026-10-08)
 
 
