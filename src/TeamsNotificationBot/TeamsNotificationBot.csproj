@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
     <!-- Held <3.0.0. See CLAUDE.md "Bumping dependencies" / docs/contributing.md §9. -->
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     <!-- Microsoft.Azure.Functions.Worker* share a major; bump as a family. -->
@@ -33,7 +33,7 @@
     <!-- Versioned separately from the pair above (its 1.8.50 depends on Agents 1.8.77). -->
     <PackageReference Include="Microsoft.Agents.Extensions.MSTeams" Version="1.8.50" />
     <PackageReference Include="Azure.Data.Tables" Version="12.13.0" />
-    <PackageReference Include="Azure.Storage.Queues" Version="12.27.1" />
+    <PackageReference Include="Azure.Storage.Queues" Version="12.28.1" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="ThrottlingTroll.AzureFunctions" Version="10.0.1" />
     <PackageReference Include="ThrottlingTroll.CounterStores.AzureTable" Version="10.0.1" />
