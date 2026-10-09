@@ -417,7 +417,7 @@ Version 3.0 removed `ITelemetryInitializer` from the public API, which breaks `M
 
 **To revisit**: the Functions Worker ApplicationInsights package must ship a release that targets the AI 3.x API. The move also touches `Services/DeliveryEvents.cs`, which keeps its events out of sampling through the 2.x `ISupportSampling.SamplingPercentage`; `DeliveryEventsTests` checks that they survive a sampling pipeline.
 
-**Last checked (2026-09-30)**: still blocking. `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.51.0 is still the latest release and still depends on `Microsoft.ApplicationInsights.PerfCounterCollector >= 2.23.0`, so the condition is unmet. On 2026-08-14, building against `Microsoft.ApplicationInsights.WorkerService` 3.1.2 (still the latest 3.x) failed with `CS0246: ITelemetryInitializer could not be found` in `Helpers/TokenRedactingTelemetryInitializer.cs`. Keep the ignore.
+**Last checked (2026-10-09)**: still blocking. `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.51.0 is still the latest release, prereleases included, and still depends on `Microsoft.ApplicationInsights.PerfCounterCollector >= 2.23.0`, so the condition is unmet. On 2026-08-14, building against `Microsoft.ApplicationInsights.WorkerService` 3.1.2 (still the latest 3.x) failed with `CS0246: ITelemetryInitializer could not be found` in `Helpers/TokenRedactingTelemetryInitializer.cs`. Keep the ignore.
 
 ### Deferred migrations
 
@@ -446,7 +446,7 @@ constraints); the second still stands, with its revisit condition:
    issues the same request through the same authenticated `IHttpClient` and deserializes the
    documented wrapper. **Remove it** when bumping `Microsoft.Teams.Api` past 2.0.9 after
    verifying the fix (teams.net main has since corrected the deserialization).
-   **Last checked (2026-09-30)**: 2.0.9 is still the latest `Microsoft.Teams.Api` on NuGet,
+   **Last checked (2026-10-09)**: 2.0.9 is still the latest `Microsoft.Teams.Api` on NuGet,
    and 1.8.50 the latest stable MSTeams (1.9.x is beta only). Keep the helper.
 
 Also note: `Microsoft.Agents.Extensions.MSTeams` versions **separately** from the
