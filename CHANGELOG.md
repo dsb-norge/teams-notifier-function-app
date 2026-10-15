@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.2...teams-notifier-function-app-v2.2.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* **deps:** Bump xunit.v3.mtp-v2 from 4.0.1 to 4.0.2 ([#188](https://github.com/dsb-norge/teams-notifier-function-app/issues/188)) ([b2ea8a7](https://github.com/dsb-norge/teams-notifier-function-app/commit/b2ea8a761d59eead0fbbb65cf2e10a06b0b8fe68))
+
 ## [2.2.2](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.1...teams-notifier-function-app-v2.2.2) (2026-10-09)
 
 
