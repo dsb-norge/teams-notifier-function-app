@@ -286,13 +286,18 @@ This project uses [release-please](https://github.com/googleapis/release-please)
 4. **The release workflow** builds the function app, creates signed [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for the ZIP and `app-requirements.json`, and uploads three artifacts to the release.
 
 GitHub now and then drops the push event of a merge: the release PR is merged, but no workflow
-runs for its commit, so there is no tag and no release. Nothing is lost. The merged PR keeps its
-`autorelease: pending` label, and on the next push to `main` release-please finds it, tags the
-release PR's own commit and publishes the release. The release workflow checks out that tag, so
-the artifacts are built from the release commit whatever has landed since. Merge any PR to get
-there; don't create the tag or the release by hand. Check with
+runs for its commit, so there is no tag and no release. Check with
 `gh api "repos/dsb-norge/teams-notifier-function-app/actions/runs?head_sha=<sha>" -q .total_count`:
-0 a few minutes after the merge means the event was dropped.
+0 a few minutes after the merge means the event was dropped. The merged PR keeps its
+`autorelease: pending` label, so release-please creates the tag and the release on the next push
+to `main`, for the release PR's own commit. That release can't be deployed: its artifacts are
+attested by the later run, so the attestations name the later commit, and the deploy workflow
+takes a release only when they name the tag's. The release workflow therefore refuses to build
+and attest in a run that didn't start from the release commit, and that release stays without
+assets (2.3.0 shipped with assets that no deploy would take, before the check existed). Cut the
+next release instead: a `fix` or `feat` merged since does it, or a commit with a
+`Release-As: X.Y.Z` footer. Don't tag or upload by hand, and add a line to the stranded
+release's notes that points to the next one.
 
 ### Commit messages and version bumps
 

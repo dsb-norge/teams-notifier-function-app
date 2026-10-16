@@ -70,15 +70,16 @@ jobs:
               - '.github/actions/**'
               - '.github/actionlint.yaml'
               - '.github/zizmor.yml'
-            # Everything the Deploy Tooling job's tests read: the scripts, the workflow
-            # that runs them, the release-please files, and the repository files the
-            # tests use as fixtures.
+            # Everything the Deploy Tooling job's tests read: the scripts, the workflows
+            # they check (reusable-deploy.yml, and release.yml's release-commit check),
+            # the release-please files, and the repository files the tests use as fixtures.
             deploy:
               - 'scripts/deploy/**'
               - 'scripts/ci/**'
               - 'tests/deploy/**'
               - '.shellcheckrc'
               - '.github/workflows/reusable-deploy.yml'
+              - '.github/workflows/release.yml'
               - '.github/workflows/ci.yml'
               - 'release-please-config.json'
               - '.release-please-manifest.json'

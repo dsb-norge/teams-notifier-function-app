@@ -34,6 +34,21 @@ wf() {
     fail "release-please-config.json extra-files lists ${output}: GITHUB_TOKEN can't write workflow files, so the release PR would fail to update."
 }
 
+@test "release.yml attests artifacts only in a run that started from the release commit" {
+  # The deploy takes a release only when its attestations name the tag's commit, and an
+  # attestation names the commit its run started from. When GitHub drops the push event of the
+  # release PR's merge, release-please creates the release on a later push; that run must stop
+  # before it attests anything, or it publishes a release no deploy accepts (2.3.0 did).
+  local release="${REPO_ROOT}/.github/workflows/release.yml"
+  assert_equal "$(yq -r '.jobs["release-please"].outputs.sha' "${release}")" '${{ steps.release.outputs.sha }}'
+  assert_equal "$(yq -r '.jobs["build-artifacts"].steps[0].name' "${release}")" \
+    "Check that this run started from the release commit"
+  assert_equal "$(yq -r '.jobs["build-artifacts"].steps[0].env.RELEASE_SHA' "${release}")" \
+    '${{ needs.release-please.outputs.sha }}'
+  [[ "$(yq -r '.jobs["build-artifacts"].steps[0].run' "${release}")" == *'"${RELEASE_SHA}" != "${GITHUB_SHA}"'*'exit 1'* ]] ||
+    fail "the first step of build-artifacts no longer fails when the release commit isn't the run's"
+}
+
 @test "preflight reads the workflow's version from the manifest at the workflow's own commit" {
   local checkout='.jobs.preflight.steps[] | select(.with.path == "${{ env.TOOLING_DIR }}")'
   assert_equal "$(wf "${checkout} | .with.ref")" '${{ steps.tooling.outputs.sha }}'

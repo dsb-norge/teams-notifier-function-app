@@ -20,6 +20,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5 2026-05-18
         id: release
@@ -39,6 +40,21 @@ jobs:
     env:
       VERSION: ${{ needs.release-please.outputs.version }}
     steps:
+      # The attestations below name the commit this run started from, and the deploy workflow
+      # takes a release only when that is the tag's commit. When GitHub drops the push event of
+      # the release PR's merge, release-please creates the release on the next push instead, for
+      # the older release commit: artifacts attested here would name the wrong commit, and every
+      # deploy would refuse them. Fail instead, so nothing undeployable is published.
+      - name: Check that this run started from the release commit
+        env:
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [ "${RELEASE_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "::error::release-please created ${TAG_NAME} at ${RELEASE_SHA}, but this run started from ${GITHUB_SHA}: the release merge's own run never happened. Artifacts attested here would name ${GITHUB_SHA}, which the deploy workflow refuses, so none are published. Cut the next release instead; see docs/contributing.md, Versioning and Releases."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 2026-07-17
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
