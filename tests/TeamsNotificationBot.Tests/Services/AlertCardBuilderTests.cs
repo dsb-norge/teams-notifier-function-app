@@ -1,6 +1,9 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Models;
 using TeamsNotificationBot.Services;
+using TeamsNotificationBot.Tests.Helpers;
 using Xunit;
 
 namespace TeamsNotificationBot.Tests.Services;
@@ -147,6 +150,285 @@ public class AlertCardBuilderTests
         var body = JsonDocument.Parse(AlertCardBuilder.Build(alert)).RootElement.GetProperty("body");
 
         Assert.Equal("**Target:** func-test", body[2].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void CustomProperties_AreShownUnderTheirOwnHeading()
+    {
+        var card = Card(customProperties: """{ "team": "platform", "runbook": "restart the service" }""");
+
+        var heading = Array.FindIndex(card.Body, b => b.GetProperty("type").GetString() == "TextBlock" && b.GetProperty("text").GetString() == "Custom properties");
+        Assert.True(heading > 0);
+        Assert.Equal([("team", "platform"), ("runbook", "restart the service")], Facts(card.Body[heading + 1]));
+    }
+
+    [Fact]
+    public void CustomPropertyHoldingEscapedJson_IsUnpacked()
+    {
+        // What a custom property set to ${data.alertContext.properties.statusMessage} carries.
+        var statusMessage = JsonSerializer.Serialize(new { status = "Failed", error = new { code = "E1", message = "not enough time left" } });
+        var card = Card(customProperties: JsonSerializer.Serialize(new { reason = statusMessage }));
+
+        Assert.Equal(
+            [("reason.status", "Failed"), ("reason.error.code", "E1"), ("reason.error.message", "not enough time left")],
+            Facts(card.FactSets[1]));
+    }
+
+    [Fact]
+    public void AlertContext_IsBehindShowDetails()
+    {
+        var card = Card(alertContext: """{ "operationName": "Microsoft.Compute/virtualMachines/restart/action", "status": "Failed" }""");
+
+        var action = Assert.Single(card.Body.Last().GetProperty("actions").EnumerateArray());
+        Assert.Equal("Action.ShowCard", action.GetProperty("type").GetString());
+        Assert.Equal("Show details", action.GetProperty("title").GetString());
+        Assert.Equal(
+            [("operationName", "Microsoft.Compute/virtualMachines/restart/action"), ("status", "Failed")],
+            Facts(action.GetProperty("card").GetProperty("body")[0]));
+    }
+
+    [Fact]
+    public void HiddenContextFields_AreLeftOutAtAnyDepth()
+    {
+        var card = Card(alertContext: """
+            {
+              "claims": "{\"ipaddr\":\"192.0.2.10\"}",
+              "httpRequest": "{\"clientIpAddress\":\"192.0.2.10\"}",
+              "authorization": { "action": "x", "scope": "y" },
+              "properties": {
+                "impactedServicesTableRows": "<tr><td>x</td></tr>",
+                "defaultLanguageTitle": "t", "DefaultLanguageContent": "c",
+                "SearchResults": { "tables": [] },
+                "linkToSearchResultsAPI": "https://api.loganalytics.io/v1/x",
+                "LinkToFilteredSearchResultsAPI": "https://api.loganalytics.io/v1/y",
+                "kept": "yes"
+              }
+            }
+            """);
+
+        Assert.Equal([("properties.kept", "yes")], Facts(card.Details!.Value[0]));
+    }
+
+    [Fact]
+    public void CustomProperties_AreNotFiltered()
+    {
+        // The rule's author chose them; a property named like a hidden context field stays.
+        var card = Card(customProperties: """{ "claims": "the author's own text" }""");
+
+        Assert.Equal([("claims", "the author's own text")], Facts(card.FactSets[1]));
+    }
+
+    [Fact]
+    public void LongValuesAndTitles_AreCut()
+    {
+        var card = Card(customProperties: JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            [new string('k', 150)] = new string('v', 600)
+        }));
+
+        var (title, value) = Assert.Single(Facts(card.FactSets[1]));
+        Assert.Equal(AlertCardBuilder.MaxTitleLength, title.Length);
+        Assert.Equal(AlertCardBuilder.MaxValueLength, value.Length);
+        Assert.EndsWith("\u2026", value);
+    }
+
+    [Fact]
+    public void Cutting_DoesNotSplitASurrogatePair()
+    {
+        // An emoji straddling the cut.
+        var text = new string('a', AlertCardBuilder.MaxValueLength - 2) + "\ud83d\ude80" + "tail";
+        var card = Card(customProperties: JsonSerializer.Serialize(new { k = text }));
+
+        var value = Assert.Single(Facts(card.FactSets[1])).Value;
+        Assert.Equal(new string('a', AlertCardBuilder.MaxValueLength - 2) + "\u2026", value);
+    }
+
+    [Fact]
+    public void MarkdownLinksInPayloadText_AreBrokenUp()
+    {
+        var card = Card(alertContext: """{ "message": "failed, see [the fix](https://example.com/phish)", "[t](https://example.com)": "v" }""");
+
+        Assert.Equal(
+            [("message", "failed, see [the fix] (https://example.com/phish)"), ("[t] (https://example.com)", "v")],
+            Facts(card.Details!.Value[0]));
+    }
+
+    [Fact]
+    public void ContextBeyondTheCap_IsCountedInTheDetails()
+    {
+        var context = Enumerable.Range(0, AlertCardBuilder.MaxContextFacts + 5).ToDictionary(i => $"f{i:D2}", i => "x");
+        var card = Card(alertContext: JsonSerializer.Serialize(context));
+
+        var details = card.Details!.Value;
+        Assert.Equal(AlertCardBuilder.MaxContextFacts, Facts(details[0]).Count);
+        Assert.Equal("5 more fields are not shown.", details[1].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void CustomPropertiesBeyondTheCap_AreCountedOnTheCard_WhenThereIsNoContext()
+    {
+        var custom = Enumerable.Range(0, AlertCardBuilder.MaxCustomFacts + 1).ToDictionary(i => $"k{i:D2}", i => "x");
+        var card = Card(customProperties: JsonSerializer.Serialize(custom));
+
+        Assert.Equal(AlertCardBuilder.MaxCustomFacts, Facts(card.FactSets[1]).Count);
+        Assert.Null(card.Details);
+        Assert.Equal("1 more field is not shown.", card.Body.Last().GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void OversizedCard_IsTrimmedToTheQueueBudget_ContextFirst()
+    {
+        var big = new string('x', AlertCardBuilder.MaxValueLength);
+        var custom = Enumerable.Range(0, AlertCardBuilder.MaxCustomFacts).ToDictionary(i => $"k{i:D2}", i => big);
+        var context = Enumerable.Range(0, AlertCardBuilder.MaxContextFacts).ToDictionary(i => $"f{i:D2}", i => big);
+
+        var json = AlertCardBuilder.Build(Payload(JsonSerializer.Serialize(custom), JsonSerializer.Serialize(context)));
+        var card = new BuiltCard(json);
+
+        Assert.True(AlertCardBuilder.QueuedSize(json) <= AlertCardBuilder.MaxQueuedCardBytes);
+        Assert.Equal(AlertCardBuilder.MaxCustomFacts, Facts(card.FactSets[1]).Count);
+        var shown = Facts(card.Details!.Value[0]).Count;
+        Assert.InRange(shown, 1, AlertCardBuilder.MaxContextFacts - 1);
+        var omitted = AlertCardBuilder.MaxContextFacts - shown;
+        Assert.Equal($"{omitted} more fields are not shown.", card.Details!.Value[1].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void LongRuleName_IsCut_AndTheDetailsStay()
+    {
+        var payload = Payload("""{ "team": "platform" }""", """{ "status": "Failed" }""");
+        payload.Data!.Essentials!.AlertRule = new string('r', AlertCardBuilder.MaxQueuedCardBytes);
+
+        var json = AlertCardBuilder.Build(payload);
+        var card = new BuiltCard(json);
+
+        Assert.True(AlertCardBuilder.QueuedSize(json) <= AlertCardBuilder.MaxQueuedCardBytes);
+        Assert.EndsWith(new string('r', AlertCardBuilder.MaxValueLength - 1) + "\u2026", card.Body[0].GetProperty("text").GetString());
+        Assert.Equal(AlertCardBuilder.MaxValueLength, Facts(card.FactSets[0])[0].Value.Length);
+        Assert.NotNull(card.Details);
+    }
+
+    [Fact]
+    public void EssentialsThatOutgrowTheBudget_AreCutHarder_AndTheDetailsGo()
+    {
+        // Only a payload built to be odd gets here: every essential is long and all quotes,
+        // which the queue envelope escapes to seven bytes each.
+        var json = AlertCardBuilder.Build(OddPayload("""{ "team": "platform" }""", """{ "status": "Failed" }"""));
+        var card = new BuiltCard(json);
+
+        Assert.True(AlertCardBuilder.QueuedSize(json) <= AlertCardBuilder.MaxQueuedCardBytes);
+        Assert.Null(card.Details);
+        Assert.Single(card.FactSets); // the essentials'
+        Assert.All(Facts(card.FactSets[0]), f => Assert.Equal(AlertCardBuilder.MinValueLength, f.Value.Length));
+        Assert.Equal("2 more fields are not shown.", card.Body.Last().GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void DetailsThatCannotBeRendered_WithEssentialsOverTheBudget_AreCutHarder()
+    {
+        JsonElement disposed;
+        using (var document = JsonDocument.Parse("""{ "k": "v" }"""))
+            disposed = document.RootElement;
+        var payload = OddPayload(null, null);
+        payload.Data!.CustomProperties = disposed;
+
+        var json = AlertCardBuilder.Build(payload);
+
+        Assert.True(AlertCardBuilder.QueuedSize(json) <= AlertCardBuilder.MaxQueuedCardBytes);
+        Assert.All(Facts(new BuiltCard(json).FactSets[0]), f => Assert.Equal(AlertCardBuilder.MinValueLength, f.Value.Length));
+    }
+
+    /// <summary>A payload whose essentials are all 5,000 quotes.</summary>
+    private static CommonAlertPayload OddPayload(string? customProperties, string? alertContext)
+    {
+        var quotes = new string('"', 5000);
+        var payload = Payload(customProperties, alertContext);
+        payload.Data!.Essentials = new AlertEssentials
+        {
+            AlertRule = quotes, Severity = quotes, MonitorCondition = quotes, SignalType = quotes,
+            FiredDateTime = quotes, MonitoringService = quotes, Description = quotes, AlertTargetIDs = ["/x/" + quotes]
+        };
+        return payload;
+    }
+
+    [Fact]
+    public void LongDescription_IsCut()
+    {
+        var alert = CreateAlert(description: new string('d', AlertCardBuilder.MaxDescriptionLength + 1));
+
+        var body = JsonDocument.Parse(AlertCardBuilder.Build(alert)).RootElement.GetProperty("body");
+
+        Assert.Equal(AlertCardBuilder.MaxDescriptionLength, body[2].GetProperty("text").GetString()!.Length);
+    }
+
+    [Fact]
+    public void DetailsThatCannotBeRendered_LeaveTheEssentials_AndAreLogged()
+    {
+        JsonElement disposed;
+        using (var document = JsonDocument.Parse("""{ "status": "Failed" }"""))
+            disposed = document.RootElement; // reading it after this throws
+        var alert = CreateAlert(alertRule: "HighCPU");
+        alert.Data!.AlertContext = disposed;
+        var logger = new ListLogger<AlertCardBuilderTests>();
+
+        var card = new BuiltCard(AlertCardBuilder.Build(alert, logger, "alert-1"));
+
+        Assert.Null(card.Details);
+        Assert.Equal("HighCPU", Facts(card.FactSets[0])[0].Value);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains("alert-1", entry.Message);
+        Assert.IsType<ObjectDisposedException>(entry.Exception);
+    }
+
+    [Fact]
+    public void DetailsThatCannotBeRendered_LeaveTheEssentials_WithoutALogger()
+    {
+        JsonElement disposed;
+        using (var document = JsonDocument.Parse("""{ "k": "v" }"""))
+            disposed = document.RootElement;
+        var alert = CreateAlert();
+        alert.Data!.CustomProperties = disposed;
+
+        var card = new BuiltCard(AlertCardBuilder.Build(alert));
+
+        Assert.Single(card.FactSets);
+    }
+
+    /// <summary>A payload with the given sections, as the alert function reads it.</summary>
+    private static CommonAlertPayload Payload(string? customProperties, string? alertContext)
+    {
+        var data = new JsonObject
+        {
+            ["essentials"] = new JsonObject { ["alertRule"] = "rule", ["severity"] = "Sev2", ["monitorCondition"] = "Fired" }
+        };
+        if (customProperties is not null)
+            data["customProperties"] = JsonNode.Parse(customProperties);
+        if (alertContext is not null)
+            data["alertContext"] = JsonNode.Parse(alertContext);
+        var json = new JsonObject { ["schemaId"] = "azureMonitorCommonAlertSchema", ["data"] = data }.ToJsonString();
+        return JsonSerializer.Deserialize<CommonAlertPayload>(json, JsonSerializerOptions.Web)!;
+    }
+
+    private static BuiltCard Card(string? customProperties = null, string? alertContext = null) =>
+        new(AlertCardBuilder.Build(Payload(customProperties, alertContext)));
+
+    private static List<(string Title, string Value)> Facts(JsonElement factSet) =>
+        factSet.GetProperty("facts").EnumerateArray()
+            .Select(f => (f.GetProperty("title").GetString()!, f.GetProperty("value").GetString()!)).ToList();
+
+    /// <summary>The parts of a built card the tests look at.</summary>
+    private sealed class BuiltCard(string json)
+    {
+        public JsonElement[] Body { get; } = JsonDocument.Parse(json).RootElement.GetProperty("body").EnumerateArray().ToArray();
+
+        public JsonElement[] FactSets => Body.Where(b => b.GetProperty("type").GetString() == "FactSet").ToArray();
+
+        /// <summary>The body of the "Show details" card, or null when the card has none.</summary>
+        public JsonElement? Details => Body
+            .Where(b => b.GetProperty("type").GetString() == "ActionSet")
+            .Select(b => (JsonElement?)b.GetProperty("actions")[0].GetProperty("card").GetProperty("body"))
+            .SingleOrDefault();
     }
 
     private static CommonAlertPayload CreateAlert(

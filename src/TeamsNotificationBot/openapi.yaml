@@ -490,21 +490,38 @@ components:
           properties:
             essentials:
               type: object
+              description: |
+                Azure sends some of these as null (a budget alert has no alertRule,
+                severity or signalType); the card leaves out what is missing.
               properties:
+                alertId:
+                  type: string
+                  nullable: true
                 alertRule:
                   type: string
+                  nullable: true
                 severity:
                   type: string
+                  nullable: true
                 monitorCondition:
                   type: string
+                  nullable: true
                 signalType:
                   type: string
+                  nullable: true
             alertContext:
               type: object
+              nullable: true
+              description: |
+                What caused the alert; its shape depends on the monitoring service. Shown
+                behind the card's "Show details" button.
             customProperties:
               type: object
-              additionalProperties:
-                type: string
+              nullable: true
+              description: |
+                The alert rule's custom properties, shown on the card. Values are usually
+                strings; anything else is accepted and flattened like the alert context.
+              additionalProperties: true
 
     AcceptedResponse:
       type: object

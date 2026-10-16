@@ -106,7 +106,7 @@ public class AlertFunction
         }
 
         // Build Adaptive Card from alert
-        var cardJson = AlertCardBuilder.Build(alertPayload);
+        var cardJson = AlertCardBuilder.Build(alertPayload, _logger, messageId);
 
         // Enqueue as notification
         var queueMessage = new QueueMessage
