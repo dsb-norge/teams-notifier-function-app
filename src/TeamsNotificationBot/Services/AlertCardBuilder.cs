@@ -272,7 +272,7 @@ public static partial class AlertCardBuilder
         type = "FactSet",
         facts = facts.Select(f => new
         {
-            title = Plain(f.Title, MaxTitleLength),
+            title = Breakable(Plain(f.Title, MaxTitleLength)),
             // A link isn't cut: cut short, it would lead nowhere.
             value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(Timestamp(f.Value), MaxValueLength)
         }).ToList()
@@ -284,6 +284,14 @@ public static partial class AlertCardBuilder
     /// a resource name), and it must not render as a link whose target differs from its text.
     /// </summary>
     private static string Plain(string text, int max) => Truncate(text, max).Replace("](", "] (", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A field's path with a line-break opportunity (a zero-width space) after every dot and
+    /// before every index, so Teams wraps <c>condition.allOf.metricName</c> at a dot instead of in
+    /// the middle of a word: a fact set's title column is narrow, and a path has no spaces.
+    /// </summary>
+    private static string Breakable(string path) =>
+        path.Replace(".", ".\u200B", StringComparison.Ordinal).Replace("[", "\u200B[", StringComparison.Ordinal);
 
     /// <summary>
     /// An ISO 8601 date and time with a zone, as UTC: <c>2026-10-15 01:20:42 UTC</c>. Teams shows an

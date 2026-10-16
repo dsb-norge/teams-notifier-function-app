@@ -422,7 +422,8 @@ example, has no `alertRule`, `severity` or `signalType`; its card is titled with
 
 The bot knows the common alert schema, not what any alert is about, so both sections are
 flattened the same way for every alert type. Each field becomes a fact titled with its path
-(`condition.allOf.metricValue`). On top of that:
+(`condition.allOf.metricValue`), which wraps at its dots: an invisible zero-width space follows each
+dot, and a title copied from the card carries those along. On top of that:
 
 - A string that holds escaped JSON is unpacked, up to three levels deep. An activity log
   event's `properties.statusMessage` becomes `properties.statusMessage.error.message` and its
