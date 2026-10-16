@@ -395,6 +395,69 @@ public class AlertCardBuilderTests
         Assert.Single(card.FactSets);
     }
 
+    [Fact]
+    public void AlertKeptByAlertsManagement_LinksToItsPortalPage()
+    {
+        var alert = CreateAlert();
+        alert.Data!.Essentials!.AlertId = "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.AlertsManagement/alerts/11111111-0000-0000-0000-000000000002";
+
+        var body = JsonDocument.Parse(AlertCardBuilder.Build(alert)).RootElement.GetProperty("body");
+
+        Assert.Equal(
+            "[Open in Azure portal](https://portal.azure.com/#view/Microsoft_Azure_Monitoring_Alerts/AlertDetails.ReactView/alertId~/" +
+            "%2Fsubscriptions%2F00000000-0000-0000-0000-000000000001%2Fproviders%2FMicrosoft.AlertsManagement%2Falerts%2F11111111-0000-0000-0000-000000000002)",
+            body.EnumerateArray().Last().GetProperty("text").GetString());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("/subscriptions/s/resourceGroups/rg/providers/microsoft.insights/activityLogAlerts/Test_Alert")] // an action group test
+    [InlineData("/subscriptions/s/providers/Microsoft.CostManagement/alerts/Test_Alert")]                          // a budget alert
+    [InlineData("/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.AlertsManagement/alerts/11111111-0000-0000-0000-000000000002/extra")]
+    [InlineData("/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.AlertsManagement/alerts/11111111-0000-0000-0000-000000000002\n")]
+    [InlineData("/subscriptions/s/providers/Microsoft.AlertsManagement/alerts/11111111-0000-0000-0000-000000000002")] // not GUIDs
+    [InlineData("/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.AlertsManagement/alerts/a")]
+    public void OtherAlertIds_GetNoPortalLink(string? alertId)
+    {
+        Assert.Null(AlertCardBuilder.AlertPageUrl(alertId));
+    }
+
+    [Fact]
+    public void AnAlertIdThatWouldMakeAHugeLink_GetsNoPortalLink()
+    {
+        // 9,000 characters that each percent-encode to six would make a 54 KB link the card
+        // couldn't trim.
+        Assert.Null(AlertCardBuilder.AlertPageUrl(
+            "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.AlertsManagement/alerts/" + new string('\u00e9', 9000)));
+    }
+
+    [Fact]
+    public void PortalUrlsInTheContext_BecomeLinks_AndAreNotCut()
+    {
+        var search = "https://portal.azure.com#@00000000-0000-0000-0000-000000000001/blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/q/" + new string('q', 900) + "(x)";
+        var card = Card(alertContext: JsonSerializer.Serialize(new { linkToSearchResultsUI = search }));
+
+        var value = Assert.Single(Facts(card.Details!.Value[0])).Value;
+        Assert.StartsWith("[Open in Azure portal](https://portal.azure.com/#@00000000-0000-0000-0000-000000000001/blade/", value);
+        Assert.EndsWith(new string('q', 900) + "%28x%29)", value);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/portal.azure.com/x")]
+    [InlineData("https://portal.azure.com.example.com/x")]
+    [InlineData("https://portal.azure.com@example.com/x")]
+    [InlineData("https://portal.azure.com:8443/x")]
+    [InlineData("http://portal.azure.com/x")]
+    [InlineData("see https://portal.azure.com/x")]
+    public void OtherUrls_StayText(string url)
+    {
+        Assert.Null(AlertCardBuilder.PortalLinkTarget(url));
+        var card = Card(alertContext: JsonSerializer.Serialize(new { link = url }));
+
+        Assert.Equal(url, Assert.Single(Facts(card.Details!.Value[0])).Value);
+    }
+
     /// <summary>A payload with the given sections, as the alert function reads it.</summary>
     private static CommonAlertPayload Payload(string? customProperties, string? alertContext)
     {

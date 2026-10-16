@@ -39,6 +39,9 @@ public class AlertData
 /// </summary>
 public class AlertEssentials
 {
+    [JsonPropertyName("alertId")]
+    public string? AlertId { get; set; }
+
     [JsonPropertyName("alertRule")]
     public string? AlertRule { get; set; }
 

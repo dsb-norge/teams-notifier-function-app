@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using TeamsNotificationBot.Models;
 
@@ -12,7 +13,7 @@ namespace TeamsNotificationBot.Services;
 /// custom properties and context are flattened by <see cref="AlertFacts"/>, whatever
 /// their shape.
 /// </summary>
-public static class AlertCardBuilder
+public static partial class AlertCardBuilder
 {
     /// <summary>
     /// The card's size as it sits in the queue message, whose envelope escapes every quote
@@ -146,7 +147,41 @@ public static class AlertCardBuilder
             });
         }
 
+        if (AlertPageUrl(essentials.AlertId) is { } alertPage)
+            bodyItems.Add(new { type = "TextBlock", text = $"[Open in Azure portal]({alertPage})", wrap = true });
+
         return bodyItems;
+    }
+
+    /// <summary>
+    /// The alert's page in the Azure portal, for an alert that Azure Monitor's alerts
+    /// management keeps (metric, log search, activity log and Prometheus alerts). The ID of
+    /// anything else (a budget alert's, an action group test's) has no such page. Both IDs in
+    /// it are GUIDs, which also keeps the link short: the card can't trim the essentials.
+    /// </summary>
+    internal static string? AlertPageUrl(string? alertId) =>
+        alertId is not null && AlertsManagementAlertId().IsMatch(alertId)
+            ? "https://portal.azure.com/#view/Microsoft_Azure_Monitoring_Alerts/AlertDetails.ReactView/alertId~/" +
+              Uri.EscapeDataString(alertId)
+            : null;
+
+    [GeneratedRegex(@"^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/providers/Microsoft\.AlertsManagement/alerts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z", RegexOptions.IgnoreCase)]
+    private static partial Regex AlertsManagementAlertId();
+
+    /// <summary>
+    /// A payload value that is a URL on the Azure portal, as a Markdown link target; null for
+    /// anything else. Only the portal is linked (a log alert's search results, say), the way the
+    /// updown card links updown.io only: any other URL stays text.
+    /// </summary>
+    internal static string? PortalLinkTarget(string text)
+    {
+        if (!Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort || uri.UserInfo.Length > 0 ||
+            !string.Equals(uri.IdnHost, "portal.azure.com", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        // Parentheses would end the Markdown link target early.
+        return uri.AbsoluteUri.Replace("(", "%28", StringComparison.Ordinal).Replace(")", "%29", StringComparison.Ordinal);
     }
 
     private static string BuildWithDetails(AlertEssentials essentials, AlertData? data)
@@ -234,7 +269,12 @@ public static class AlertCardBuilder
     private static object FactSet(List<AlertFacts.Fact> facts) => new
     {
         type = "FactSet",
-        facts = facts.Select(f => new { title = Plain(f.Title, MaxTitleLength), value = Plain(f.Value, MaxValueLength) }).ToList()
+        facts = facts.Select(f => new
+        {
+            title = Plain(f.Title, MaxTitleLength),
+            // A link isn't cut: cut short, it would lead nowhere.
+            value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(f.Value, MaxValueLength)
+        }).ToList()
     };
 
     /// <summary>

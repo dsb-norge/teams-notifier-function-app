@@ -19,7 +19,6 @@ public class CommonAlertPayloadTests
     {
         ["alertContextVersion"] = "schema bookkeeping",
         ["essentialsVersion"] = "schema bookkeeping",
-        ["alertId"] = "an ARM ID, not something to read",
         ["alertRuleID"] = "an ARM ID; the rule's name is on the card",
         ["originAlertId"] = "an internal ID of the monitoring service",
         ["configurationItems"] = "repeats the target in nearly every alert",
