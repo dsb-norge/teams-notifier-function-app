@@ -413,8 +413,11 @@ example, has no `alertRule`, `severity` or `signalType`; its card is titled with
 
 **What the card shows.** Below the essentials, the description and the target:
 
-1. **Custom properties**, when the alert rule sets any, under their own heading.
-2. A **Show details** button that opens the `alertContext`: what caused the alert, such as a
+1. An **Open in Azure portal** link to the alert's page, when its `alertId` is one that
+   Azure Monitor's alerts management keeps: `/subscriptions/<GUID>/providers/Microsoft.AlertsManagement/alerts/<GUID>`.
+   A budget alert or an action group's test alert has no such page, and no link.
+2. **Custom properties**, when the alert rule sets any, under their own heading.
+3. A **Show details** button that opens the `alertContext`: what caused the alert, such as a
    metric's value and threshold, a log query's dimensions or an activity log event.
 
 The bot knows the common alert schema, not what any alert is about, so both sections are
@@ -433,8 +436,14 @@ flattened the same way for every alert type. Each field becomes a fact titled wi
   `claims`, `httpRequest`, `authorization`, `SearchResults`, `impactedServicesTableRows`,
   `defaultLanguageTitle`, `defaultLanguageContent`, and the Log Analytics API links
   (`linkTo…API`). Custom properties are shown as the rule's author wrote them.
-- Values longer than 500 characters and titles longer than 100 are cut. Markdown link
-  syntax in a value is broken up, so payload text never renders as a link.
+- A value that is an `https://portal.azure.com` URL (a log alert's search results, for
+  example) becomes an **Open in Azure portal** link. Any other URL stays text, as the updown
+  card does with anything but updown.io.
+- Other values longer than 500 characters, and titles longer than 100, are cut. Markdown
+  link syntax in the custom properties and the context is broken up, so nothing in them
+  renders as a link but the bot's own portal links: their values come from whatever caused
+  the alert. The rule's name and description are shown as its author wrote them, Markdown
+  links included, since a runbook link in the description is a fair use of it.
 - At most 20 custom properties and 40 context fields are shown. The card is also kept under
   30 KB, measured as it sits in the queue message, so the context is trimmed first if needed.
   A line under the facts counts what was left out.
