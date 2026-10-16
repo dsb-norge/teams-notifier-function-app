@@ -121,6 +121,31 @@ public class AlertFunctionTests
     }
 
     [Fact]
+    public async Task MissingContentType_Returns415()
+    {
+        var req = HttpRequestHelper.CreatePostRequest(body: ValidAlertPayload, contentType: null!);
+
+        var result = await _function.Run(req, "test");
+
+        Assert.Equal(415, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task JsonNullBody_Returns400()
+    {
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+
+        var req = HttpRequestHelper.CreatePostRequest(body: "null");
+
+        var result = await _function.Run(req, "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(400, objectResult.StatusCode);
+        Assert.Equal("Request body is required.", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+    }
+
+    [Fact]
     public async Task InvalidJson_Returns400()
     {
         _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
