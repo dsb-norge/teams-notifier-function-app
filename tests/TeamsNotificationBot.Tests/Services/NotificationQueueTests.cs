@@ -42,6 +42,58 @@ public class NotificationQueueTests
     }
 
     [Fact]
+    public async Task Enqueue_EscapesOnlyWhatJsonRequires()
+    {
+        string? sent = null;
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .Callback<string>(s => sent = s)
+            .ReturnsAsync(Mock.Of<Response<SendReceipt>>());
+        var card = "{\"text\":\"Hei på deg <3\"}";
+        var message = new QueueMessage { MessageId = "msg-5", Message = card, Format = "adaptive-card" };
+
+        await _queue.EnqueueAsync(message);
+
+        // Quotes as \", not \u0022; æøå and <, & as themselves, not \uXXXX.
+        Assert.Contains("\\\"text\\\"", sent);
+        Assert.Contains("Hei på deg <3", sent);
+        Assert.DoesNotContain("\\u", sent);
+        Assert.Equal(card, JsonSerializer.Deserialize<QueueMessage>(sent!)!.Message);
+    }
+
+    [Fact]
+    public async Task Enqueue_ACardWithinTheRequestLimit_FitsTheQueue()
+    {
+        // Many short values: the shape that grows the most. At the 28 KB request limit, this
+        // card was an 86,700-byte queue message with the default encoder, over Storage's 64 KB.
+        string? sent = null;
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .Callback<string>(s => sent = s)
+            .ReturnsAsync(Mock.Of<Response<SendReceipt>>());
+        var card = DenseCard(28 * 1024);
+
+        await _queue.EnqueueAsync(new QueueMessage { MessageId = "msg-6", Message = card, Format = "adaptive-card" });
+
+        Assert.True(Base64Length(sent!) <= 64 * 1024, $"queue message is {Base64Length(sent!)} bytes");
+    }
+
+    /// <summary>An Adaptive Card of short facts, as close to <paramref name="bytes"/> as it gets.</summary>
+    internal static string DenseCard(int bytes)
+    {
+        var facts = new List<object>();
+        var card = "";
+        for (var i = 0; ; i++)
+        {
+            facts.Add(new { title = $"t{i}", value = $"v{i}" });
+            var next = JsonSerializer.Serialize(new { type = "AdaptiveCard", version = "1.4", body = new object[] { new { type = "FactSet", facts } } });
+            if (System.Text.Encoding.UTF8.GetByteCount(next) > bytes)
+                return card;
+            card = next;
+        }
+    }
+
+    private static int Base64Length(string text) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(text)).Length;
+
+    [Fact]
     public async Task Enqueue_WhenQueueFails_RemovesTheRecord_Throws_AndEmitsNoQueuedEvent()
     {
         _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
