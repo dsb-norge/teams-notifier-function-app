@@ -1,0 +1,58 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.AlertsManagement/alerts/eeeeeeee-4444-5555-6666-ffffffffffff",
+      "alertRule": "test-dynamicMetricAlertRule",
+      "severity": "Sev4",
+      "signalType": "Metric",
+      "monitorCondition": "Fired",
+      "monitoringService": "Platform",
+      "alertTargetIDs": [
+        "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourcegroups/test-RG/providers/Microsoft.Storage/storageAccounts/test-storageAccount"
+      ],
+      "configurationItems": [
+        "test-storageAccount"
+      ],
+      "originAlertId": "aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e_test-RG_microsoft.insights_metricAlerts_test-metricAlertRule_1234567890",
+      "firedDateTime": "2025-04-15T18:15:16.104Z",
+      "description": "Alertruledescription",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "properties": {
+        "customKey1": "value1",
+        "customKey2": "value2"
+      },
+      "conditionType": "DynamicThresholdCriteria",
+      "condition": {
+        "windowSize": "PT15M",
+        "allOf": [
+          {
+            "alertSensitivity": "Low",
+            "failingPeriods": {
+              "numberOfEvaluationPeriods": 3,
+              "minFailingPeriodsToAlert": 3
+            },
+            "ignoreDataBefore": null,
+            "metricName": "Transactions",
+            "metricNamespace": "Microsoft.Storage/storageAccounts",
+            "operator": "GreaterThan",
+            "threshold": "0.3",
+            "timeAggregation": "Average",
+            "dimensions": [],
+            "metricValue": 78.09,
+            "webTestName": null
+          }
+        ],
+        "windowStartTime": "2025-04-15T18:15:16.104Z",
+        "windowEndTime": "2025-04-15T18:15:16.104Z"
+      }
+    },
+    "customProperties": {
+      "customKey1": "value1",
+      "customKey2": "value2"
+    }
+  }
+}

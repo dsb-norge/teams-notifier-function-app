@@ -17,4 +17,8 @@
     <PackageReference Include="Moq" Version="4.21.0" />
     <ProjectReference Include="..\..\src\TeamsNotificationBot\TeamsNotificationBot.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Vendored Azure Monitor alert samples; see TestData/AzureMonitorAlerts/README.md. -->
+    <None Include="TestData\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

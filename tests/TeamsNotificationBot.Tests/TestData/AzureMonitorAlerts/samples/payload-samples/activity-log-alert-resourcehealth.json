@@ -1,0 +1,22 @@
+{
+  "alertContext": {
+    "channels": "Admin, Operation",
+    "correlationId": "<GUID>",
+    "eventSource": "ResourceHealth",
+    "eventTimestamp": "2019-06-24T15:42:54.074+00:00",
+    "eventDataId": "<GUID>",
+    "level": "Informational",
+    "operationName": "Microsoft.Resourcehealth/healthevent/Activated/action",
+    "operationId": "<GUID>",
+    "properties": {
+      "title": "This virtual machine is stopping and deallocating as requested by an authorized user or process",
+      "details": null,
+      "currentHealthStatus": "Unavailable",
+      "previousHealthStatus": "Available",
+      "type": "Downtime",
+      "cause": "UserInitiated"
+    },
+    "status": "Active",
+    "submissionTimestamp": "2019-06-24T15:45:20.4488186+00:00"
+  }
+}

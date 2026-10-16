@@ -1,0 +1,50 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/test-RG/providers/microsoft.insights/activityLogAlerts/Test_Alert",
+      "alertRule": "test-activityLogAlertRule",
+      "severity": "Sev4",
+      "signalType": "Activity Log",
+      "monitorCondition": "Fired",
+      "monitoringService": "Activity Log - Administrative",
+      "alertTargetIDs": [
+        "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourcegroups/test-RG/providers/microsoft.compute/virtualmachines/test-VM"
+      ],
+      "configurationItems": [
+        "test-VM"
+      ],
+      "originAlertId": "dddd3333-ee44-5555-66ff-777777aaaaaa_123456789012345678901234567890ab",
+      "firedDateTime": "2025-04-15T11:26:21.386Z",
+      "description": "Alert rule description",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "authorization": {
+        "action": "Microsoft.Compute/virtualMachines/restart/action",
+        "scope": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/test-RG/providers/Microsoft.Compute/virtualMachines/test-VM"
+      },
+      "channels": "Operation",
+      "claims": "{}",
+      "caller": "user@contoso.com",
+      "correlationId": "cccc2222-dd33-4444-55ee-666666ffffff",
+      "eventSource": "Administrative",
+      "eventTimestamp": "2025-04-15T11:26:21.386Z",
+      "eventDataId": "dddd3333-ee44-5555-66ff-777777aaaaaa",
+      "level": "Informational",
+      "operationName": "Microsoft.Compute/virtualMachines/restart/action",
+      "operationId": "bbbbbbbb-1111-2222-3333-cccccccccccc",
+      "properties": {
+        "eventCategory": "Administrative",
+        "entity": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourceGroups/test-RG/providers/Microsoft.Compute/virtualMachines/test-VM",
+        "message": "Microsoft.Compute/virtualMachines/restart/action",
+        "hierarchy": "22222222-2222-2222-2222-222222222222/CnAIOrchestrationServicePublicCorpprod/33333333-3333-3333-3333-3333333333333/cccccccc-2222-3333-4444-dddddddddddd/dddddddd-3333-4444-5555-eeeeeeeeeeee/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e"
+      },
+      "status": "Succeeded",
+      "subStatus": "",
+      "submissionTimestamp": "2025-04-15T11:26:21.386Z",
+      "Activity Log Event Description": ""
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "monitoringService": "CostAlerts",
+      "firedDateTime": "2025-04-15T17:49:34.022Z",
+      "description": "Delivery Confirmation: This is a sample budget alert from Azure Monitor Action Groups.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0",
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.CostManagement/alerts/Test_Alert",
+      "alertRule": null,
+      "severity": null,
+      "signalType": null,
+      "monitorCondition": "Fired",
+      "alertTargetIDs": null,
+      "configurationItems": [
+        "budgets"
+      ],
+      "originAlertId": null
+    },
+    "alertContext": {
+      "AlertCategory": "budgets",
+      "AlertData": {
+        "Scope": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/",
+        "ThresholdType": "Forecasted",
+        "BudgetType": "Cost",
+        "BudgetThreshold": "$50.00",
+        "NotificationThresholdAmount": "$50.00",
+        "BudgetName": "Test_forcasted_budget",
+        "BudgetId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.Consumption/budgets/Test_forcasted_budget",
+        "BudgetStartDate": "2022-11-01",
+        "BudgetCreator": "test@sample.test",
+        "Unit": "USD",
+        "SpentAmount": "$999.99",
+        "ForecastedTotalForPeriod": "$1111.11"
+      }
+    }
+  }
+}

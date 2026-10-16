@@ -1,0 +1,38 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "monitoringService": "CostAlerts",
+      "firedDateTime": "2025-04-15T17:53:32.996Z",
+      "description": "YourspendforbudgetTest_actual_cost_budgetisnow$11,111.00exceedingyourspecifiedthreshold$25.00.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0",
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.CostManagement/alerts/Test_Alert",
+      "alertRule": null,
+      "severity": null,
+      "signalType": null,
+      "monitorCondition": "Fired",
+      "alertTargetIDs": null,
+      "configurationItems": [
+        "budgets"
+      ],
+      "originAlertId": null
+    },
+    "alertContext": {
+      "AlertCategory": "budgets",
+      "AlertData": {
+        "Scope": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/",
+        "ThresholdType": "Actual",
+        "BudgetType": "Cost",
+        "BudgetThreshold": "$50.00",
+        "NotificationThresholdAmount": "$25.00",
+        "BudgetName": "Test_actual_cost_budget",
+        "BudgetId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.Consumption/budgets/Test_actual_cost_budget",
+        "BudgetStartDate": "2022-11-01",
+        "BudgetCreator": "test@sample.test",
+        "Unit": "USD",
+        "SpentAmount": "$11,111.00"
+      }
+    }
+  }
+}

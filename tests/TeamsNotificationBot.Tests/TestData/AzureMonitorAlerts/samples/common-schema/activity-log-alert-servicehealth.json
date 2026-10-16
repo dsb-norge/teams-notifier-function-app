@@ -1,0 +1,39 @@
+{
+  "alertContext": {
+    "authorization": null,
+    "channels": 1,
+    "claims": null,
+    "caller": null,
+    "correlationId": "bbbb1111-cc22-3333-44dd-555555eeeeee",
+    "eventSource": "ServiceHealth",
+    "eventTimestamp": "2019-06-24T11:31:19.0312699+00:00",
+    "httpRequest": null,
+    "eventDataId": "<GUID>",
+    "level": "Informational",
+    "operationName": "Microsoft.ServiceHealth/maintenance/action",
+    "operationId": "<GUID>",
+    "properties": {
+      "title": "Azure Synapse Analytics Scheduled Maintenance Pending",
+      "service": "Azure Synapse Analytics",
+      "region": "East US",
+      "communication": "<MESSAGE>",
+      "incidentType": "Maintenance",
+      "trackingId": "<GUID>",
+      "impactStartTime": "2019-06-26T04:00:00Z",
+      "impactMitigationTime": "2019-06-26T12:00:00Z",
+      "impactedServices": "[{\"ImpactedRegions\":[{\"RegionName\":\"East US\"}],\"ServiceName\":\"Azure Synapse Analytics\"}]",
+      "impactedServicesTableRows": "<tr>\r\n<td align='center' style='padding: 5px 10px; border-right:1px solid black; border-bottom:1px solid black'>Azure Synapse Analytics</td>\r\n<td align='center' style='padding: 5px 10px; border-bottom:1px solid black'>East US<br></td>\r\n</tr>\r\n",
+      "defaultLanguageTitle": "Azure Synapse Analytics Scheduled Maintenance Pending",
+      "defaultLanguageContent": "<MESSAGE>",
+      "stage": "Planned",
+      "communicationId": "<GUID>",
+      "maintenanceId": "<GUID>",
+      "isHIR": "false",
+      "version": "0.1.1"
+    },
+    "status": "Active",
+    "subStatus": null,
+    "submissionTimestamp": "2019-06-24T11:31:31.7147357+00:00",
+    "ResourceType": null
+  }
+}

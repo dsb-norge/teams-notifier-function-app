@@ -1,0 +1,16 @@
+{
+  "alertContext": {
+    "interval": "PT1M",
+    "expression": "sql_up > 0",
+    "expressionValue": "0",
+    "for": "PT2M",
+    "labels": {
+      "Environment": "Prod",
+      "cluster": "myCluster1"
+    },
+    "annotations": {
+      "summary": "alert on SQL availability"
+    },
+    "ruleGroup": "/subscriptions/<subscription ID>/resourceGroups/myResourceGroup/providers/Microsoft.AlertsManagement/prometheusRuleGroups/myRuleGroup"
+  }
+}
