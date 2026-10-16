@@ -458,6 +458,15 @@ public class AlertCardBuilderTests
         Assert.Equal(url, Assert.Single(Facts(card.Details!.Value[0])).Value);
     }
 
+    [Fact]
+    public void Titles_CanBreakAtTheirDotsAndIndexes()
+    {
+        var card = Card(alertContext: """{ "condition": { "details": [ { "message": "a" }, { "message": "b" } ] } }""");
+
+        var title = card.Details!.Value[0].GetProperty("facts")[0].GetProperty("title").GetString();
+        Assert.Equal("condition.\u200Bdetails\u200B[0].\u200Bmessage", title);
+    }
+
     [Theory]
     [InlineData("2025-04-15T11:26:21.386Z", "2025-04-15 11:26:21 UTC")]
     [InlineData("2019-03-22T13:56:31.2917159+00:00", "2019-03-22 13:56:31 UTC")]
@@ -519,9 +528,10 @@ public class AlertCardBuilderTests
     private static BuiltCard Card(string? customProperties = null, string? alertContext = null) =>
         new(AlertCardBuilder.Build(Payload(customProperties, alertContext)));
 
+    /// <summary>A fact set's facts, the titles without their line-break opportunities.</summary>
     private static List<(string Title, string Value)> Facts(JsonElement factSet) =>
         factSet.GetProperty("facts").EnumerateArray()
-            .Select(f => (f.GetProperty("title").GetString()!, f.GetProperty("value").GetString()!)).ToList();
+            .Select(f => (f.GetProperty("title").GetString()!.Replace("\u200B", ""), f.GetProperty("value").GetString()!)).ToList();
 
     /// <summary>The parts of a built card the tests look at.</summary>
     private sealed class BuiltCard(string json)

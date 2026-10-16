@@ -78,7 +78,7 @@ public class AlertFunctionSampleTests
         Assert.NotEqual(0, details.GetArrayLength());
 
         // No title anywhere on the card names a hidden field.
-        var titles = details.EnumerateArray().Select(f => f.GetProperty("title").GetString()!);
+        var titles = details.EnumerateArray().Select(f => f.GetProperty("title").GetString()!.Replace("\u200B", ""));
         Assert.DoesNotContain(titles, t => t.Split('.', '[').Any(segment =>
             segment is "claims" or "httpRequest" or "authorization" or "SearchResults" or "impactedServicesTableRows"
                 or "defaultLanguageTitle" or "defaultLanguageContent" ||
