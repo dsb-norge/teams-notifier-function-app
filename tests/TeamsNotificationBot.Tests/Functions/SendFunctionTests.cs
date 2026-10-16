@@ -208,6 +208,28 @@ public class SendFunctionTests
     }
 
     [Fact]
+    public async Task MessageTooLargeForTheQueue_Returns413_ReleasesTheClaim_AndQueuesNothing()
+    {
+        var claim = new IdempotencyClaim(IdempotencyClaimStatus.Claimed, "send", "k", DateTimeOffset.UtcNow);
+        _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>())).ReturnsAsync(claim);
+        var body = JsonSerializer.Serialize(new
+        {
+            target = new { type = "channel", teamId = "team-1", channelId = "channel-1" },
+            message = new string('x', 60 * 1024)
+        });
+        var req = HttpRequestHelper.CreatePostRequest(body: body,
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "run-8" });
+        req.HttpContext.Items[TeamsNotificationBot.Middleware.AuthMiddleware.PrincipalIdItemKey] = "caller-a";
+
+        var result = await _function.Run(req);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(413, objectResult.StatusCode);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+    }
+
+    [Fact]
     public async Task IdempotencyKey_Duplicate_ReplaysWithoutQueuing()
     {
         _idempotencyService.Setup(s => s.ClaimAsync("send", It.IsAny<string>()))

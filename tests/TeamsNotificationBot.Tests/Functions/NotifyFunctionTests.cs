@@ -237,6 +237,29 @@ public class NotifyFunctionTests
     }
 
     [Fact]
+    public async Task MessageTooLargeForTheQueue_Returns413_ReleasesTheClaim_AndQueuesNothing()
+    {
+        // Within the 28 KB body limit, a card made of escaped quotes doubles in the queue
+        // message; this one is past the limit before that, as AuthMiddleware isn't in play here.
+        SetUpDeliverableAlias();
+        var claim = Claim(IdempotencyClaimStatus.Claimed);
+        _idempotencyService.Setup(s => s.ClaimAsync("notify", It.IsAny<string>())).ReturnsAsync(claim);
+        var body = JsonSerializer.Serialize(new { message = new string('x', 60 * 1024), format = "text" });
+        var req = HttpRequestHelper.CreatePostRequest(body: body,
+            headers: new Dictionary<string, string> { ["Idempotency-Key"] = "key-123" });
+        req.HttpContext.Items[TeamsNotificationBot.Middleware.AuthMiddleware.PrincipalIdItemKey] = "caller-a";
+
+        var result = await _function.Run(req, "test");
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(413, objectResult.StatusCode);
+        Assert.Contains("over its limit of 65536", Assert.IsType<ProblemDetails>(objectResult.Value).Detail);
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+        _idempotencyService.Verify(s => s.ReleaseAsync(claim), Times.Once);
+        _idempotencyService.Verify(s => s.CompleteAsync(It.IsAny<IdempotencyClaim>(), It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
     public async Task IdempotencyKey_QueueFailure_ReleasesTheClaim_AndPropagates()
     {
         SetUpDeliverableAlias();

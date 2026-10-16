@@ -177,6 +177,13 @@ public class SendFunction
             if (rejection == null)
                 await _notificationQueue.EnqueueAsync(queueMessage);
         }
+        catch (QueueMessageTooLargeException ex)
+        {
+            _logger.LogWarning(
+                "Message too large to queue: {EncodedBytes} bytes encoded. MessageId={MessageId}, CorrelationId={CorrelationId}",
+                ex.EncodedBytes, messageId, correlationId);
+            rejection = ApiResponse.QueueMessageTooLarge(ex.EncodedBytes, instance, correlationId);
+        }
         catch when (claim != null)
         {
             // Nothing was queued: free the key so the caller can retry with it.
