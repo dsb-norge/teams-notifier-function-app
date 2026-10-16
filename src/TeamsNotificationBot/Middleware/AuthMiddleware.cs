@@ -11,7 +11,7 @@ namespace TeamsNotificationBot.Middleware;
 
 public class AuthMiddleware : IFunctionsWorkerMiddleware
 {
-    private const int MaxRequestBodyBytes = 28 * 1024; // 28 KB — Teams message size limit
+    private const int MaxRequestBodyBytes = 28 * 1024; // 28 KB; the queue message is the binding limit (see below)
     private const string RequiredRole = "Notifications.Send";
 
     /// <summary>
@@ -172,7 +172,8 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
         FunctionExecutionDelegate next)
     {
         // Validate request body size (Content-Length header check)
-        if (httpContext.Request.ContentLength > MaxRequestBodyBytes)
+        var maxBodyBytes = MaxBodyBytesFor(path);
+        if (httpContext.Request.ContentLength > maxBodyBytes)
         {
             _logger.LogWarning(
                 "Request too large: {ContentLength} bytes. Endpoint={Endpoint}, CorrelationId={CorrelationId}",
@@ -180,11 +181,23 @@ public class AuthMiddleware : IFunctionsWorkerMiddleware
 
             await ApiResponse.WriteProblemAsync(
                 httpContext.Response, 413, "Payload Too Large",
-                $"Request body exceeds the maximum allowed size of {MaxRequestBodyBytes} bytes.",
+                $"Request body exceeds the maximum allowed size of {maxBodyBytes} bytes.",
                 path, correlationId);
             return;
         }
 
         await next(context);
     }
+
+    // The body limits. A message's body goes into the queue message, which Storage holds to
+    // 64 KB after Base64; Teams' own limit (100 KB, counted in UTF-16) is no longer the
+    // tighter one. The alert endpoint is the exception: it queues the card it builds, which
+    // AlertCardBuilder keeps within the queue's budget, not the body. So it takes what Azure
+    // Monitor sends, up to the common alert schema's documented 256 KB; anything smaller
+    // would answer a real alert with a 413, which an action group doesn't retry.
+    private const int MaxAlertBodyBytes = 256 * 1024;
+    private const string AlertRoutePrefix = "/api/v1/alert/";
+
+    internal static int MaxBodyBytesFor(string path) =>
+        path.StartsWith(AlertRoutePrefix, StringComparison.OrdinalIgnoreCase) ? MaxAlertBodyBytes : MaxRequestBodyBytes;
 }

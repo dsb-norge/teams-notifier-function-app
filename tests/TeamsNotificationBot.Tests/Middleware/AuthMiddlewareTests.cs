@@ -36,11 +36,11 @@ public class AuthMiddlewareTests
     }
 
     /// <summary>A protected-route POST from a caller EasyAuth authenticated with the required role.</summary>
-    private static DefaultHttpContext AuthorizedPost(long contentLength)
+    private static DefaultHttpContext AuthorizedPost(long contentLength, string path = "/api/v1/notify/some-alias")
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = HttpMethods.Post;
-        httpContext.Request.Path = "/api/v1/notify/some-alias";
+        httpContext.Request.Path = path;
         httpContext.Request.ContentLength = contentLength;
         httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"] = "caller-object-id";
         httpContext.Request.Headers[PrincipalHeader] = EncodeEasyAuthPrincipal(
@@ -82,7 +82,7 @@ public class AuthMiddlewareTests
         Assert.Null(AuthMiddleware.GetPrincipalId(httpContext));
     }
 
-    // --- Request body size limit (28 KB, the Teams message size limit) ---
+    // --- Request body size limit (28 KB; 256 KB on the alert endpoint) ---
 
     [Fact]
     public async Task RequestBody_AtLimit_Proceeds()
@@ -100,6 +100,36 @@ public class AuthMiddlewareTests
 
         Assert.False(await InvokeAsync(httpContext));
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, httpContext.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AlertBody_UpToAzuresLimit_Proceeds()
+    {
+        var httpContext = AuthorizedPost(256 * 1024, "/api/v1/alert/ops");
+
+        Assert.True(await InvokeAsync(httpContext));
+        Assert.NotEqual(StatusCodes.Status413PayloadTooLarge, httpContext.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AlertBody_AboveAzuresLimit_Returns413()
+    {
+        var httpContext = AuthorizedPost(256 * 1024 + 1, "/api/v1/alert/ops");
+
+        Assert.False(await InvokeAsync(httpContext));
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, httpContext.Response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/alert/ops", 256 * 1024)]
+    [InlineData("/API/V1/Alert/ops", 256 * 1024)]
+    [InlineData("/api/v1/alert", 28 * 1024)]          // no alias: not the alert route
+    [InlineData("/api/v1/alerts/ops", 28 * 1024)]
+    [InlineData("/api/v1/notify/alert", 28 * 1024)]
+    [InlineData("/api/v1/send", 28 * 1024)]
+    public void BodyLimit_IsAzuresOnlyOnTheAlertRoute(string path, int expected)
+    {
+        Assert.Equal(expected, AuthMiddleware.MaxBodyBytesFor(path));
     }
 
     // --- Auth-exempt routes ---

@@ -121,6 +121,63 @@ public class AlertFunctionTests
     }
 
     [Fact]
+    public async Task AlertAtAzuresSizeLimit_IsQueuedUnderTheQueueMessageLimit()
+    {
+        // The common alert schema allows 256 KB; the queue message, Base64-encoded, 64 KB.
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        string? queued = null;
+        _queueClient
+            .Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .Callback<string>(m => queued = m)
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(ValidAlertPayload)!;
+        var context = new System.Text.Json.Nodes.JsonObject();
+        for (var i = 0; i < 480; i++)
+            context[$"field{i:D3}"] = "\"quoted\" " + new string('x', 490);
+        payload["data"]!["alertContext"] = context;
+        payload["data"]!["customProperties"] = new System.Text.Json.Nodes.JsonObject { ["note"] = new string('"', 500) };
+        var body = payload.ToJsonString();
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(body), 240 * 1024, 256 * 1024);
+
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(body: body), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(queued!));
+        Assert.True(base64.Length <= 64 * 1024, $"queue message is {base64.Length} bytes");
+    }
+
+    [Fact]
+    public async Task AlertWithOversizedEssentials_IsQueuedUnderTheQueueMessageLimit()
+    {
+        // The card can't drop the essentials, only cut them: every one of them here is 15 KB
+        // of quotes, which the queue envelope escapes to seven bytes each.
+        _aliasService.Setup(s => s.GetAliasAsync("test")).ReturnsAsync(
+            new AliasEntity { TargetType = "channel", TeamId = "team-1", ChannelId = "channel-1" });
+        string? queued = null;
+        _queueClient
+            .Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .Callback<string>(m => queued = m)
+            .ReturnsAsync(Mock.Of<Azure.Response<Azure.Storage.Queues.Models.SendReceipt>>());
+        var quotes = new string('"', 15 * 1024);
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(ValidAlertPayload)!;
+        var essentials = payload["data"]!["essentials"]!.AsObject();
+        foreach (var field in new[] { "alertRule", "severity", "monitorCondition", "signalType", "firedDateTime", "description", "monitoringService" })
+            essentials[field] = quotes;
+        essentials["alertTargetIDs"] = new System.Text.Json.Nodes.JsonArray("/x/" + quotes);
+        payload["data"]!["alertContext"] = new System.Text.Json.Nodes.JsonObject { ["status"] = "Failed" };
+        // Escaped as Azure does (\"), not as System.Text.Json's default (\u0022).
+        var body = payload.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(body), 200 * 1024, 256 * 1024);
+
+        var result = await _function.Run(HttpRequestHelper.CreatePostRequest(body: body), "test");
+
+        Assert.Equal(202, Assert.IsType<ObjectResult>(result).StatusCode);
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(queued!));
+        Assert.True(base64.Length <= 64 * 1024, $"queue message is {base64.Length} bytes");
+    }
+
+    [Fact]
     public async Task MissingContentType_Returns415()
     {
         var req = HttpRequestHelper.CreatePostRequest(body: ValidAlertPayload, contentType: null!);

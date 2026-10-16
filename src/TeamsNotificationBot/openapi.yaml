@@ -77,6 +77,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
@@ -611,7 +613,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     PayloadTooLarge:
-      description: Request body exceeds 28 KB limit
+      description: Request body exceeds the size limit (28 KB; 256 KB on /v1/alert)
       content:
         application/problem+json:
           schema:
