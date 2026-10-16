@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.3.0...teams-notifier-function-app-v2.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **release:** publish no artifacts from a run that isn't the release commit's ([50fe775](https://github.com/dsb-norge/teams-notifier-function-app/commit/50fe7752b0b921a940f643cab0f2fa9e2679b683))
+
 ## [2.3.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.3...teams-notifier-function-app-v2.3.0) (2026-10-16)
 
 
