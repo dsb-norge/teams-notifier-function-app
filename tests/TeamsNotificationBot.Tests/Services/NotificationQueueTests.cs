@@ -93,6 +93,53 @@ public class NotificationQueueTests
 
     private static int Base64Length(string text) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(text)).Length;
 
+    [Theory]
+    [InlineData("", 0)]
+    [InlineData("a", 4)]
+    [InlineData("abc", 4)]
+    [InlineData("abcd", 8)]
+    [InlineData("\u00e6\u00f8", 8)] // four UTF-8 bytes
+    public void EncodedSize_IsTheBase64LengthOfTheUtf8(string json, int expected)
+    {
+        Assert.Equal(expected, NotificationQueue.EncodedSize(json));
+        Assert.Equal(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)).Length, expected);
+    }
+
+    [Fact]
+    public async Task Enqueue_AMessageAtTheLimit_IsQueued()
+    {
+        _queueClient.Setup(q => q.SendMessageAsync(It.IsAny<string>()))
+            .ReturnsAsync(Mock.Of<Response<SendReceipt>>());
+        var message = MessageOfEncodedSize(NotificationQueue.MaxEncodedMessageBytes);
+
+        await _queue.EnqueueAsync(message);
+
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Enqueue_AMessageOverTheLimit_Throws_BeforeRecordingOrQueuingAnything()
+    {
+        var message = MessageOfEncodedSize(NotificationQueue.MaxEncodedMessageBytes + 4);
+
+        var ex = await Assert.ThrowsAsync<QueueMessageTooLargeException>(() => _queue.EnqueueAsync(message));
+
+        Assert.Equal(NotificationQueue.MaxEncodedMessageBytes + 4, ex.EncodedBytes);
+        _records.VerifyNoOtherCalls();
+        _queueClient.Verify(q => q.SendMessageAsync(It.IsAny<string>()), Times.Never);
+        _events.VerifyNoOtherCalls();
+    }
+
+    /// <summary>A text message whose queue message, Base64-encoded, is exactly <paramref name="encoded"/> bytes.</summary>
+    private static QueueMessage MessageOfEncodedSize(int encoded)
+    {
+        var message = new QueueMessage { MessageId = "msg-7", Message = "" };
+        var empty = System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(message, NotificationQueue.EnvelopeOptions));
+        message.Message = new string('x', encoded / 4 * 3 - empty);
+        Assert.Equal(encoded, NotificationQueue.EncodedSize(JsonSerializer.Serialize(message, NotificationQueue.EnvelopeOptions)));
+        return message;
+    }
+
     [Fact]
     public async Task Enqueue_WhenQueueFails_RemovesTheRecord_Throws_AndEmitsNoQueuedEvent()
     {

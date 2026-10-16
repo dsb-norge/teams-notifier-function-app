@@ -613,7 +613,9 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     PayloadTooLarge:
-      description: Request body exceeds the size limit (28 KB; 256 KB on /v1/alert)
+      description: >-
+        Request body exceeds the size limit (28 KB; 256 KB on /v1/alert), or the message would
+        be too large for the queue once encoded (/v1/notify and /v1/send)
       content:
         application/problem+json:
           schema:

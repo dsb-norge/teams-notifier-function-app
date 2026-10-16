@@ -12,7 +12,8 @@ public interface INotificationQueue
     /// <summary>
     /// Records <paramref name="message"/> as queued, then serializes and queues it. Throws what
     /// the record store or the queue client throws; a message that wasn't queued must never be
-    /// reported as queued.
+    /// reported as queued. A message too large for the queue throws
+    /// <see cref="QueueMessageTooLargeException"/> before anything is recorded.
     /// </summary>
     Task EnqueueAsync(QueueMessage message);
 

@@ -42,6 +42,16 @@ public static class ApiResponse
             "conversation the alias should post to.",
             instance, correlationId);
 
+    /// <summary>
+    /// A request within the body limit whose message is still too large for the queue: an
+    /// Adaptive Card made mostly of escaped characters, which the queue message escapes again.
+    /// </summary>
+    public static IActionResult QueueMessageTooLarge(int encodedBytes, string instance, string? correlationId) =>
+        Problem(413, "Payload Too Large",
+            $"The message would be {encodedBytes} bytes in the queue, over its limit of " +
+            $"{Services.NotificationQueue.MaxEncodedMessageBytes}. Send a smaller message.",
+            instance, correlationId);
+
     public static async Task WriteProblemAsync(
         HttpResponse response,
         int status,

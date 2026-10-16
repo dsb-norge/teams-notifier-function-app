@@ -169,7 +169,7 @@ Problem Details format. The exception is `401`, which the platform returns witho
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint, or an alias whose conversation the bot no longer has (the bot was removed from that team or chat) |
 | 409 | Conflict — another request with the same `Idempotency-Key` is still being processed, or `replyTo`/`update` refers to a message sent to another alias |
-| 413 | Payload Too Large — request body exceeds 28 KB (256 KB on `/v1/alert`) |
+| 413 | Payload Too Large — request body exceeds 28 KB (256 KB on `/v1/alert`), or the message is too large for the queue |
 | 415 | Unsupported Media Type — Content-Type is not `application/json` |
 | 429 | Too Many Requests — rate limit exceeded |
 | 500 | Internal Server Error — unexpected failure |
@@ -849,7 +849,11 @@ curl -s -X POST \
 
 Requests exceeding the body limit receive a `413 Payload Too Large` response. The alert
 endpoint accepts the common alert schema's documented maximum of 256 KB, since it queues the
-card it builds rather than the body; an action group doesn't retry a 413. A request
+card it builds rather than the body; an action group doesn't retry a 413. A `/v1/notify` or
+`/v1/send` request within the limit gets a 413 too when its message would still be over
+Storage's 64 KB in the queue, Base64-encoded: the queue message escapes the message's quotes
+and backslashes once more, so an Adaptive Card made mostly of escaped characters can about
+double. Ordinary cards and text fit with room to spare. A request
 whose `metadata` or `mentions` breaks a limit receives `400 Bad Request`.
 
 Each `metadata` entry is copied into the message's delivery events in Application Insights as a
