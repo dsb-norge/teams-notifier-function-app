@@ -169,7 +169,7 @@ Problem Details format. The exception is `401`, which the platform returns witho
 | 403 | Forbidden — valid token but missing required role or feature disabled |
 | 404 | Not Found — unknown alias or endpoint, or an alias whose conversation the bot no longer has (the bot was removed from that team or chat) |
 | 409 | Conflict — another request with the same `Idempotency-Key` is still being processed, or `replyTo`/`update` refers to a message sent to another alias |
-| 413 | Payload Too Large — request body exceeds 28 KB |
+| 413 | Payload Too Large — request body exceeds 28 KB (256 KB on `/v1/alert`) |
 | 415 | Unsupported Media Type — Content-Type is not `application/json` |
 | 429 | Too Many Requests — rate limit exceeded |
 | 500 | Internal Server Error — unexpected failure |
@@ -465,7 +465,7 @@ with the essentials only, and a warning is logged with the message ID.
 
 Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).
 
-**Errors**: 400, 404, 415, 429
+**Errors**: 400, 404, 413, 415, 429
 
 > **Note:** This endpoint is typically called by an Azure Monitor Action Group configured with
 > Entra ID (AAD) authentication, not invoked manually. See the
@@ -836,7 +836,7 @@ curl -s -X POST \
 
 | Constraint | Limit |
 |------------|-------|
-| Maximum request body | 28 KB |
+| Maximum request body | 28 KB; 256 KB on `/v1/alert/{alias}` |
 | Alias name length | 2 -- 50 characters |
 | Alias name format | Lowercase letters, digits, hyphens. Must start and end with a letter or digit. |
 | Metadata entries | At most 10 |
@@ -847,7 +847,9 @@ curl -s -X POST \
 | Mention keys | 1 -- 64 characters: letters, digits, `.`, `_`, `-` |
 | Mention names | 1 -- 256 characters, without `<`, `>` or control characters |
 
-Requests exceeding the 28 KB body limit receive a `413 Payload Too Large` response. A request
+Requests exceeding the body limit receive a `413 Payload Too Large` response. The alert
+endpoint accepts the common alert schema's documented maximum of 256 KB, since it queues the
+card it builds rather than the body; an action group doesn't retry a 413. A request
 whose `metadata` or `mentions` breaks a limit receives `400 Bad Request`.
 
 Each `metadata` entry is copied into the message's delivery events in Application Insights as a
