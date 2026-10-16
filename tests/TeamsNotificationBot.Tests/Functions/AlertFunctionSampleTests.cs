@@ -84,6 +84,10 @@ public class AlertFunctionSampleTests
                 or "defaultLanguageTitle" or "defaultLanguageContent" ||
             (segment.StartsWith("linkTo", StringComparison.OrdinalIgnoreCase) && segment.EndsWith("API", StringComparison.OrdinalIgnoreCase))));
 
+        // HTML in a value (Service Health's communication) is shown as text.
+        Assert.DoesNotContain(details.EnumerateArray().Select(f => f.GetProperty("value").GetString()!),
+            v => v.Contains("<p>", StringComparison.OrdinalIgnoreCase));
+
         // A sample with custom properties shows them.
         var hasCustom = payload.TryGetProperty("customProperties", out var custom) && custom.ValueKind == JsonValueKind.Object;
         Assert.Equal(hasCustom, body.Any(b => b.TryGetProperty("text", out var t) && t.GetString() == "Custom properties"));

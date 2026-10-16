@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -274,7 +275,7 @@ public static partial class AlertCardBuilder
         {
             title = Breakable(Plain(f.Title, MaxTitleLength)),
             // A link isn't cut: cut short, it would lead nowhere.
-            value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(Timestamp(f.Value), MaxValueLength)
+            value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(Timestamp(TextFromHtml(f.Value)), MaxValueLength)
         }).ToList()
     };
 
@@ -292,6 +293,33 @@ public static partial class AlertCardBuilder
     /// </summary>
     private static string Breakable(string path) =>
         path.Replace(".", ".\u200B", StringComparison.Ordinal).Replace("[", "\u200B[", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Text that is HTML, such as Service Health's <c>communication</c>, as plain text: a paragraph,
+    /// line or list item starts on a line of its own (HTML may leave out their end tags, so both
+    /// ends count), the other tags go, and entities are decoded. Only tags of common HTML elements
+    /// count, written as HTML writes them: no space after the <c>&lt;</c>, and the name ends at a space,
+    /// <c>/</c> or <c>&gt;</c>. So <c>List&lt;string&gt;</c>, <c>Dictionary&lt;A,B&gt;</c>, <c>&lt;a:Status&gt;</c> or
+    /// <c>a &lt; b &gt; c</c> isn't taken for HTML, and text without such a tag is returned as it is. A
+    /// quoted attribute value is part of its tag, angle brackets and all.
+    /// </summary>
+    internal static string TextFromHtml(string text)
+    {
+        if (!HtmlTag().IsMatch(text))
+            return text;
+
+        // One pass over whole tags, so a tag-like text inside an attribute value is never matched
+        // on its own; each tag becomes a line break or nothing.
+        var plain = WebUtility.HtmlDecode(HtmlTag().Replace(text, tag => LineBreakTag().IsMatch(tag.Value) ? "\n" : ""));
+        return string.Join("\n", plain.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0));
+    }
+
+    [GeneratedRegex(@"</?(?:p|br|div|span|a|b|i|u|em|strong|ul|ol|li|table|thead|tbody|tr|td|th|h[1-6])(?=[\s/>])(?:[^<>""']|""[^""]*""|'[^']*')*>", RegexOptions.IgnoreCase)]
+    private static partial Regex HtmlTag();
+
+    /// <summary>Whether a tag <see cref="HtmlTag"/> matched starts a line: a line break, or either end of a block.</summary>
+    [GeneratedRegex(@"^</?(?:br|p|div|li|tr|h[1-6])(?=[\s/>])", RegexOptions.IgnoreCase)]
+    private static partial Regex LineBreakTag();
 
     /// <summary>
     /// An ISO 8601 date and time with a zone, as UTC: <c>2026-10-15 01:20:42 UTC</c>. Teams shows an

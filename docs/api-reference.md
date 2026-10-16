@@ -432,6 +432,8 @@ dot, and a title copied from the card carries those along. On top of that:
   (`condition.allOf.dimensions.Computer`). A list of plain values becomes one fact, and a list
   with one item gets no index.
 - Nulls and empty values are left out.
+- A value that is HTML, such as Service Health's `communication`, is shown as text: a paragraph,
+  line break or list item starts a new line, other tags are dropped and entities decoded.
 - A date and time with a zone (ISO 8601) is shown in UTC, as `2026-10-15 01:20:42 UTC`; so is the
   **Fired** time. Teams would show it as `10/15/2026 01:20:42`, without its zone, next to a post
   time in the reader's own zone.
