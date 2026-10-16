@@ -285,6 +285,15 @@ This project uses [release-please](https://github.com/googleapis/release-please)
 3. **When the release PR is merged**, release-please creates a GitHub Release with a git tag.
 4. **The release workflow** builds the function app, creates signed [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for the ZIP and `app-requirements.json`, and uploads three artifacts to the release.
 
+GitHub now and then drops the push event of a merge: the release PR is merged, but no workflow
+runs for its commit, so there is no tag and no release. Nothing is lost. The merged PR keeps its
+`autorelease: pending` label, and on the next push to `main` release-please finds it, tags the
+release PR's own commit and publishes the release. The release workflow checks out that tag, so
+the artifacts are built from the release commit whatever has landed since. Merge any PR to get
+there; don't create the tag or the release by hand. Check with
+`gh api "repos/dsb-norge/teams-notifier-function-app/actions/runs?head_sha=<sha>" -q .total_count`:
+0 a few minutes after the merge means the event was dropped.
+
 ### Commit messages and version bumps
 
 release-please determines the version bump from your commit message prefix:
