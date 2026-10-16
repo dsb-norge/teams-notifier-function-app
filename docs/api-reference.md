@@ -393,14 +393,19 @@ identified by `{alias}`. The request body must conform to the
 }
 ```
 
-The bot renders alerts as color-coded Adaptive Cards based on severity:
+The bot renders alerts as Adaptive Cards whose title is coloured by severity while the alert
+fires, and green once it is resolved:
 
-| Severity | Color |
-|----------|-------|
-| Sev0, Sev1 | Red (Attention) |
-| Sev2 | Yellow (Warning) |
-| Sev3 | Blue (Accent) |
-| Sev4 and others | Green (Good) |
+| Condition and severity | Color |
+|------------------------|-------|
+| Fired, Sev0 or Sev1 | Red (Attention) |
+| Fired, Sev2 | Yellow (Warning) |
+| Fired, Sev3 | Blue (Accent) |
+| Fired, Sev4 or no severity | Default text colour |
+| Resolved, any severity | Green (Good) |
+
+Activity log alert rules have no severity setting, so their alerts, failures included, always
+arrive as Sev4.
 
 Essentials that Azure leaves out or sends as null are left off the card. A budget alert, for
 example, has no `alertRule`, `severity` or `signalType`; its card is titled with the

@@ -9,9 +9,9 @@ public static class AlertCardBuilder
     {
         var essentials = alert.Data?.Essentials ?? new AlertEssentials();
         var severity = essentials.Severity;
-        var color = GetSeverityColor(severity);
-        var conditionEmoji = string.Equals(essentials.MonitorCondition, "Resolved", StringComparison.OrdinalIgnoreCase)
-            ? "\u2705" : "\ud83d\udea8";
+        var resolved = string.Equals(essentials.MonitorCondition, "Resolved", StringComparison.OrdinalIgnoreCase);
+        var color = GetTitleColor(severity, resolved);
+        var conditionEmoji = resolved ? "\u2705" : "\ud83d\udea8";
 
         // Azure leaves fields out or sends them as null (a budget alert has no rule, severity
         // or signal type); a fact without a value is noise, so it is left out.
@@ -85,11 +85,16 @@ public static class AlertCardBuilder
         return JsonSerializer.Serialize(card);
     }
 
-    private static string GetSeverityColor(string? severity) => severity switch
+    /// <summary>
+    /// Green means it's over: only a resolved alert gets it. A firing one is coloured by
+    /// severity, and Sev4 or no severity stays the default colour. Activity log alert rules
+    /// have no severity setting and always arrive as Sev4, failures included.
+    /// </summary>
+    private static string GetTitleColor(string? severity, bool resolved) => resolved ? "Good" : severity switch
     {
         "Sev0" or "Sev1" => "Attention",
         "Sev2" => "Warning",
         "Sev3" => "Accent",
-        _ => "Good"
+        _ => "Default"
     };
 }

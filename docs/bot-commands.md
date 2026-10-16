@@ -524,15 +524,15 @@ formatting, images, action buttons, and other elements defined by the
 ### Azure Monitor alert cards
 
 Alerts received through the `/v1/alert/{alias}` endpoint are rendered as structured Adaptive Cards
-with color-coded severity indicators:
+whose title is coloured by severity while the alert fires, and green once it is resolved:
 
-| Severity | Color | Use case |
-|----------|-------|----------|
+| Severity | Color while firing | Use case |
+|----------|--------------------|----------|
 | Sev0 | Red (Attention) | Critical — immediate action required |
 | Sev1 | Red (Attention) | Error — urgent attention needed |
 | Sev2 | Yellow (Warning) | Warning — investigate soon |
 | Sev3 | Blue (Accent) | Informational |
-| Sev4 | Green (Good) | Verbose |
+| Sev4 or none | Default text colour | Verbose; every activity log alert arrives as Sev4 |
 
 The card displays the alert rule name, severity, signal type, fired time, and affected resources
 extracted from the Common Alert Schema payload.

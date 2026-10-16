@@ -12,8 +12,9 @@ public class AlertCardBuilderTests
     [InlineData("Sev1", "Attention")]
     [InlineData("Sev2", "Warning")]
     [InlineData("Sev3", "Accent")]
-    [InlineData("Sev4", "Good")]
-    public void SeverityColorMapping(string severity, string expectedColor)
+    [InlineData("Sev4", "Default")]
+    [InlineData(null, "Default")]
+    public void SeverityColorMapping(string? severity, string expectedColor)
     {
         var alert = CreateAlert(severity: severity);
 
@@ -23,6 +24,19 @@ public class AlertCardBuilderTests
         var body = doc.RootElement.GetProperty("body");
         var titleBlock = body[0];
         Assert.Equal(expectedColor, titleBlock.GetProperty("color").GetString());
+    }
+
+    [Theory]
+    [InlineData("Sev0")]
+    [InlineData("Sev2")]
+    [InlineData("Sev4")]
+    public void ResolvedAlert_IsGreenWhateverItsSeverity(string severity)
+    {
+        var alert = CreateAlert(severity: severity, monitorCondition: "Resolved");
+
+        var body = JsonDocument.Parse(AlertCardBuilder.Build(alert)).RootElement.GetProperty("body");
+
+        Assert.Equal("Good", body[0].GetProperty("color").GetString());
     }
 
     [Fact]
@@ -137,7 +151,7 @@ public class AlertCardBuilderTests
 
     private static CommonAlertPayload CreateAlert(
         string alertRule = "TestRule",
-        string severity = "Sev2",
+        string? severity = "Sev2",
         string monitorCondition = "Fired",
         string? description = null,
         string? targetResourceId = null)
