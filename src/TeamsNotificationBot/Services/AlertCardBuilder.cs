@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -98,7 +99,7 @@ public static partial class AlertCardBuilder
         Fact("Severity", severity);
         Fact("Condition", essentials.MonitorCondition);
         Fact("Signal Type", essentials.SignalType);
-        Fact("Fired", essentials.FiredDateTime);
+        Fact("Fired", essentials.FiredDateTime is { } fired ? Timestamp(fired) : null);
         Fact("Monitoring Service", essentials.MonitoringService);
 
         // Without a rule name, the monitoring service ("CostAlerts") is the best name there is.
@@ -273,7 +274,7 @@ public static partial class AlertCardBuilder
         {
             title = Plain(f.Title, MaxTitleLength),
             // A link isn't cut: cut short, it would lead nowhere.
-            value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(f.Value, MaxValueLength)
+            value = PortalLinkTarget(f.Value) is { } target ? $"[Open in Azure portal]({target})" : Plain(Timestamp(f.Value), MaxValueLength)
         }).ToList()
     };
 
@@ -283,6 +284,22 @@ public static partial class AlertCardBuilder
     /// a resource name), and it must not render as a link whose target differs from its text.
     /// </summary>
     private static string Plain(string text, int max) => Truncate(text, max).Replace("](", "] (", StringComparison.Ordinal);
+
+    /// <summary>
+    /// An ISO 8601 date and time with a zone, as UTC: <c>2026-10-15 01:20:42 UTC</c>. Teams shows an
+    /// ISO timestamp in a card as <c>10/15/2026 01:20:42</c>, without the zone, next to a post time
+    /// in the reader's own zone; the updown card writes times this way for the same reason.
+    /// Anything else (a date alone, a time without a zone, another format, a number) is returned
+    /// as it is: a lenient parse would read <c>3.0</c> as a date.
+    /// </summary>
+    internal static string Timestamp(string text) =>
+        IsoTimestamp().IsMatch(text) &&
+        DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+            ? time.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)
+            : text;
+
+    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})\z", RegexOptions.IgnoreCase)]
+    private static partial Regex IsoTimestamp();
 
     private static string Truncate(string text, int max)
     {

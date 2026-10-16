@@ -458,12 +458,55 @@ public class AlertCardBuilderTests
         Assert.Equal(url, Assert.Single(Facts(card.Details!.Value[0])).Value);
     }
 
+    [Theory]
+    [InlineData("2025-04-15T11:26:21.386Z", "2025-04-15 11:26:21 UTC")]
+    [InlineData("2019-03-22T13:56:31.2917159+00:00", "2019-03-22 13:56:31 UTC")]
+    [InlineData("2026-10-16T03:20:42+02:00", "2026-10-16 01:20:42 UTC")]
+    [InlineData("2026-10-16T01:20z", "2026-10-16 01:20:00 UTC")]
+    [InlineData("2026-10-16T01:20:42.5-05:30", "2026-10-16 06:50:42 UTC")]
+    public void IsoTimestampsWithAZone_AreShownInUtc(string text, string expected)
+    {
+        Assert.Equal(expected, AlertCardBuilder.Timestamp(text));
+    }
+
+    [Theory]
+    [InlineData("2022-11-01")]                    // a date alone
+    [InlineData("2026-10-16T01:20:42")]           // no zone: can't be told as UTC
+    [InlineData("3/22/2019 1:36:31 PM")]
+    [InlineData("Wed, 21 Aug 2019 16:17:47 GMT")]
+    [InlineData("3.0")]
+    [InlineData("2026-13-45T25:61:00Z")]          // looks right, isn't a time
+    [InlineData("since 2026-10-16T01:20:42Z")]
+    [InlineData("2026-10-16T01")]
+    [InlineData("2026-10-16T01:20:4Z")]
+    [InlineData("2026-10-16 01:20:42Z")]
+    [InlineData("2026-10-16T01:20:42.Z")]
+    [InlineData("2026-10-16T01:20:42+0200")]
+    [InlineData("20261016T012042Z")]
+    [InlineData("2026-10-16T01:20:42Z trailing")]
+    [InlineData("2026-10-16T01:20:42+02")]
+    [InlineData("2026-10-16T01:20:42-")]
+    [InlineData("2026-10-16T01:20:")]
+    public void AnythingElse_IsLeftAsItIs(string text)
+    {
+        Assert.Equal(text, AlertCardBuilder.Timestamp(text));
+    }
+
+    [Fact]
+    public void FiredAndContextTimestamps_AreShownInUtc()
+    {
+        var card = Card(alertContext: """{ "eventTimestamp": "2026-10-16T03:20:42.1234567+02:00", "threshold": "3.0" }""");
+
+        Assert.Equal("2026-02-14 12:00:00 UTC", Facts(card.FactSets[0]).Single(f => f.Title == "Fired").Value);
+        Assert.Equal([("eventTimestamp", "2026-10-16 01:20:42 UTC"), ("threshold", "3.0")], Facts(card.Details!.Value[0]));
+    }
+
     /// <summary>A payload with the given sections, as the alert function reads it.</summary>
     private static CommonAlertPayload Payload(string? customProperties, string? alertContext)
     {
         var data = new JsonObject
         {
-            ["essentials"] = new JsonObject { ["alertRule"] = "rule", ["severity"] = "Sev2", ["monitorCondition"] = "Fired" }
+            ["essentials"] = new JsonObject { ["alertRule"] = "rule", ["severity"] = "Sev2", ["monitorCondition"] = "Fired", ["firedDateTime"] = "2026-02-14T12:00:00Z" }
         };
         if (customProperties is not null)
             data["customProperties"] = JsonNode.Parse(customProperties);
