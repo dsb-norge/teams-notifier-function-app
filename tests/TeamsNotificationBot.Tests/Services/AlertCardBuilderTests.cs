@@ -468,6 +468,69 @@ public class AlertCardBuilderTests
     }
 
     [Theory]
+    [InlineData("<p>Hello</p><p>World &amp; more</p>", "Hello\nWorld & more")]
+    [InlineData("Line one<br/>Line two<BR >three", "Line one\nLine two\nthree")]
+    [InlineData("<ul>\r\n<li>a</li>\r\n<li>b</li></ul>", "a\nb")]
+    [InlineData("<a href=\"https://example.com\">the status page</a> has more", "the status page has more")]
+    [InlineData("<p>Thisisatest</p>", "Thisisatest")]
+    [InlineData("<P>Upper case</P>", "Upper case")]
+    [InlineData("<span class=\"x\">a</span><div>b</div>", "a\nb")]
+    [InlineData("<p>First<p>Second", "First\nSecond")]                      // end tags left out
+    [InlineData("<ul><li>Storage<li>Compute</ul>", "Storage\nCompute")]
+    [InlineData("<p title=\"load > 90%\">Degraded</p>", "Degraded")]          // brackets in quoted attributes
+    [InlineData("<a title='a < b'>Status</a> page", "Status page")]
+    [InlineData("<p title=\"x\">a</p><p class='y > z'>b</p>", "a\nb")]
+    [InlineData("<a title=\"Use <p for paragraphs\">Service is degraded <span title=\"load > 90%\">until 02:00</span></a>", "Service is degraded until 02:00")]
+    [InlineData("<div data-x=1 class=\"a\" id='b'>one</div><BR class='c'/>two", "one\ntwo")]
+    [InlineData("<LI>upper</LI><TD title=\"t\">cell</TD>", "upper\ncell")]
+    [InlineData("<span title=\"'quoted'\" lang='\"x\"'>mixed</span>", "mixed")]
+    [InlineData("<h3 >Spaced name end</h3 ><em/>", "Spaced name end")]
+    [InlineData("<td>a</td><th>b</th><tbody></tbody><thead></thead><ol><u>c</u></ol>", "abc")]
+    [InlineData("<h2>Title</h2><table><tr><td>x</td><td>y</td></tr></table>", "Title\nxy")]
+    [InlineData("<i>em</i> &lt;tag&gt;", "em <tag>")]
+    [InlineData("<strong>Bold</strong><br>next", "Bold\nnext")]
+    public void HtmlText_BecomesPlainText(string html, string expected)
+    {
+        Assert.Equal(expected, AlertCardBuilder.TextFromHtml(html));
+    }
+
+    [Theory]
+    [InlineData("List<string> was null")]
+    [InlineData("a < b > c")]
+    [InlineData("1 &amp; 2")]
+    [InlineData("<MESSAGE>")]
+    [InlineData("<at>someone</at>")]
+    [InlineData("<pre>code</pre>")]
+    [InlineData("<b")]
+    [InlineData("</>")]
+    [InlineData("< p>spaced</ p>")]
+    [InlineData("<brand>name</brand>")]
+    [InlineData("Dictionary<A,B> was null")]
+    [InlineData("<a:Status>Failed</a:Status>")]
+    [InlineData("<p-x>not an element</p-x>")]
+    [InlineData("<p title=\"unterminated>text")]
+    [InlineData("<span title='unterminated>text")]
+    [InlineData("<br title=\"a\"")]
+    [InlineData("<li class=x")]
+    [InlineData("text <br/")]
+    [InlineData("text </p")]
+    [InlineData("<div")]
+    public void TextThatIsNotHtml_IsLeftAsItIs(string text)
+    {
+        Assert.Equal(text, AlertCardBuilder.TextFromHtml(text));
+    }
+
+    [Fact]
+    public void HtmlInTheContext_IsShownAsText()
+    {
+        var card = Card(alertContext: """{ "properties": { "communication": "<p>Starting at 01:00 UTC, &quot;Storage&quot; is degraded.</p><p>Next update in 60 minutes.</p>" } }""");
+
+        Assert.Equal(
+            [("properties.communication", "Starting at 01:00 UTC, \"Storage\" is degraded.\nNext update in 60 minutes.")],
+            Facts(card.Details!.Value[0]));
+    }
+
+    [Theory]
     [InlineData("2025-04-15T11:26:21.386Z", "2025-04-15 11:26:21 UTC")]
     [InlineData("2019-03-22T13:56:31.2917159+00:00", "2019-03-22 13:56:31 UTC")]
     [InlineData("2026-10-16T03:20:42+02:00", "2026-10-16 01:20:42 UTC")]
