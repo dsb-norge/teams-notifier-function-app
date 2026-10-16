@@ -102,7 +102,9 @@ and at the end of every delivery attempt),
 completing and releasing an idempotency claim (`IdempotencyService`, after the message was queued or
 while the request's own failure propagates), delivery-record writes after a send or a failure
 (`DeliveryRecords`), reading the check-in's optional body (it only labels the source; anything
-unreadable means `unknown`), and best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
+unreadable means `unknown`), rendering an alert card's custom properties and context
+(`AlertCardBuilder`: the card then goes out with its essentials, since Azure doesn't retry the 500
+the alert would otherwise get), and best-effort test teardown are all side concerns. So is the `delete-post` command's failure path:
 whatever makes `DeleteActivityAsync` fail, the user gets a reply instead of the turn failing
 into the `BotMessages` 500 envelope. Each catches broadly and continues, logging at `Debug`/`Warning`; the check-in body
 parse and test teardown are silent, since a failure there carries nothing worth logging.

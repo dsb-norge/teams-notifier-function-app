@@ -57,6 +57,36 @@ public class AlertFunctionSampleTests
         var (isValid, error) = AdaptiveCardValidator.Validate(card);
         Assert.True(isValid, error);
         AssertNoEmptyText(card);
+        Assert.True(AlertCardBuilder.QueuedSize(queued.Message) <= AlertCardBuilder.MaxQueuedCardBytes);
+    }
+
+    [Theory]
+    [MemberData(nameof(AzureMonitorAlertSamples.Files), MemberType = typeof(AzureMonitorAlertSamples))]
+    public async Task DocumentedSample_ShowsItsContext_AndNothingThatIsHidden(string file)
+    {
+        var payload = JsonDocument.Parse(AzureMonitorAlertSamples.Payload(file)).RootElement.GetProperty("data");
+        var req = HttpRequestHelper.CreatePostRequest(body: AzureMonitorAlertSamples.Payload(file));
+
+        await _function.Run(req, "ops");
+
+        var body = JsonDocument.Parse(JsonSerializer.Deserialize<QueueMessage>(Assert.Single(_queued))!.Message)
+            .RootElement.GetProperty("body").EnumerateArray().ToList();
+
+        // Every documented alert has a context, and it is behind the button.
+        var details = Assert.Single(body, b => b.GetProperty("type").GetString() == "ActionSet")
+            .GetProperty("actions")[0].GetProperty("card").GetProperty("body")[0].GetProperty("facts");
+        Assert.NotEqual(0, details.GetArrayLength());
+
+        // No title anywhere on the card names a hidden field.
+        var titles = details.EnumerateArray().Select(f => f.GetProperty("title").GetString()!);
+        Assert.DoesNotContain(titles, t => t.Split('.', '[').Any(segment =>
+            segment is "claims" or "httpRequest" or "authorization" or "SearchResults" or "impactedServicesTableRows"
+                or "defaultLanguageTitle" or "defaultLanguageContent" ||
+            (segment.StartsWith("linkTo", StringComparison.OrdinalIgnoreCase) && segment.EndsWith("API", StringComparison.OrdinalIgnoreCase))));
+
+        // A sample with custom properties shows them.
+        var hasCustom = payload.TryGetProperty("customProperties", out var custom) && custom.ValueKind == JsonValueKind.Object;
+        Assert.Equal(hasCustom, body.Any(b => b.TryGetProperty("text", out var t) && t.GetString() == "Custom properties"));
     }
 
     /// <summary>

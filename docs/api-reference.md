@@ -411,6 +411,47 @@ Essentials that Azure leaves out or sends as null are left off the card. A budge
 example, has no `alertRule`, `severity` or `signalType`; its card is titled with the
 `monitoringService` instead.
 
+**What the card shows.** Below the essentials, the description and the target:
+
+1. **Custom properties**, when the alert rule sets any, under their own heading.
+2. A **Show details** button that opens the `alertContext`: what caused the alert, such as a
+   metric's value and threshold, a log query's dimensions or an activity log event.
+
+The bot knows the common alert schema, not what any alert is about, so both sections are
+flattened the same way for every alert type. Each field becomes a fact titled with its path
+(`condition.allOf.metricValue`). On top of that:
+
+- A string that holds escaped JSON is unpacked, up to three levels deep. An activity log
+  event's `properties.statusMessage` becomes `properties.statusMessage.error.message` and its
+  siblings.
+- A list of `{ "name": …, "value": … }` objects becomes one fact per name
+  (`condition.allOf.dimensions.Computer`). A list of plain values becomes one fact, and a list
+  with one item gets no index.
+- Nulls and empty values are left out.
+- In the context only, a few fields are hidden wherever they appear, because they hold
+  personal data or are too large, or because they repeat what the card already shows:
+  `claims`, `httpRequest`, `authorization`, `SearchResults`, `impactedServicesTableRows`,
+  `defaultLanguageTitle`, `defaultLanguageContent`, and the Log Analytics API links
+  (`linkTo…API`). Custom properties are shown as the rule's author wrote them.
+- Values longer than 500 characters and titles longer than 100 are cut. Markdown link
+  syntax in a value is broken up, so payload text never renders as a link.
+- At most 20 custom properties and 40 context fields are shown. The card is also kept under
+  30 KB, measured as it sits in the queue message, so the context is trimmed first if needed.
+  A line under the facts counts what was left out.
+- The essentials are cut the same way: their values at 500 characters, the description at
+  2,000. Should they alone outgrow the budget, which only a payload built to be odd does,
+  they are cut to 100 characters (500 for the description) and the card carries nothing else.
+
+If a field matters enough to be seen without opening the details, put it in a custom
+property on the alert rule: Azure fills it in from the payload, for example
+`reason = ${data.alertContext.properties.statusMessage}` on an activity log alert. The card
+unpacks it like any other field. See Microsoft's
+[custom properties](https://learn.microsoft.com/azure/azure-monitor/alerts/alerts-create-activity-log-alert-rule#configure-alert-rule-details)
+documentation.
+
+If the custom properties or the context can't be rendered for some reason, the card goes out
+with the essentials only, and a warning is logged with the message ID.
+
 **Response — 202 Accepted**
 
 Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).
