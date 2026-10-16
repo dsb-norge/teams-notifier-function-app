@@ -1,0 +1,45 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.AlertsManagement/alerts/eeeeeeee-4444-5555-6666-ffffffffffff",
+      "alertRule": "test-ResourceHealthAlertRule",
+      "severity": "Sev4",
+      "signalType": "Activity Log",
+      "monitorCondition": "Fired",
+      "monitoringService": "Resource Health",
+      "alertTargetIDs": [
+        "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourcegroups/test-RG/providers/microsoft.compute/virtualmachines/test-VM"
+      ],
+      "configurationItems": [
+        "test-VM"
+      ],
+      "originAlertId": "dddd3333-ee44-5555-66ff-777777aaaaaa_123456789012345678901234567890ab",
+      "firedDateTime": "2025-04-15T18:19:45.304Z",
+      "description": "Alert rule description",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "channels": "Admin, Operation",
+      "correlationId": "cccc2222-dd33-4444-55ee-666666ffffff",
+      "eventSource": "ResourceHealth",
+      "eventTimestamp": "2025-04-15T18:19:45.304Z",
+      "eventDataId": "dddd3333-ee44-5555-66ff-777777aaaaaa",
+      "level": "Informational",
+      "operationName": "Microsoft.Resourcehealth/healthevent/Activated/action",
+      "operationId": "dddd3333-ee44-5555-66ff-777777aaaaaa",
+      "properties": {
+        "title": "Rebooted by user",
+        "details": null,
+        "currentHealthStatus": "Unavailable",
+        "previousHealthStatus": "Available",
+        "type": "Downtime",
+        "cause": "UserInitiated"
+      },
+      "status": "Active",
+      "submissionTimestamp": "2025-04-15T18:19:45.304Z",
+      "Activity Log Event Description": null
+    }
+  }
+}

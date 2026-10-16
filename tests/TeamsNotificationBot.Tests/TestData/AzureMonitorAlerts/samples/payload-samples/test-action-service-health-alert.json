@@ -1,0 +1,68 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.AlertsManagement/alerts/1234abcd5678efgh1234abcd5678efgh1234abcd5678efgh1234abcd5678efgh",
+      "alertRule": "test-ServiceHealthAlertRule",
+      "severity": "Sev4",
+      "signalType": "ActivityLog",
+      "monitorCondition": "Fired",
+      "monitoringService": "ServiceHealth",
+      "alertTargetIDs": [
+        "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e"
+      ],
+      "originAlertId": "eeeeeeee-4444-5555-6666-ffffffffffff",
+      "firedDateTime": "2025-04-15T18:20:36.256Z",
+      "description": "Alertruledescription",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "authorization": null,
+      "channels": 1,
+      "claims": null,
+      "caller": null,
+      "correlationId": "aaaa0000-bb11-2222-33cc-444444dddddd",
+      "eventSource": 2,
+      "eventTimestamp": "2025-04-15T18:20:36.256Z",
+      "httpRequest": null,
+      "eventDataId": "eeeeeeee-4444-5555-6666-ffffffffffff",
+      "level": 3,
+      "operationName": "Microsoft.ServiceHealth/incident/action",
+      "operationId": "aaaa0000-bb11-2222-33cc-444444dddddd",
+      "properties": {
+        "title": "TestActionGroup-TestServiceHealthAlert",
+        "service": "AzureServiceName",
+        "region": "Global",
+        "communication": "<p>ThisisatestfromServiceHealthAlert</p>",
+        "incidentType": "Incident",
+        "trackingId": "TEST-TTT",
+        "impactStartTime": "2025-04-15T18:20:36.256Z",
+        "impactMitigationTime": "2025-04-15T18:20:36.256Z",
+        "impactedServices": [
+          {
+            "ImpactedRegions": [
+              {
+                "RegionName": "Global"
+              }
+            ],
+            "ServiceName": "AzureServiceName"
+          }
+        ],
+        "impactedServicesTableRows": "<tr><td>Thisisatestfromservicehealthalert</<td>/<tr>",
+        "defaultLanguageTitle": "TestActionGroup-TestServiceHealthAlert",
+        "defaultLanguageContent": "<p>ThisisatestfromServiceHealthAlert</p>",
+        "stage": "Resolved",
+        "communicationId": "11223344556677",
+        "isHIR": "false",
+        "IsSynthetic": "True",
+        "impactType": "SubscriptionList",
+        "version": "0.1.1"
+      },
+      "status": "Resolved",
+      "subStatus": null,
+      "submissionTimestamp": "2025-04-15T18:20:36.256Z",
+      "ResourceType": null
+    }
+  }
+}

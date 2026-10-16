@@ -1,0 +1,236 @@
+{
+  "source": "https://github.com/MicrosoftDocs/azure-monitor-docs/tree/4c54223c9030e68ec232fc94b331d40caa8b1f8b",
+  "license": "MIT, see LICENSE-CODE in this folder (the source repository's LICENSE-CODE)",
+  "essentialsFields": [
+    "alertContextVersion",
+    "alertId",
+    "alertRule",
+    "alertRuleID",
+    "alertTargetIDs",
+    "configurationItems",
+    "description",
+    "essentialsVersion",
+    "firedDateTime",
+    "investigationLink",
+    "monitorCondition",
+    "monitoringService",
+    "originAlertId",
+    "resolvedDateTime",
+    "targetResourceGroup",
+    "targetResourceType",
+    "Severity",
+    "signalType"
+  ],
+  "samples": [
+    {
+      "file": "samples/payload-samples/alert-payload.json",
+      "kind": "payload",
+      "heading": "Sample alert payload",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L18"
+    },
+    {
+      "file": "samples/payload-samples/metric-alert-with-a-static-threshold-platform.json",
+      "kind": "alertContext",
+      "heading": "Metric alert with a static threshold and the monitoringService = `Platform`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L75"
+    },
+    {
+      "file": "samples/payload-samples/metric-alert-with-a-dynamic-threshold-platform.json",
+      "kind": "alertContext",
+      "heading": "Metric alert with a dynamic threshold and the monitoringService = Platform",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L107"
+    },
+    {
+      "file": "samples/payload-samples/metric-alert-for-availability-tests-platform.json",
+      "kind": "alertContext",
+      "heading": "Metric alert for availability tests and the monitoringService = Platform",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L139"
+    },
+    {
+      "file": "samples/payload-samples/log-search-alert-platform.json",
+      "kind": "alertContext",
+      "heading": "Log search alert with monitoringService = Platform",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L174"
+    },
+    {
+      "file": "samples/payload-samples/log-search-alert-application-insights.json",
+      "kind": "alertContext",
+      "heading": "Log search alert with monitoringService = Application Insights",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L248"
+    },
+    {
+      "file": "samples/payload-samples/log-search-alert-log-alerts-v2.json",
+      "kind": "alertContext",
+      "heading": "Log search alert with monitoringService = Log Alerts V2",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L322"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-activity-log-administrative.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with monitoringService = `Activity Log - Administrative`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L368"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-activity-log-policy.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with monitoringService = `Activity Log - Policy`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L394"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-activity-log-autoscale.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with monitoringService = `Activity Log - Autoscale`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L426"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-activity-log-security.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with monitoringService = `Activity Log - Security`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L455"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-servicehealth.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with `monitoringService = ServiceHealth`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L487"
+    },
+    {
+      "file": "samples/payload-samples/activity-log-alert-resourcehealth.json",
+      "kind": "alertContext",
+      "heading": "Activity log alert with monitoringService = `ResourceHealth`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L531"
+    },
+    {
+      "file": "samples/payload-samples/prometheus-alert.json",
+      "kind": "alertContext",
+      "heading": "Sample Prometheus alert",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L558"
+    },
+    {
+      "file": "samples/payload-samples/test-action-activity-log-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Activity log alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L592"
+    },
+    {
+      "file": "samples/payload-samples/test-action-availability-test-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Availability test alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L647"
+    },
+    {
+      "file": "samples/payload-samples/test-action-budget-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Budget alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L701"
+    },
+    {
+      "file": "samples/payload-samples/test-action-cost-budget-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Cost budget alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L745"
+    },
+    {
+      "file": "samples/payload-samples/test-action-forecasted-budget-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Forecasted budget alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L788"
+    },
+    {
+      "file": "samples/payload-samples/test-action-log-alert-v1-metric-measurement.json",
+      "kind": "payload",
+      "heading": "Sample test action `Log alert V1 - Metric measurement`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L843"
+    },
+    {
+      "file": "samples/payload-samples/test-action-log-alert-v1-number-of-results.json",
+      "kind": "payload",
+      "heading": "Sample test action `Log alert V1 - Number of results`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L927"
+    },
+    {
+      "file": "samples/payload-samples/test-action-log-alert-v2.json",
+      "kind": "payload",
+      "heading": "Sample test action `Log alert V2`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1020"
+    },
+    {
+      "file": "samples/payload-samples/test-action-metric-alert-dynamic-threshold.json",
+      "kind": "payload",
+      "heading": "Sample test action `Metric alert - Dynamic threshold`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1086"
+    },
+    {
+      "file": "samples/payload-samples/test-action-metric-alert-static-threshold.json",
+      "kind": "payload",
+      "heading": "Sample test action `Metric alert - Static threshold`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1149"
+    },
+    {
+      "file": "samples/payload-samples/test-action-resource-health-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Resource health alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1211"
+    },
+    {
+      "file": "samples/payload-samples/test-action-service-health-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Service health alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1261"
+    },
+    {
+      "file": "samples/payload-samples/test-action-smart-alert.json",
+      "kind": "payload",
+      "heading": "Sample test action `Smart alert`",
+      "source": "articles/azure-monitor/alerts/alerts-payload-samples.md#L1334"
+    },
+    {
+      "file": "samples/common-schema/alert-payload.json",
+      "kind": "payload",
+      "heading": "Sample alert payload",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L43"
+    },
+    {
+      "file": "samples/common-schema/metric-alert-with-a-static-threshold-platform.json",
+      "kind": "alertContext",
+      "heading": "Sample metric alert with a static threshold when the monitoringService = `Platform`",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L157"
+    },
+    {
+      "file": "samples/common-schema/log-search-alert-log-analytics.json",
+      "kind": "alertContext",
+      "heading": "Sample log search alert when the monitoringService = Log Analytics",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L290"
+    },
+    {
+      "file": "samples/common-schema/log-search-alert-application-insights.json",
+      "kind": "alertContext",
+      "heading": "Sample log search alert when the monitoringService = Application Insights",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L365"
+    },
+    {
+      "file": "samples/common-schema/log-search-alert-log-alerts-v2.json",
+      "kind": "alertContext",
+      "heading": "Sample log search alert when the monitoringService = Log Alerts V2",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L439"
+    },
+    {
+      "file": "samples/common-schema/log-search-alert-simple-log-alert.json",
+      "kind": "alertContext",
+      "heading": "Sample log search alert when the monitoringService = Simple Log Alert",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L483"
+    },
+    {
+      "file": "samples/common-schema/activity-log-alert-activity-log-administrative.json",
+      "kind": "alertContext",
+      "heading": "Sample activity log alert when the monitoringService = Activity Log - Administrative",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L544"
+    },
+    {
+      "file": "samples/common-schema/activity-log-alert-servicehealth.json",
+      "kind": "alertContext",
+      "heading": "Sample activity log alert when the monitoringService = ServiceHealth",
+      "source": "articles/azure-monitor/alerts/alerts-common-schema.md#L663"
+    }
+  ]
+}

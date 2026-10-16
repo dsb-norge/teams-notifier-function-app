@@ -1,0 +1,83 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/providers/Microsoft.AlertsManagement/alerts/eeeeeeee-4444-5555-6666-ffffffffffff",
+      "alertRule": "test-logAlertRule-v1-numResults",
+      "severity": "Sev4",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "monitoringService": "Log Analytics",
+      "alertTargetIDs": [
+        "/subscriptions/aaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e/resourcegroups/test-RG/providers/microsoft.operationalinsights/workspaces/test-logAnalyticsWorkspace"
+      ],
+      "configurationItems": [
+        "test-computer"
+      ],
+      "originAlertId": "22222222-2222-2222-2222-222222222222",
+      "firedDateTime": "2025-04-15T18:04:40.852Z",
+      "description": "Alert rule description",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.1"
+    },
+    "alertContext": {
+      "SearchQuery": "Heartbeat",
+      "SearchIntervalStartTimeUtc": "2025-04-15T18:04:40.852Z",
+      "SearchIntervalEndtimeUtc": "2025-04-15T18:04:40.852Z",
+      "ResultCount": 1,
+      "LinkToSearchResults": "https://portal.azure.com#@cccc2222-dd33-4444-55ee-666666ffffff/blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/source/Alerts.EmailLinks/scope/%7B%22resources%22%3A%5B%7B%22resourceId%22%3A%22%2Fsubscriptions%2Faaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e%2FresourceGroups%2Ftest-RG%2Fproviders%2FMicrosoft.OperationalInsights%2Fworkspaces%2Ftest-logAnalyticsWorkspace%22%7D%5D%7D/q/aBcDeFgHi%2ABCDE%3D%3D/prettify/1/timespan/2021-11-15T15%3a15%3a24.0000000Z%2f2021-11-16T15%3a15%3a24.0000000Z",
+      "LinkToFilteredSearchResultsUI": "https://portal.azure.com#@cccc2222-dd33-4444-55ee-666666ffffff/blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/source/Alerts.EmailLinks/scope/%7B%22resources%22%3A%5B%7B%22resourceId%22%3A%22%2Fsubscriptions%2Faaaa0a0a-bb1b-cc2c-dd3d-eeeeee4e4e4e%2FresourceGroups%2Ftest-RG%2Fproviders%2FMicrosoft.OperationalInsights%2Fworkspaces%2Ftest-logAnalyticsWorkspace%22%7D%5D%7D/q/aBcDeFgHi%2ABCDE%3D%3D/prettify/1/timespan/2021-11-15T15%3a15%3a24.0000000Z%2f2021-11-16T15%3a15%3a24.0000000Z",
+      "LinkToSearchResultsAPI": "https://api.loganalytics.io/v1/workspaces/ffffffff-eeee-dddd-cccc-bbbbbbbbbbb0/query?query=Heartbeat%0A&timespan=2021-11-15T15%3a15%3a24.0000000Z%2f2021-11-16T15%3a15%3a24.0000000Z",
+      "LinkToFilteredSearchResultsAPI": "https://api.loganalytics.io/v1/workspaces/ffffffff-eeee-dddd-cccc-bbbbbbbbbbb0/query?query=Heartbeat%0A&timespan=2021-11-15T15%3a15%3a24.0000000Z%2f2021-11-16T15%3a15%3a24.0000000Z",
+      "SeverityDescription": "Informational",
+      "WorkspaceId": "dddd3333-ee44-5555-66ff-777777aaaaaa",
+      "SearchIntervalDurationMin": "1440",
+      "AffectedConfigurationItems": [
+        "test-computer"
+      ],
+      "AlertType": "Number of results",
+      "IncludeSearchResults": true,
+      "SearchIntervalInMinutes": "1440",
+      "SearchResults": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "TenantId",
+                "type": "string"
+              },
+              {
+                "name": "Computer",
+                "type": "string"
+              },
+              {
+                "name": "TimeGenerated",
+                "type": "datetime"
+              }
+            ],
+            "rows": [
+              [
+                "dddd3333-ee44-5555-66ff-777777aaaaaa",
+                "test-computer",
+                "2025-04-15T18:04:40.852Z"
+              ]
+            ]
+          }
+        ],
+        "dataSources": [
+          {
+            "resourceId": "/subscriptions/ffffffff-eeee-dddd-cccc-bbbbbbbbbbb0/resourcegroups/test-RG/providers/microsoft.operationalinsights/workspaces/test-logAnalyticsWorkspace",
+            "region": "eastus",
+            "tables": [
+              "Heartbeat"
+            ]
+          }
+        ]
+      },
+      "Threshold": 0,
+      "Operator": "Greater Than",
+      "IncludedSearchResults": "True"
+    }
+  }
+}

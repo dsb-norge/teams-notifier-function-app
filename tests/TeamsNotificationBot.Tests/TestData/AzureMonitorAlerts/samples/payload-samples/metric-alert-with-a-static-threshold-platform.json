@@ -1,0 +1,27 @@
+{
+  "alertContext": {
+      "properties": null,
+      "conditionType": "SingleResourceMultipleMetricCriteria",
+      "condition": {
+        "windowSize": "PT5M",
+        "allOf": [
+          {
+            "metricName": "Percentage CPU",
+            "metricNamespace": "Microsoft.Compute/virtualMachines",
+            "operator": "GreaterThan",
+            "threshold": "25",
+            "timeAggregation": "Average",
+            "dimensions": [
+              {
+                "name": "ResourceId",
+                "value": "b1b1b1b1-cccc-dddd-eeee-f2f2f2f2f2f2"
+              }
+            ],
+            "metricValue": 31.1105
+          }
+        ],
+        "windowStartTime": "2019-03-22T13:40:03.064Z",
+        "windowEndTime": "2019-03-22T13:45:03.064Z"
+      }
+    }
+}
