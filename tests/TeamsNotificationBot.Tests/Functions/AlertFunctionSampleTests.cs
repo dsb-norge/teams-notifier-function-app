@@ -56,5 +56,33 @@ public class AlertFunctionSampleTests
         var card = JsonDocument.Parse(queued.Message).RootElement;
         var (isValid, error) = AdaptiveCardValidator.Validate(card);
         Assert.True(isValid, error);
+        AssertNoEmptyText(card);
+    }
+
+    /// <summary>
+    /// A field Azure sent as null must be left out, not rendered as an empty fact: budget
+    /// alerts have no rule, severity or signal type, and once rendered them as null values.
+    /// </summary>
+    private static void AssertNoEmptyText(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Name is "text" or "value" or "title")
+                    {
+                        Assert.Equal(JsonValueKind.String, property.Value.ValueKind);
+                        Assert.False(string.IsNullOrWhiteSpace(property.Value.GetString()),
+                            $"empty '{property.Name}' in {element}");
+                    }
+                    AssertNoEmptyText(property.Value);
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                    AssertNoEmptyText(item);
+                break;
+        }
     }
 }
