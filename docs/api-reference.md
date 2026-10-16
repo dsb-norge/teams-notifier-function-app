@@ -402,6 +402,10 @@ The bot renders alerts as color-coded Adaptive Cards based on severity:
 | Sev3 | Blue (Accent) |
 | Sev4 and others | Green (Good) |
 
+Essentials that Azure leaves out or sends as null are left off the card. A budget alert, for
+example, has no `alertRule`, `severity` or `signalType`; its card is titled with the
+`monitoringService` instead.
+
 **Response — 202 Accepted**
 
 Same format as [POST /v1/notify/{alias}](#post-v1notifyalias).

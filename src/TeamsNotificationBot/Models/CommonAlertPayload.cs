@@ -20,22 +20,26 @@ public class AlertData
     public Dictionary<string, string>? CustomProperties { get; set; }
 }
 
+/// <summary>
+/// The common alert schema's essentials. Every field is nullable because Azure sends nulls:
+/// a budget alert has no alertRule, severity or signalType. The card leaves out what's missing.
+/// </summary>
 public class AlertEssentials
 {
     [JsonPropertyName("alertRule")]
-    public string AlertRule { get; set; } = string.Empty;
+    public string? AlertRule { get; set; }
 
     [JsonPropertyName("severity")]
-    public string Severity { get; set; } = string.Empty;
+    public string? Severity { get; set; }
 
     [JsonPropertyName("monitorCondition")]
-    public string MonitorCondition { get; set; } = string.Empty;
+    public string? MonitorCondition { get; set; }
 
     [JsonPropertyName("signalType")]
-    public string SignalType { get; set; } = string.Empty;
+    public string? SignalType { get; set; }
 
     [JsonPropertyName("firedDateTime")]
-    public string FiredDateTime { get; set; } = string.Empty;
+    public string? FiredDateTime { get; set; }
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
