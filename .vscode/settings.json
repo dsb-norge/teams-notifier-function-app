@@ -2,5 +2,14 @@
   "azureFunctions.deploySubpath": "src/TeamsNotificationBot",
   "azureFunctions.projectLanguage": "C#",
   "azureFunctions.projectRuntime": "~4",
-  "azureFunctions.projectLanguageModel": "4"
+  "azureFunctions.projectLanguageModel": "4",
+  "workbench.colorCustomizations": {
+    "commandCenter.border": "#e7e7e799",
+    "commandCenter.foreground": "#e7e7e7",
+    "titleBar.activeBackground": "#072153",
+    "titleBar.activeForeground": "#e7e7e7",
+    "titleBar.inactiveBackground": "#07215399",
+    "titleBar.inactiveForeground": "#e7e7e799"
+  },
+  "peacock.remoteColor": "#072153"
 }
