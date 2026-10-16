@@ -431,6 +431,9 @@ flattened the same way for every alert type. Each field becomes a fact titled wi
   (`condition.allOf.dimensions.Computer`). A list of plain values becomes one fact, and a list
   with one item gets no index.
 - Nulls and empty values are left out.
+- A date and time with a zone (ISO 8601) is shown in UTC, as `2026-10-15 01:20:42 UTC`; so is the
+  **Fired** time. Teams would show it as `10/15/2026 01:20:42`, without its zone, next to a post
+  time in the reader's own zone.
 - In the context only, a few fields are hidden wherever they appear, because they hold
   personal data or are too large, or because they repeat what the card already shows:
   `claims`, `httpRequest`, `authorization`, `SearchResults`, `impactedServicesTableRows`,
