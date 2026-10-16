@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.3.0](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.3...teams-notifier-function-app-v2.3.0) (2026-10-16)
+
+
+### Features
+
+* **alert:** link the alert, and the portal URLs in its context, to the Azure portal ([7668800](https://github.com/dsb-norge/teams-notifier-function-app/commit/7668800384ed014ffe0cf0ad3d456939f2399d8b))
+* **alert:** show the rule's custom properties and the alert context on the card ([157312d](https://github.com/dsb-norge/teams-notifier-function-app/commit/157312d3175ee05d898529f1a9eeb535416b0c86))
+
+
+### Bug Fixes
+
+* **alert:** accept alert payloads up to Azure's 256 KB, not 28 KB ([522481f](https://github.com/dsb-norge/teams-notifier-function-app/commit/522481f85b387da60e03734fe505083e333c228c))
+* **alert:** colour a firing alert by severity, and only a resolved one green ([dfa1953](https://github.com/dsb-norge/teams-notifier-function-app/commit/dfa195343ca417ae90282e9f70c15968393bce96))
+* **alert:** leave out the essentials Azure sends as null ([c79631f](https://github.com/dsb-norge/teams-notifier-function-app/commit/c79631f1146731ca62c3e40fc43b2080c3bf5353))
+* **alert:** let the card's field names wrap at their dots ([92dd4a0](https://github.com/dsb-norge/teams-notifier-function-app/commit/92dd4a0f7d5ee7f8187ef017ede9891f7eab2cb6))
+* **alert:** show HTML in the alert context as text ([cc66d4d](https://github.com/dsb-norge/teams-notifier-function-app/commit/cc66d4d096b28f0f1cfa85c74e4fae9d3a017581))
+* **alert:** show the alert's times in UTC, with the zone ([f8a9414](https://github.com/dsb-norge/teams-notifier-function-app/commit/f8a94145e96d75c2413203c804436f632571cfbc))
+* **api:** answer 413 for a message too large for the queue, not 500 ([f210ce8](https://github.com/dsb-norge/teams-notifier-function-app/commit/f210ce875350db2e40acc0382f751c6c935b954d))
+* **queue:** escape only what JSON requires in the queue message ([6a89324](https://github.com/dsb-norge/teams-notifier-function-app/commit/6a893241e581b59a6b6f6e0bb46f525f697e75b2))
+
 ## [2.2.3](https://github.com/dsb-norge/teams-notifier-function-app/compare/teams-notifier-function-app-v2.2.2...teams-notifier-function-app-v2.2.3) (2026-10-15)
 
 
