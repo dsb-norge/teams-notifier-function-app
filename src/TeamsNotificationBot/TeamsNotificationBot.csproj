@@ -28,10 +28,10 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.51.0" />
     <!-- Microsoft.Agents.* pair must move in lockstep. -->
-    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.8.77" />
-    <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.8.77" />
+    <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.9.205" />
+    <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.9.205" />
     <!-- Versioned separately from the pair above (its 1.8.50 depends on Agents 1.8.77). -->
-    <PackageReference Include="Microsoft.Agents.Extensions.MSTeams" Version="1.8.50" />
+    <PackageReference Include="Microsoft.Agents.Extensions.MSTeams" Version="1.9.205" />
     <PackageReference Include="Azure.Data.Tables" Version="12.13.0" />
     <PackageReference Include="Azure.Storage.Queues" Version="12.28.1" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
